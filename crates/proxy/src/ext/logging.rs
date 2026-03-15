@@ -1,4 +1,4 @@
-use crabtalk_core::{BoxFuture, ChatCompletionResponse, Error, RequestContext};
+use crabtalk_core::{BoxFuture, ChatCompletionResponse, Error, Prefix, RequestContext};
 
 pub struct RequestLogger;
 
@@ -11,6 +11,10 @@ impl RequestLogger {
 impl crabtalk_core::Extension for RequestLogger {
     fn name(&self) -> &str {
         "logging"
+    }
+
+    fn prefix(&self) -> Prefix {
+        *b"logg"
     }
 
     fn on_response(

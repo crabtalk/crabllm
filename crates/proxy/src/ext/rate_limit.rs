@@ -1,11 +1,8 @@
-use crabtalk_core::{BoxFuture, ExtensionError, Prefix, RequestContext, Storage, storage_key};
+use crabtalk_core::{BoxFuture, ExtensionError, Prefix, RequestContext, Storage};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-
-/// Fixed 4-byte prefix for rate limit storage keys.
-const PREFIX: Prefix = *b"rlim";
 
 pub struct RateLimit {
     storage: Arc<dyn Storage>,
@@ -35,6 +32,10 @@ impl crabtalk_core::Extension for RateLimit {
         "rate_limit"
     }
 
+    fn prefix(&self) -> Prefix {
+        *b"rlim"
+    }
+
     fn on_request(&self, ctx: &RequestContext) -> BoxFuture<'_, Result<(), ExtensionError>> {
         let key_name = ctx.key_name.as_deref().unwrap_or("__global");
         let minute = SystemTime::now()
@@ -43,13 +44,13 @@ impl crabtalk_core::Extension for RateLimit {
             .as_secs()
             / 60;
         let suffix = format!("{key_name}:{minute}");
-        let storage_key = storage_key(&PREFIX, suffix.as_bytes());
+        let key = self.storage_key(suffix.as_bytes());
         let limit = self.requests_per_minute;
 
         Box::pin(async move {
             let count = self
                 .storage
-                .increment(&storage_key, 1)
+                .increment(&key, 1)
                 .await
                 .map_err(|e| ExtensionError::new(500, e.to_string(), "server_error"))?;
 

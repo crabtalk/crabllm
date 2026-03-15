@@ -44,7 +44,7 @@ async fn main() {
     };
 
     // Build storage backend.
-    let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
+    let storage = Arc::new(MemoryStorage::new());
 
     // Build extensions from config.
     let extensions = match build_extensions(&config, storage.clone()) {

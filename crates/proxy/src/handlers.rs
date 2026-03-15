@@ -9,14 +9,14 @@ use axum::{
     },
 };
 use crabtalk_core::{
-    ApiError, ChatCompletionRequest, EmbeddingRequest, Model, ModelList, RequestContext,
+    ApiError, ChatCompletionRequest, EmbeddingRequest, Model, ModelList, RequestContext, Storage,
 };
 use futures::StreamExt;
 use std::time::Instant;
 
 /// POST /v1/chat/completions
-pub async fn chat_completions(
-    State(state): State<AppState>,
+pub async fn chat_completions<S: Storage + 'static>(
+    State(state): State<AppState<S>>,
     Extension(key_name): Extension<KeyName>,
     Json(request): Json<ChatCompletionRequest>,
 ) -> Response {
@@ -141,8 +141,8 @@ pub async fn chat_completions(
 }
 
 /// POST /v1/embeddings
-pub async fn embeddings(
-    State(state): State<AppState>,
+pub async fn embeddings<S: Storage + 'static>(
+    State(state): State<AppState<S>>,
     Extension(key_name): Extension<KeyName>,
     Json(request): Json<EmbeddingRequest>,
 ) -> Response {
@@ -199,7 +199,7 @@ pub async fn embeddings(
 }
 
 /// GET /v1/models
-pub async fn models(State(state): State<AppState>) -> Json<ModelList> {
+pub async fn models<S: Storage + 'static>(State(state): State<AppState<S>>) -> Json<ModelList> {
     let data: Vec<Model> = state
         .config
         .models

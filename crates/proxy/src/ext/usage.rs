@@ -6,9 +6,6 @@ use crabtalk_core::{
 use serde::Serialize;
 use std::sync::Arc;
 
-/// Fixed 4-byte prefix for usage storage keys.
-const PREFIX: Prefix = *b"usge";
-
 pub struct UsageTracker {
     storage: Arc<dyn Storage>,
 }
@@ -17,6 +14,9 @@ impl UsageTracker {
     pub fn new(_config: &toml::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
         Ok(Self { storage })
     }
+
+    /// The fixed prefix for this extension.
+    const PREFIX: Prefix = *b"usge";
 
     /// Record token usage for a given key and model.
     async fn record(
@@ -32,14 +32,14 @@ impl UsageTracker {
         let _ = self
             .storage
             .increment(
-                &storage_key(&PREFIX, prompt_suffix.as_bytes()),
+                &storage_key(&Self::PREFIX, prompt_suffix.as_bytes()),
                 prompt_tokens as i64,
             )
             .await;
         let _ = self
             .storage
             .increment(
-                &storage_key(&PREFIX, completion_suffix.as_bytes()),
+                &storage_key(&Self::PREFIX, completion_suffix.as_bytes()),
                 completion_tokens as i64,
             )
             .await;
@@ -49,6 +49,10 @@ impl UsageTracker {
 impl crabtalk_core::Extension for UsageTracker {
     fn name(&self) -> &str {
         "usage"
+    }
+
+    fn prefix(&self) -> Prefix {
+        Self::PREFIX
     }
 
     fn on_response(
@@ -89,11 +93,12 @@ impl crabtalk_core::Extension for UsageTracker {
 
     fn routes(&self) -> Option<Router> {
         let storage = self.storage.clone();
+        let prefix = Self::PREFIX;
         let router = Router::new().route(
             "/v1/usage",
             get(move || {
                 let storage = storage.clone();
-                async move { usage_handler(storage).await }
+                async move { usage_handler(storage, prefix).await }
             }),
         );
         Some(router)
@@ -108,8 +113,8 @@ struct UsageEntry {
     completion_tokens: i64,
 }
 
-async fn usage_handler(storage: Arc<dyn Storage>) -> Json<Vec<UsageEntry>> {
-    let pairs = storage.list(&PREFIX).await.unwrap_or_default();
+async fn usage_handler(storage: Arc<dyn Storage>, prefix: Prefix) -> Json<Vec<UsageEntry>> {
+    let pairs = storage.list(&prefix).await.unwrap_or_default();
 
     // Group by (key, model) — keys are PREFIX + "{key_name}:{model}:{p|c}"
     let mut entries: std::collections::HashMap<(String, String), (i64, i64)> =
@@ -131,7 +136,7 @@ async fn usage_handler(storage: Arc<dyn Storage>) -> Json<Vec<UsageEntry>> {
             continue;
         };
 
-        let counter_key = storage_key(&PREFIX, suffix.as_bytes());
+        let counter_key = storage_key(&prefix, suffix.as_bytes());
         // Read the counter value from the counters map via increment(0).
         let val = storage.increment(&counter_key, 0).await.unwrap_or(0);
 

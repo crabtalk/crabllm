@@ -1,8 +1,8 @@
-use std::time::Instant;
-
+use crate::{
+    ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionResponse, Error, Prefix, storage_key,
+};
 use axum::Router;
-
-use crate::{ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionResponse, Error};
+use std::time::Instant;
 
 /// Per-request metadata passed to extension hooks.
 #[derive(Clone, Debug)]
@@ -34,13 +34,21 @@ impl ExtensionError {
 /// Trait for request pipeline extensions (usage tracking, logging, rate limiting, etc.).
 ///
 /// Extensions are registered at startup and receive hooks at each stage of request
-/// processing. All methods have default no-op implementations except `name`.
+/// processing. All methods have default no-op implementations except `name` and `prefix`.
 ///
 /// Extensions must be `Send + Sync` for use across Axum handler tasks.
 /// Hook methods return `BoxFuture` for dyn-compatibility.
 pub trait Extension: Send + Sync {
     /// Human-readable name for this extension, used in logs and diagnostics.
     fn name(&self) -> &str;
+
+    /// Fixed 4-byte prefix that namespaces this extension's storage keys.
+    fn prefix(&self) -> Prefix;
+
+    /// Build a full storage key by prepending this extension's prefix to `suffix`.
+    fn storage_key(&self, suffix: &[u8]) -> Vec<u8> {
+        storage_key(&self.prefix(), suffix)
+    }
 
     /// Called post-auth, pre-dispatch. Return `Err` to short-circuit the pipeline
     /// (no provider call, no further extensions run).
