@@ -7,16 +7,19 @@ description.workspace = true
 repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
+readme.workspace = true
 
 [[bin]]
 name = "crabtalk"
 path = "src/bin/main.rs"
 
 [dependencies]
-axum = { workspace = true }
-clap = { workspace = true }
-crabtalk-core = { path = "../core" }
-crabtalk-provider = { path = "../provider" }
-crabtalk-proxy = { path = "../proxy" }
-reqwest = { workspace = true }
-tokio = { workspace = true }
+crabtalk-core.workspace = true
+crabtalk-provider.workspace = true
+crabtalk-proxy.workspace = true
+
+# crates-io
+axum.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
