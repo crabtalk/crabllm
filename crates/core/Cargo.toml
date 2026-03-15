@@ -11,6 +11,8 @@ readme = "README.md"
 
 [dependencies]
 # crates-io
+axum.workspace = true
+dashmap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

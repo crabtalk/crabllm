@@ -13,6 +13,12 @@ pub struct GatewayConfig {
     /// Virtual API keys for client authentication.
     #[serde(default)]
     pub keys: Vec<KeyConfig>,
+    /// Extension configurations. Each key is an extension name, value is its config.
+    #[serde(default)]
+    pub extensions: Option<toml::Value>,
+    /// Storage backend configuration.
+    #[serde(default)]
+    pub storage: Option<StorageConfig>,
 }
 
 /// Configuration for a single LLM provider.
@@ -54,6 +60,20 @@ pub struct KeyConfig {
     pub key: String,
     /// Which models this key can access. `["*"]` means all.
     pub models: Vec<String>,
+}
+
+/// Storage backend configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageConfig {
+    /// Backend kind: "memory" (default) or "sqlite" (requires feature).
+    #[serde(default = "StorageConfig::default_kind")]
+    pub kind: String,
+}
+
+impl StorageConfig {
+    fn default_kind() -> String {
+        "memory".to_string()
+    }
 }
 
 impl GatewayConfig {

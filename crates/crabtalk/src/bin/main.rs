@@ -1,8 +1,11 @@
 use clap::Parser;
-use crabtalk_core::GatewayConfig;
+use crabtalk_core::{Extension, GatewayConfig, MemoryStorage, Storage};
 use crabtalk_provider::ProviderRegistry;
-use crabtalk_proxy::AppState;
-use std::path::PathBuf;
+use crabtalk_proxy::{
+    AppState,
+    ext::{logging::RequestLogger, rate_limit::RateLimit, usage::UsageTracker},
+};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Parser)]
 #[command(name = "crabtalk", about = "High-performance LLM API gateway")]
@@ -40,6 +43,19 @@ async fn main() {
         }
     };
 
+    // Build storage backend.
+    let storage: Arc<dyn Storage> = Arc::new(MemoryStorage::new());
+
+    // Build extensions from config.
+    let extensions = match build_extensions(&config, storage.clone()) {
+        Ok(exts) => exts,
+        Err(e) => {
+            eprintln!("error: failed to build extensions: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let ext_count = extensions.len();
     let addr = config.listen.clone();
     let model_count = config.models.len();
     let provider_count = config.providers.len();
@@ -48,6 +64,8 @@ async fn main() {
         registry,
         client: reqwest::Client::new(),
         config,
+        extensions: Arc::new(extensions),
+        storage,
     };
 
     let app = crabtalk_proxy::router(state);
@@ -59,10 +77,56 @@ async fn main() {
         }
     };
 
-    eprintln!("crabtalk listening on {addr} ({model_count} models, {provider_count} providers)");
+    eprintln!(
+        "crabtalk listening on {addr} ({model_count} models, {provider_count} providers, {ext_count} extensions)"
+    );
 
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("error: server failed: {e}");
         std::process::exit(1);
     }
+}
+
+fn build_extensions(
+    config: &GatewayConfig,
+    storage: Arc<dyn Storage>,
+) -> Result<Vec<Box<dyn Extension>>, String> {
+    let mut extensions: Vec<Box<dyn Extension>> = Vec::new();
+    let mut has_logging = false;
+
+    let ext_table = match &config.extensions {
+        Some(toml::Value::Table(t)) => t,
+        Some(_) => return Err("[extensions] must be a TOML table".to_string()),
+        None => return Ok(extensions),
+    };
+
+    for (name, value) in ext_table {
+        match name.as_str() {
+            "rate_limit" => {
+                let ext = RateLimit::new(value, storage.clone())?;
+                extensions.push(Box::new(ext));
+            }
+            "usage" => {
+                let ext = UsageTracker::new(value, storage.clone())?;
+                extensions.push(Box::new(ext));
+            }
+            "logging" => {
+                let ext = RequestLogger::new(value)?;
+                extensions.push(Box::new(ext));
+                has_logging = true;
+            }
+            unknown => {
+                return Err(format!(
+                    "unknown extension '{unknown}'. valid extensions: rate_limit, usage, logging"
+                ));
+            }
+        }
+    }
+
+    // Initialize tracing subscriber if logging extension is enabled.
+    if has_logging {
+        tracing_subscriber::fmt::init();
+    }
+
+    Ok(extensions)
 }
