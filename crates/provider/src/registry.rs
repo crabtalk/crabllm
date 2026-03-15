@@ -10,19 +10,11 @@ pub struct ProviderRegistry {
 
 impl ProviderRegistry {
     /// Build the registry from gateway config.
-    /// Returns an error if a model route references an unknown provider
-    /// or if a provider is missing a required api_key.
+    /// Returns an error if a provider is missing a required api_key.
     pub fn from_config(config: &GatewayConfig) -> Result<Self, Error> {
         let mut providers = HashMap::new();
 
-        for (model_name, route) in &config.models {
-            let provider_config = config.providers.get(&route.provider).ok_or_else(|| {
-                Error::Config(format!(
-                    "model '{}' references unknown provider '{}'",
-                    model_name, route.provider
-                ))
-            })?;
-
+        for (provider_name, provider_config) in &config.providers {
             let provider = match provider_config.kind {
                 ProviderKind::OpenaiCompat => {
                     let base_url = provider_config
@@ -37,8 +29,7 @@ impl ProviderRegistry {
                 ProviderKind::Anthropic => {
                     if provider_config.api_key.is_empty() {
                         return Err(Error::Config(format!(
-                            "provider '{}' (anthropic) requires an api_key",
-                            route.provider
+                            "provider '{provider_name}' (anthropic) requires an api_key",
                         )));
                     }
                     Provider::Anthropic {
@@ -48,8 +39,7 @@ impl ProviderRegistry {
                 ProviderKind::Google => {
                     if provider_config.api_key.is_empty() {
                         return Err(Error::Config(format!(
-                            "provider '{}' (google) requires an api_key",
-                            route.provider
+                            "provider '{provider_name}' (google) requires an api_key",
                         )));
                     }
                     Provider::Google {
@@ -58,13 +48,14 @@ impl ProviderRegistry {
                 }
                 ProviderKind::Bedrock => {
                     return Err(Error::Config(format!(
-                        "provider '{}' (bedrock) is not yet supported",
-                        route.provider
+                        "provider '{provider_name}' (bedrock) is not yet supported",
                     )));
                 }
             };
 
-            providers.insert(model_name.clone(), provider);
+            for model_name in &provider_config.models {
+                providers.insert(model_name.clone(), provider.clone());
+            }
         }
 
         Ok(ProviderRegistry { providers })

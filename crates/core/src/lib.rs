@@ -1,6 +1,4 @@
-pub use config::{
-    GatewayConfig, KeyConfig, ModelRoute, ProviderConfig, ProviderKind, StorageConfig,
-};
+pub use config::{GatewayConfig, KeyConfig, ProviderConfig, ProviderKind, StorageConfig};
 pub use error::{ApiError, ApiErrorBody, Error};
 pub use extension::{Extension, ExtensionError, RequestContext};
 pub use storage::{BoxFuture, KvPairs, MemoryStorage, PREFIX_LEN, Prefix, Storage, storage_key};

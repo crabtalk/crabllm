@@ -1,7 +1,8 @@
 # crabtalk
 
-High-performance LLM API gateway in Rust. Inspired by
-[LiteLLM](https://github.com/BerriAI/litellm).
+[![crates.io][crabtalk-badge]][crabtalk-crate]
+
+High-performance LLM API gateway in Rust, used by [OpenWalrus][openwalrus].
 
 ## What It Does
 
@@ -35,16 +36,12 @@ listen = "0.0.0.0:8080"
 [providers.openai]
 kind = "openai_compat"
 api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o"]
 
 [providers.anthropic]
 kind = "anthropic"
 api_key = "${ANTHROPIC_API_KEY}"
-
-[models.gpt-4o]
-provider = "openai"
-
-[models.claude-sonnet-4-20250514]
-provider = "anthropic"
+models = ["claude-sonnet-4-20250514"]
 ```
 
 Run:
@@ -74,13 +71,17 @@ curl http://localhost:8080/v1/chat/completions \
 
 ## Crates
 
-| Crate | Description |
-|-------|-------------|
-| `crabtalk` | Binary entry point (CLI + server startup) |
-| `crabtalk-core` | Shared types: config, OpenAI-format request/response, errors |
-| `crabtalk-provider` | Provider enum, registry, and upstream HTTP dispatch |
-| `crabtalk-proxy` | Axum HTTP server, route handlers, auth middleware |
+| Crate               | Description                                                  |
+| ------------------- | ------------------------------------------------------------ |
+| `crabtalk`          | Binary entry point (CLI + server startup)                    |
+| `crabtalk-core`     | Shared types: config, OpenAI-format request/response, errors |
+| `crabtalk-provider` | Provider enum, registry, and upstream HTTP dispatch          |
+| `crabtalk-proxy`    | Axum HTTP server, route handlers, auth middleware            |
 
 ## License
 
 MIT OR Apache-2.0
+
+[crabtalk-badge]: https://img.shields.io/crates/v/crabtalk.svg
+[crabtalk-crate]: https://crates.io/crates/crabtalk
+[openwalrus]: https://openwalrus.xyz

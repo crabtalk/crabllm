@@ -36,9 +36,9 @@ pub async fn chat_completions<S: Storage + 'static>(
 
     let provider_name = state
         .config
-        .models
+        .models()
         .get(&request.model)
-        .map(|r| r.provider.clone())
+        .cloned()
         .unwrap_or_default();
 
     let ctx = RequestContext {
@@ -162,9 +162,9 @@ pub async fn embeddings<S: Storage + 'static>(
 
     let provider_name = state
         .config
-        .models
+        .models()
         .get(&request.model)
-        .map(|r| r.provider.clone())
+        .cloned()
         .unwrap_or_default();
 
     let ctx = RequestContext {
@@ -202,10 +202,10 @@ pub async fn embeddings<S: Storage + 'static>(
 pub async fn models<S: Storage + 'static>(State(state): State<AppState<S>>) -> Json<ModelList> {
     let data: Vec<Model> = state
         .config
-        .models
-        .keys()
+        .models()
+        .into_keys()
         .map(|name| Model {
-            id: name.clone(),
+            id: name,
             object: "model".to_string(),
             created: 0,
             owned_by: "crabtalk".to_string(),

@@ -57,7 +57,7 @@ async fn main() {
 
     let ext_count = extensions.len();
     let addr = config.listen.clone();
-    let model_count = config.models.len();
+    let model_count = config.models().len();
     let provider_count = config.providers.len();
 
     let state = AppState {
