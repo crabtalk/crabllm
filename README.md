@@ -27,7 +27,7 @@ One API format. Many providers. Low overhead.
 - Load balancing and failover
 - API key management and virtual keys
 - Cost tracking per key/team
-- Configuration-driven setup (YAML)
+- Configuration-driven setup (TOML)
 
 ## Status
 
