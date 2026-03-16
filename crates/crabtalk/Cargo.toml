@@ -10,6 +10,7 @@ categories.workspace = true
 readme = "README.md"
 
 [features]
+storage-redis = ["crabtalk-core/storage-redis"]
 storage-sqlite = ["crabtalk-core/storage-sqlite"]
 provider-bedrock = ["crabtalk-provider/provider-bedrock"]
 

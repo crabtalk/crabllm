@@ -53,6 +53,27 @@ async fn main() {
         .unwrap_or("memory");
 
     match storage_kind {
+        #[cfg(feature = "storage-redis")]
+        "redis" => {
+            let url = config
+                .storage
+                .as_ref()
+                .and_then(|s| s.path.as_deref())
+                .unwrap_or("redis://127.0.0.1:6379");
+            let storage = match crabtalk_core::RedisStorage::open(url).await {
+                Ok(s) => Arc::new(s),
+                Err(e) => {
+                    eprintln!("error: failed to open redis storage: {e}");
+                    std::process::exit(1);
+                }
+            };
+            run(config, registry, storage).await;
+        }
+        #[cfg(not(feature = "storage-redis"))]
+        "redis" => {
+            eprintln!("error: redis storage requires the 'storage-redis' feature");
+            std::process::exit(1);
+        }
         #[cfg(feature = "storage-sqlite")]
         "sqlite" => {
             let path = config

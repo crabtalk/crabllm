@@ -15,9 +15,13 @@ mod config;
 mod error;
 mod extension;
 mod storage;
+#[cfg(feature = "storage-redis")]
+mod storage_redis;
 #[cfg(feature = "storage-sqlite")]
 mod storage_sqlite;
 mod types;
 
+#[cfg(feature = "storage-redis")]
+pub use storage_redis::RedisStorage;
 #[cfg(feature = "storage-sqlite")]
 pub use storage_sqlite::SqliteStorage;

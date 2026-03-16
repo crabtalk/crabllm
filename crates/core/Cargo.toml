@@ -10,6 +10,7 @@ categories.workspace = true
 readme = "README.md"
 
 [features]
+storage-redis = ["redis"]
 storage-sqlite = ["sqlx"]
 
 [dependencies]
@@ -22,4 +23,5 @@ tokio.workspace = true
 toml.workspace = true
 
 # optional
+redis = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
