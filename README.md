@@ -41,7 +41,7 @@ Inspired by [LiteLLM][litellm]. Built in Rust for minimal overhead.
 | Storage (memory) | ✅ | ✅ |
 | Storage (persistent) | ✅ Postgres | ✅ SQLite |
 | `/completions` (text) | ✅ | — |
-| Image/audio endpoints | ✅ | — |
+| Image/audio endpoints | ✅ | ✅ |
 | Rate limiting (TPM) | ✅ | ✅ |
 | Redis storage | ✅ | ✅ |
 | Dashboard/UI | ✅ | — |

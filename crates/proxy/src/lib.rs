@@ -20,6 +20,15 @@ pub fn router<S: Storage + 'static>(state: AppState<S>) -> Router {
             post(handlers::chat_completions::<S>),
         )
         .route("/v1/embeddings", post(handlers::embeddings::<S>))
+        .route(
+            "/v1/images/generations",
+            post(handlers::image_generations::<S>),
+        )
+        .route("/v1/audio/speech", post(handlers::audio_speech::<S>))
+        .route(
+            "/v1/audio/transcriptions",
+            post(handlers::audio_transcriptions::<S>),
+        )
         .route("/v1/models", get(handlers::models::<S>))
         .layer(middleware::from_fn_with_state(
             state.clone(),

@@ -1,6 +1,7 @@
+use bytes::Bytes;
 use crabtalk_core::{
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error,
+    AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
 };
 use futures::stream::{self, Stream};
 use reqwest::Response;
@@ -83,6 +84,107 @@ pub async fn chat_completion_stream(
     }
 
     Ok(sse_stream(resp))
+}
+
+/// Send an image generation request to an OpenAI-compatible endpoint.
+/// Returns raw response bytes and content-type header.
+pub async fn image_generation(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    request: &ImageRequest,
+) -> Result<(Bytes, String), Error> {
+    let url = format!("{}/images/generations", base_url.trim_end_matches('/'));
+    raw_pass_through(client, &url, api_key, request).await
+}
+
+/// Send a text-to-speech request to an OpenAI-compatible endpoint.
+/// Returns raw audio bytes and content-type header.
+pub async fn audio_speech(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    request: &AudioSpeechRequest,
+) -> Result<(Bytes, String), Error> {
+    let url = format!("{}/audio/speech", base_url.trim_end_matches('/'));
+    let (bytes, content_type) = raw_pass_through(client, &url, api_key, request).await?;
+    // Default to audio/mpeg if upstream omits Content-Type.
+    let content_type = if content_type == "application/json" {
+        "audio/mpeg".to_string()
+    } else {
+        content_type
+    };
+    Ok((bytes, content_type))
+}
+
+/// Forward a JSON request and return raw response bytes + content-type.
+pub(crate) async fn raw_pass_through<T: serde::Serialize>(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    request: &T,
+) -> Result<(Bytes, String), Error> {
+    let resp = client
+        .post(url)
+        .bearer_auth(api_key)
+        .json(request)
+        .send()
+        .await
+        .map_err(|e| Error::Internal(e.to_string()))?;
+
+    let status = resp.status().as_u16();
+    if status >= 400 {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider { status, body });
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| Error::Internal(e.to_string()))?;
+    Ok((bytes, content_type))
+}
+
+/// Send an audio transcription request to an OpenAI-compatible endpoint.
+/// Takes a pre-built multipart form. Returns raw response bytes + content-type.
+pub async fn audio_transcription(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    form: reqwest::multipart::Form,
+) -> Result<(Bytes, String), Error> {
+    let url = format!("{}/audio/transcriptions", base_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| Error::Internal(e.to_string()))?;
+
+    let status = resp.status().as_u16();
+    if status >= 400 {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(Error::Provider { status, body });
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| Error::Internal(e.to_string()))?;
+    Ok((bytes, content_type))
 }
 
 /// Parse an SSE byte stream into `ChatCompletionChunk` items.

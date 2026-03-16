@@ -1,6 +1,7 @@
+use bytes::Bytes;
 use crabtalk_core::{
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error,
+    AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
 };
 use futures::stream::{BoxStream, StreamExt};
 
@@ -90,6 +91,94 @@ impl Provider {
                 api_key,
                 api_version,
             } => provider::azure::embedding(client, base_url, api_key, api_version, request).await,
+        }
+    }
+
+    /// Send an image generation request. Returns raw bytes + content-type.
+    pub async fn image_generation(
+        &self,
+        client: &reqwest::Client,
+        request: &ImageRequest,
+    ) -> Result<(Bytes, String), Error> {
+        match self {
+            Provider::OpenAiCompat { base_url, api_key } => {
+                provider::openai::image_generation(client, base_url, api_key, request).await
+            }
+            Provider::Anthropic { .. } => {
+                Err(provider::anthropic::not_implemented("image_generation"))
+            }
+            Provider::Google { .. } => Err(provider::google::not_implemented("image_generation")),
+            Provider::Bedrock { .. } => Err(provider::bedrock::not_implemented("image_generation")),
+            Provider::Azure {
+                base_url,
+                api_key,
+                api_version,
+            } => {
+                provider::azure::image_generation(client, base_url, api_key, api_version, request)
+                    .await
+            }
+        }
+    }
+
+    /// Send a text-to-speech request. Returns raw audio bytes + content-type.
+    pub async fn audio_speech(
+        &self,
+        client: &reqwest::Client,
+        request: &AudioSpeechRequest,
+    ) -> Result<(Bytes, String), Error> {
+        match self {
+            Provider::OpenAiCompat { base_url, api_key } => {
+                provider::openai::audio_speech(client, base_url, api_key, request).await
+            }
+            Provider::Anthropic { .. } => Err(provider::anthropic::not_implemented("audio_speech")),
+            Provider::Google { .. } => Err(provider::google::not_implemented("audio_speech")),
+            Provider::Bedrock { .. } => Err(provider::bedrock::not_implemented("audio_speech")),
+            Provider::Azure {
+                base_url,
+                api_key,
+                api_version,
+            } => {
+                provider::azure::audio_speech(client, base_url, api_key, api_version, request).await
+            }
+        }
+    }
+
+    /// Send an audio transcription request. Takes a multipart form + model name.
+    /// Returns raw response bytes + content-type.
+    pub async fn audio_transcription(
+        &self,
+        client: &reqwest::Client,
+        model: &str,
+        form: reqwest::multipart::Form,
+    ) -> Result<(Bytes, String), Error> {
+        match self {
+            Provider::OpenAiCompat { base_url, api_key } => {
+                provider::openai::audio_transcription(client, base_url, api_key, form).await
+            }
+            Provider::Anthropic { .. } => {
+                Err(provider::anthropic::not_implemented("audio_transcription"))
+            }
+            Provider::Google { .. } => {
+                Err(provider::google::not_implemented("audio_transcription"))
+            }
+            Provider::Bedrock { .. } => {
+                Err(provider::bedrock::not_implemented("audio_transcription"))
+            }
+            Provider::Azure {
+                base_url,
+                api_key,
+                api_version,
+            } => {
+                provider::azure::audio_transcription(
+                    client,
+                    base_url,
+                    api_key,
+                    api_version,
+                    model,
+                    form,
+                )
+                .await
+            }
         }
     }
 
