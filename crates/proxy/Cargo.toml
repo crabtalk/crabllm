@@ -3,11 +3,11 @@ name = "crabtalk-proxy"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description.workspace = true
 repository.workspace = true
-keywords.workspace = true
-categories.workspace = true
 readme = "README.md"
+description = "HTTP proxy server for the crabtalk LLM API gateway"
+keywords = ["llm", "proxy", "openai", "streaming", "gateway"]
+categories = ["web-programming::http-server", "network-programming"]
 
 [dependencies]
 crabtalk-core.workspace = true

@@ -3,11 +3,11 @@ name = "crabtalk-provider"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description.workspace = true
 repository.workspace = true
-keywords.workspace = true
-categories.workspace = true
 readme = "README.md"
+description = "Provider dispatch for the crabtalk LLM API gateway"
+keywords = ["llm", "openai", "anthropic", "gemini", "bedrock"]
+categories = ["web-programming::http-client", "network-programming"]
 
 [features]
 provider-bedrock = ["hmac", "sha2"]
