@@ -86,7 +86,7 @@ pub async fn chat_completion_stream(
 }
 
 /// Parse an SSE byte stream into `ChatCompletionChunk` items.
-fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> {
+pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> {
     let byte_stream = resp.bytes_stream();
 
     stream::unfold(

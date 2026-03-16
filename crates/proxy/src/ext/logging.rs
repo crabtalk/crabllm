@@ -1,4 +1,6 @@
-use crabtalk_core::{BoxFuture, ChatCompletionResponse, Error, Prefix, RequestContext};
+use crabtalk_core::{
+    BoxFuture, ChatCompletionRequest, ChatCompletionResponse, Error, Prefix, RequestContext,
+};
 
 pub struct RequestLogger;
 
@@ -20,6 +22,7 @@ impl crabtalk_core::Extension for RequestLogger {
     fn on_response(
         &self,
         ctx: &RequestContext,
+        _request: &ChatCompletionRequest,
         response: &ChatCompletionResponse,
     ) -> BoxFuture<'_, ()> {
         let latency = ctx.started_at.elapsed();

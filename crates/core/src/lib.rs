@@ -1,4 +1,6 @@
-pub use config::{GatewayConfig, KeyConfig, ProviderConfig, ProviderKind, StorageConfig};
+pub use config::{
+    GatewayConfig, KeyConfig, PricingConfig, ProviderConfig, ProviderKind, StorageConfig, cost,
+};
 pub use error::{ApiError, ApiErrorBody, Error};
 pub use extension::{Extension, ExtensionError, RequestContext};
 pub use storage::{BoxFuture, KvPairs, MemoryStorage, PREFIX_LEN, Prefix, Storage, storage_key};
@@ -13,4 +15,9 @@ mod config;
 mod error;
 mod extension;
 mod storage;
+#[cfg(feature = "storage-sqlite")]
+mod storage_sqlite;
 mod types;
+
+#[cfg(feature = "storage-sqlite")]
+pub use storage_sqlite::SqliteStorage;

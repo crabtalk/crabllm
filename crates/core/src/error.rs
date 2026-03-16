@@ -27,6 +27,19 @@ impl fmt::Display for Error {
     }
 }
 
+impl Error {
+    /// Whether this error is transient and the request should be retried.
+    /// Transient: 429 (rate limit), 500, 502, 503, 504 (server errors),
+    /// and connection/internal errors.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Error::Provider { status, .. } => matches!(status, 429 | 500 | 502 | 503 | 504),
+            Error::Internal(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {

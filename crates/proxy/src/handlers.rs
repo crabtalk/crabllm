@@ -11,8 +11,9 @@ use axum::{
 use crabtalk_core::{
     ApiError, ChatCompletionRequest, EmbeddingRequest, Model, ModelList, RequestContext, Storage,
 };
+use crabtalk_provider::Deployment;
 use futures::StreamExt;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// POST /v1/chat/completions
 pub async fn chat_completions<S: Storage + 'static>(
@@ -20,13 +21,14 @@ pub async fn chat_completions<S: Storage + 'static>(
     Extension(key_name): Extension<KeyName>,
     Json(request): Json<ChatCompletionRequest>,
 ) -> Response {
-    let provider = match state.registry.get(&request.model) {
-        Some(p) => p,
+    let model = state.registry.resolve(&request.model).to_string();
+    let deployments = match state.registry.dispatch_list(&model) {
+        Some(list) => list,
         None => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(ApiError::new(
-                    format!("model '{}' not found", request.model),
+                    format!("model '{model}' not found"),
                     "invalid_request_error",
                 )),
             )
@@ -37,13 +39,13 @@ pub async fn chat_completions<S: Storage + 'static>(
     let provider_name = state
         .config
         .models()
-        .get(&request.model)
+        .get(&model)
         .cloned()
         .unwrap_or_default();
 
     let ctx = RequestContext {
-        request_id: String::new(),
-        model: request.model.clone(),
+        request_id: uuid::Uuid::new_v4().to_string(),
+        model: model.clone(),
         provider: provider_name,
         key_name: key_name.0,
         is_stream: request.stream == Some(true),
@@ -61,82 +63,98 @@ pub async fn chat_completions<S: Storage + 'static>(
         }
     }
 
-    // Branch on stream field.
     if ctx.is_stream {
-        match provider
-            .chat_completion_stream(&state.client, &request)
-            .await
-        {
-            Ok(stream) => {
-                let extensions = state.extensions.clone();
-                let ctx_clone = ctx.clone();
+        // Streaming: retry + fallback on connection errors only (pre-stream).
+        let mut last_err = None;
+        for deployment in &deployments {
+            match try_stream_with_retries(deployment, &state.client, &request).await {
+                Ok(stream) => {
+                    let extensions = state.extensions.clone();
+                    let ctx_clone = ctx.clone();
 
-                // Wrap stream with extension chunk observation.
-                let observed = stream.then(move |result| {
-                    let extensions = extensions.clone();
-                    let ctx = ctx_clone.clone();
-                    async move {
-                        match &result {
-                            Ok(chunk) => {
-                                for ext in extensions.iter() {
-                                    ext.on_chunk(&ctx, chunk).await;
+                    let observed = stream.then(move |result| {
+                        let extensions = extensions.clone();
+                        let ctx = ctx_clone.clone();
+                        async move {
+                            match &result {
+                                Ok(chunk) => {
+                                    for ext in extensions.iter() {
+                                        ext.on_chunk(&ctx, chunk).await;
+                                    }
+                                }
+                                Err(error) => {
+                                    for ext in extensions.iter() {
+                                        ext.on_error(&ctx, error).await;
+                                    }
                                 }
                             }
-                            Err(error) => {
-                                for ext in extensions.iter() {
-                                    ext.on_error(&ctx, error).await;
-                                }
-                            }
+                            result
                         }
-                        result
-                    }
-                });
+                    });
 
-                let sse_stream = observed.map(|result| match result {
-                    Ok(chunk) => {
-                        let json = serde_json::to_string(&chunk).unwrap_or_default();
-                        Ok(Event::default().data(json))
-                    }
-                    Err(e) => {
-                        let json =
-                            serde_json::to_string(&ApiError::new(e.to_string(), "server_error"))
-                                .unwrap_or_default();
-                        Ok(Event::default().data(json))
-                    }
-                });
+                    let sse_stream = observed.map(|result| match result {
+                        Ok(chunk) => {
+                            let json = serde_json::to_string(&chunk).unwrap_or_default();
+                            Ok(Event::default().data(json))
+                        }
+                        Err(e) => {
+                            let json = serde_json::to_string(&ApiError::new(
+                                e.to_string(),
+                                "server_error",
+                            ))
+                            .unwrap_or_default();
+                            Ok(Event::default().data(json))
+                        }
+                    });
 
-                // Append [DONE] sentinel after the stream ends.
-                let done = futures::stream::once(async {
-                    Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]"))
-                });
-                let full_stream = sse_stream.chain(done);
+                    let done = futures::stream::once(async {
+                        Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]"))
+                    });
+                    let full_stream = sse_stream.chain(done);
 
-                Sse::new(full_stream)
-                    .keep_alive(axum::response::sse::KeepAlive::new())
-                    .into_response()
-            }
-            Err(e) => {
-                for ext in state.extensions.iter() {
-                    ext.on_error(&ctx, &e).await;
+                    return Sse::new(full_stream)
+                        .keep_alive(axum::response::sse::KeepAlive::new())
+                        .into_response();
                 }
-                error_response(e)
+                Err(e) => last_err = Some(e),
             }
         }
+
+        let e = last_err.unwrap_or_else(|| {
+            crabtalk_core::Error::Internal("no providers available".to_string())
+        });
+        for ext in state.extensions.iter() {
+            ext.on_error(&ctx, &e).await;
+        }
+        error_response(e)
     } else {
-        match provider.chat_completion(&state.client, &request).await {
-            Ok(resp) => {
-                for ext in state.extensions.iter() {
-                    ext.on_response(&ctx, &resp).await;
-                }
-                Json(resp).into_response()
-            }
-            Err(e) => {
-                for ext in state.extensions.iter() {
-                    ext.on_error(&ctx, &e).await;
-                }
-                error_response(e)
+        // Non-streaming: check cache first.
+        for ext in state.extensions.iter() {
+            if let Some(cached) = ext.on_cache_lookup(&request).await {
+                return Json(cached).into_response();
             }
         }
+
+        let mut last_err = None;
+        for deployment in &deployments {
+            match try_chat_with_retries(deployment, &state.client, &request).await {
+                Ok(resp) => {
+                    for ext in state.extensions.iter() {
+                        ext.on_response(&ctx, &request, &resp).await;
+                    }
+                    return Json(resp).into_response();
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+
+        let e = last_err.unwrap_or_else(|| {
+            crabtalk_core::Error::Internal("no providers available".to_string())
+        });
+        for ext in state.extensions.iter() {
+            ext.on_error(&ctx, &e).await;
+        }
+        error_response(e)
     }
 }
 
@@ -146,13 +164,14 @@ pub async fn embeddings<S: Storage + 'static>(
     Extension(key_name): Extension<KeyName>,
     Json(request): Json<EmbeddingRequest>,
 ) -> Response {
-    let provider = match state.registry.get(&request.model) {
-        Some(p) => p,
+    let model = state.registry.resolve(&request.model).to_string();
+    let deployments = match state.registry.dispatch_list(&model) {
+        Some(list) => list,
         None => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(ApiError::new(
-                    format!("model '{}' not found", request.model),
+                    format!("model '{model}' not found"),
                     "invalid_request_error",
                 )),
             )
@@ -163,13 +182,13 @@ pub async fn embeddings<S: Storage + 'static>(
     let provider_name = state
         .config
         .models()
-        .get(&request.model)
+        .get(&model)
         .cloned()
         .unwrap_or_default();
 
     let ctx = RequestContext {
-        request_id: String::new(),
-        model: request.model.clone(),
+        request_id: uuid::Uuid::new_v4().to_string(),
+        model: model.clone(),
         provider: provider_name,
         key_name: key_name.0,
         is_stream: false,
@@ -187,15 +206,20 @@ pub async fn embeddings<S: Storage + 'static>(
         }
     }
 
-    match provider.embedding(&state.client, &request).await {
-        Ok(resp) => Json(resp).into_response(),
-        Err(e) => {
-            for ext in state.extensions.iter() {
-                ext.on_error(&ctx, &e).await;
-            }
-            error_response(e)
+    let mut last_err = None;
+    for deployment in &deployments {
+        match try_embedding_with_retries(deployment, &state.client, &request).await {
+            Ok(resp) => return Json(resp).into_response(),
+            Err(e) => last_err = Some(e),
         }
     }
+
+    let e =
+        last_err.unwrap_or_else(|| crabtalk_core::Error::Internal("no providers available".into()));
+    for ext in state.extensions.iter() {
+        ext.on_error(&ctx, &e).await;
+    }
+    error_response(e)
 }
 
 /// GET /v1/models
@@ -216,6 +240,125 @@ pub async fn models<S: Storage + 'static>(State(state): State<AppState<S>>) -> J
         object: "list".to_string(),
         data,
     })
+}
+
+/// Retry a non-streaming chat completion on a single deployment.
+async fn try_chat_with_retries(
+    deployment: &Deployment,
+    client: &reqwest::Client,
+    request: &ChatCompletionRequest,
+) -> Result<crabtalk_core::ChatCompletionResponse, crabtalk_core::Error> {
+    let mut last_err;
+    match deployment.provider.chat_completion(client, request).await {
+        Ok(resp) => return Ok(resp),
+        Err(e) => {
+            if !e.is_transient() || deployment.max_retries == 0 {
+                return Err(e);
+            }
+            last_err = e;
+        }
+    }
+
+    let mut backoff = Duration::from_millis(100);
+    for _ in 0..deployment.max_retries {
+        tokio::time::sleep(backoff).await;
+        backoff *= 2;
+        match deployment.provider.chat_completion(client, request).await {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                if !e.is_transient() {
+                    return Err(e);
+                }
+                last_err = e;
+            }
+        }
+    }
+
+    Err(last_err)
+}
+
+/// Retry a streaming chat completion on a single deployment.
+async fn try_stream_with_retries(
+    deployment: &Deployment,
+    client: &reqwest::Client,
+    request: &ChatCompletionRequest,
+) -> Result<
+    futures::stream::BoxStream<
+        'static,
+        Result<crabtalk_core::ChatCompletionChunk, crabtalk_core::Error>,
+    >,
+    crabtalk_core::Error,
+> {
+    let mut last_err;
+    match deployment
+        .provider
+        .chat_completion_stream(client, request)
+        .await
+    {
+        Ok(stream) => return Ok(stream),
+        Err(e) => {
+            if !e.is_transient() || deployment.max_retries == 0 {
+                return Err(e);
+            }
+            last_err = e;
+        }
+    }
+
+    let mut backoff = Duration::from_millis(100);
+    for _ in 0..deployment.max_retries {
+        tokio::time::sleep(backoff).await;
+        backoff *= 2;
+        match deployment
+            .provider
+            .chat_completion_stream(client, request)
+            .await
+        {
+            Ok(stream) => return Ok(stream),
+            Err(e) => {
+                if !e.is_transient() {
+                    return Err(e);
+                }
+                last_err = e;
+            }
+        }
+    }
+
+    Err(last_err)
+}
+
+/// Retry an embedding request on a single deployment.
+async fn try_embedding_with_retries(
+    deployment: &Deployment,
+    client: &reqwest::Client,
+    request: &EmbeddingRequest,
+) -> Result<crabtalk_core::EmbeddingResponse, crabtalk_core::Error> {
+    let mut last_err;
+    match deployment.provider.embedding(client, request).await {
+        Ok(resp) => return Ok(resp),
+        Err(e) => {
+            if !e.is_transient() || deployment.max_retries == 0 {
+                return Err(e);
+            }
+            last_err = e;
+        }
+    }
+
+    let mut backoff = Duration::from_millis(100);
+    for _ in 0..deployment.max_retries {
+        tokio::time::sleep(backoff).await;
+        backoff *= 2;
+        match deployment.provider.embedding(client, request).await {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                if !e.is_transient() {
+                    return Err(e);
+                }
+                last_err = e;
+            }
+        }
+    }
+
+    Err(last_err)
 }
 
 /// Map a provider Error to an HTTP error response.

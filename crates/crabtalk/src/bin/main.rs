@@ -3,7 +3,10 @@ use crabtalk_core::{Extension, GatewayConfig, MemoryStorage, Storage};
 use crabtalk_provider::ProviderRegistry;
 use crabtalk_proxy::{
     AppState,
-    ext::{logging::RequestLogger, rate_limit::RateLimit, usage::UsageTracker},
+    ext::{
+        budget::Budget, cache::Cache, logging::RequestLogger, rate_limit::RateLimit,
+        usage::UsageTracker,
+    },
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -43,11 +46,48 @@ async fn main() {
         }
     };
 
-    // Build storage backend.
-    let storage = Arc::new(MemoryStorage::new());
+    let storage_kind = config
+        .storage
+        .as_ref()
+        .map(|s| s.kind.as_str())
+        .unwrap_or("memory");
 
-    // Build extensions from config.
-    let extensions = match build_extensions(&config, storage.clone()) {
+    match storage_kind {
+        #[cfg(feature = "storage-sqlite")]
+        "sqlite" => {
+            let path = config
+                .storage
+                .as_ref()
+                .and_then(|s| s.path.as_deref())
+                .unwrap_or("crabtalk.db");
+            let url = format!("sqlite:{path}?mode=rwc");
+            let storage = match crabtalk_core::SqliteStorage::open(&url).await {
+                Ok(s) => Arc::new(s),
+                Err(e) => {
+                    eprintln!("error: failed to open sqlite storage: {e}");
+                    std::process::exit(1);
+                }
+            };
+            run(config, registry, storage).await;
+        }
+        #[cfg(not(feature = "storage-sqlite"))]
+        "sqlite" => {
+            eprintln!("error: sqlite storage requires the 'storage-sqlite' feature");
+            std::process::exit(1);
+        }
+        _ => {
+            let storage = Arc::new(MemoryStorage::new());
+            run(config, registry, storage).await;
+        }
+    }
+}
+
+async fn run<S: Storage + 'static>(
+    config: GatewayConfig,
+    registry: ProviderRegistry,
+    storage: Arc<S>,
+) {
+    let extensions = match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
         Ok(exts) => exts,
         Err(e) => {
             eprintln!("error: failed to build extensions: {e}");
@@ -110,6 +150,14 @@ fn build_extensions(
                 let ext = UsageTracker::new(value, storage.clone())?;
                 extensions.push(Box::new(ext));
             }
+            "cache" => {
+                let ext = Cache::new(value, storage.clone())?;
+                extensions.push(Box::new(ext));
+            }
+            "budget" => {
+                let ext = Budget::new(value, storage.clone(), config.pricing.clone())?;
+                extensions.push(Box::new(ext));
+            }
             "logging" => {
                 let ext = RequestLogger::new(value)?;
                 extensions.push(Box::new(ext));
@@ -117,7 +165,7 @@ fn build_extensions(
             }
             unknown => {
                 return Err(format!(
-                    "unknown extension '{unknown}'. valid extensions: rate_limit, usage, logging"
+                    "unknown extension '{unknown}'. valid extensions: rate_limit, usage, cache, budget, logging"
                 ));
             }
         }

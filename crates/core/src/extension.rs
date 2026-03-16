@@ -1,5 +1,6 @@
 use crate::{
-    ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionResponse, Error, Prefix, storage_key,
+    ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
+    Prefix, storage_key,
 };
 use axum::Router;
 use std::time::Instant;
@@ -50,6 +51,15 @@ pub trait Extension: Send + Sync {
         storage_key(&self.prefix(), suffix)
     }
 
+    /// Check for a cached response before provider dispatch. Return `Some` to
+    /// skip the provider call entirely. Called for non-streaming requests only.
+    fn on_cache_lookup(
+        &self,
+        _request: &ChatCompletionRequest,
+    ) -> BoxFuture<'_, Option<ChatCompletionResponse>> {
+        Box::pin(async { None })
+    }
+
     /// Called post-auth, pre-dispatch. Return `Err` to short-circuit the pipeline
     /// (no provider call, no further extensions run).
     fn on_request(&self, _ctx: &RequestContext) -> BoxFuture<'_, Result<(), ExtensionError>> {
@@ -60,6 +70,7 @@ pub trait Extension: Send + Sync {
     fn on_response(
         &self,
         _ctx: &RequestContext,
+        _request: &ChatCompletionRequest,
         _response: &ChatCompletionResponse,
     ) -> BoxFuture<'_, ()> {
         Box::pin(async {})

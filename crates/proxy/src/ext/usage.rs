@@ -1,7 +1,7 @@
 use axum::{Json, Router, routing::get};
 use crabtalk_core::{
-    BoxFuture, ChatCompletionChunk, ChatCompletionResponse, Prefix, RequestContext, Storage,
-    storage_key,
+    BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Prefix,
+    RequestContext, Storage, storage_key,
 };
 use serde::Serialize;
 use std::sync::Arc;
@@ -58,6 +58,7 @@ impl crabtalk_core::Extension for UsageTracker {
     fn on_response(
         &self,
         ctx: &RequestContext,
+        _request: &ChatCompletionRequest,
         response: &ChatCompletionResponse,
     ) -> BoxFuture<'_, ()> {
         let key_name = ctx

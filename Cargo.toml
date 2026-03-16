@@ -27,5 +27,9 @@ tokio = { version = "1", features = ["full"] }
 dashmap = "6"
 toml = "0.8"
 tower = "0.5"
+rand = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }

@@ -4,7 +4,7 @@ use crabtalk_core::{
 };
 use futures::stream::{BoxStream, StreamExt};
 
-pub use registry::ProviderRegistry;
+pub use registry::{Deployment, ProviderRegistry};
 
 mod provider;
 mod registry;
@@ -12,7 +12,7 @@ mod registry;
 /// A configured provider instance, ready to dispatch requests.
 #[derive(Debug, Clone)]
 pub enum Provider {
-    /// OpenAI-compatible providers (OpenAI, Azure, Ollama, vLLM, Groq, etc.).
+    /// OpenAI-compatible providers (OpenAI, Ollama, vLLM, Groq, etc.).
     /// Request body is forwarded as-is with URL + auth rewrite.
     OpenAiCompat { base_url: String, api_key: String },
     /// Anthropic Messages API. Requires request/response translation.
@@ -24,6 +24,12 @@ pub enum Provider {
         region: String,
         access_key: String,
         secret_key: String,
+    },
+    /// Azure OpenAI. Uses deployment-based URL and api-key header.
+    Azure {
+        base_url: String,
+        api_key: String,
+        api_version: String,
     },
 }
 
@@ -41,8 +47,18 @@ impl Provider {
             Provider::Anthropic { api_key } => {
                 provider::anthropic::chat_completion(client, api_key, request).await
             }
-            Provider::Google { .. } => Err(provider::google::not_implemented("chat")),
+            Provider::Google { api_key } => {
+                provider::google::chat_completion(client, api_key, request).await
+            }
             Provider::Bedrock { .. } => Err(provider::bedrock::not_implemented("chat")),
+            Provider::Azure {
+                base_url,
+                api_key,
+                api_version,
+            } => {
+                provider::azure::chat_completion(client, base_url, api_key, api_version, request)
+                    .await
+            }
         }
     }
 
@@ -59,6 +75,11 @@ impl Provider {
             Provider::Anthropic { .. } => Err(provider::anthropic::not_implemented("embedding")),
             Provider::Google { .. } => Err(provider::google::not_implemented("embedding")),
             Provider::Bedrock { .. } => Err(provider::bedrock::not_implemented("embedding")),
+            Provider::Azure {
+                base_url,
+                api_key,
+                api_version,
+            } => provider::azure::embedding(client, base_url, api_key, api_version, request).await,
         }
     }
 
@@ -86,8 +107,32 @@ impl Provider {
                 .await?;
                 Ok(s.boxed())
             }
-            Provider::Google { .. } => Err(provider::google::not_implemented("streaming")),
+            Provider::Google { api_key } => {
+                let s = provider::google::chat_completion_stream(
+                    client,
+                    api_key,
+                    request,
+                    &request.model,
+                )
+                .await?;
+                Ok(s.boxed())
+            }
             Provider::Bedrock { .. } => Err(provider::bedrock::not_implemented("streaming")),
+            Provider::Azure {
+                base_url,
+                api_key,
+                api_version,
+            } => {
+                let s = provider::azure::chat_completion_stream(
+                    client,
+                    base_url,
+                    api_key,
+                    api_version,
+                    request,
+                )
+                .await?;
+                Ok(s.boxed())
+            }
         }
     }
 }

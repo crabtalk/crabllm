@@ -9,6 +9,9 @@ keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
 
+[features]
+storage-sqlite = ["crabtalk-core/storage-sqlite"]
+
 [[bin]]
 name = "crabtalk"
 path = "src/bin/main.rs"

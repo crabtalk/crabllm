@@ -9,10 +9,17 @@ keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
 
+[features]
+storage-sqlite = ["sqlx"]
+
 [dependencies]
 # crates-io
 axum.workspace = true
 dashmap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
 toml.workspace = true
+
+# optional
+sqlx = { workspace = true, optional = true }

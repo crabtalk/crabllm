@@ -1,6 +1,6 @@
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
-    Error, Message, Usage,
+    Error, FunctionCall, FunctionCallDelta, Message, ToolCall, ToolCallDelta, Usage,
 };
 use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
@@ -23,12 +23,51 @@ struct AnthropicRequest {
     top_p: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<AnthropicTool>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
 struct AnthropicMessage {
     role: String,
-    content: String,
+    content: AnthropicContent,
+}
+
+/// Message content: either a plain string or an array of content blocks.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum AnthropicContent {
+    Text(String),
+    Blocks(Vec<AnthropicContentBlock>),
+}
+
+/// A content block in a message (text, tool_use, or tool_result).
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum AnthropicContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+    },
+}
+
+#[derive(Serialize)]
+struct AnthropicTool {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    input_schema: serde_json::Value,
 }
 
 // ── Anthropic-native response types ──
@@ -37,17 +76,23 @@ struct AnthropicMessage {
 struct AnthropicResponse {
     id: String,
     model: String,
-    content: Vec<ContentBlock>,
+    content: Vec<ResponseContentBlock>,
     stop_reason: Option<String>,
     usage: AnthropicUsage,
 }
 
 #[derive(Deserialize)]
-struct ContentBlock {
+struct ResponseContentBlock {
     #[serde(rename = "type")]
     kind: String,
     #[serde(default)]
     text: String,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    input: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -62,8 +107,13 @@ struct AnthropicUsage {
 struct SseEvent {
     #[serde(rename = "type")]
     kind: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    index: Option<u32>,
     #[serde(default)]
     delta: Option<SseDelta>,
+    #[serde(default)]
+    content_block: Option<SseContentBlock>,
     #[serde(default)]
     usage: Option<AnthropicUsage>,
 }
@@ -75,7 +125,19 @@ struct SseDelta {
     #[serde(default)]
     text: String,
     #[serde(default)]
+    partial_json: Option<String>,
+    #[serde(default)]
     stop_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SseContentBlock {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
 }
 
 // ── Translation ──
@@ -91,6 +153,53 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
             {
                 system_parts.push(s.to_string());
             }
+        } else if msg.role == "tool" {
+            // Tool result → user message with tool_result content block.
+            let content_str = msg
+                .content
+                .as_ref()
+                .map(|c| {
+                    if let Some(s) = c.as_str() {
+                        s.to_string()
+                    } else {
+                        c.to_string()
+                    }
+                })
+                .unwrap_or_default();
+            let tool_use_id = msg.tool_call_id.clone().unwrap_or_default();
+            messages.push(AnthropicMessage {
+                role: "user".to_string(),
+                content: AnthropicContent::Blocks(vec![AnthropicContentBlock::ToolResult {
+                    tool_use_id,
+                    content: content_str,
+                }]),
+            });
+        } else if msg.role == "assistant"
+            && let Some(tool_calls) = &msg.tool_calls
+        {
+            // Assistant message with tool_calls → content blocks.
+            let mut blocks = Vec::new();
+            if let Some(content) = &msg.content
+                && let Some(s) = content.as_str()
+                && !s.is_empty()
+            {
+                blocks.push(AnthropicContentBlock::Text {
+                    text: s.to_string(),
+                });
+            }
+            for tc in tool_calls {
+                let input = serde_json::from_str(&tc.function.arguments)
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                blocks.push(AnthropicContentBlock::ToolUse {
+                    id: tc.id.clone(),
+                    name: tc.function.name.clone(),
+                    input,
+                });
+            }
+            messages.push(AnthropicMessage {
+                role: "assistant".to_string(),
+                content: AnthropicContent::Blocks(blocks),
+            });
         } else {
             let content = msg
                 .content
@@ -100,7 +209,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                 .to_string();
             messages.push(AnthropicMessage {
                 role: msg.role.clone(),
-                content,
+                content: AnthropicContent::Text(content),
             });
         }
     }
@@ -111,6 +220,35 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
         Some(system_parts.join("\n"))
     };
 
+    let tools = request.tools.as_ref().map(|tools| {
+        tools
+            .iter()
+            .map(|t| AnthropicTool {
+                name: t.function.name.clone(),
+                description: t.function.description.clone(),
+                input_schema: t
+                    .function
+                    .parameters
+                    .clone()
+                    .unwrap_or(serde_json::json!({"type": "object"})),
+            })
+            .collect()
+    });
+
+    let tool_choice = request.tool_choice.as_ref().map(|tc| {
+        if let Some(s) = tc.as_str() {
+            match s {
+                "auto" | "none" => serde_json::json!({"type": "auto"}),
+                "required" => serde_json::json!({"type": "any"}),
+                _ => serde_json::json!({"type": "auto"}),
+            }
+        } else if let Some(name) = tc.get("function").and_then(|f| f.get("name")) {
+            serde_json::json!({"type": "tool", "name": name})
+        } else {
+            serde_json::json!({"type": "auto"})
+        }
+    });
+
     AnthropicRequest {
         model: request.model.clone(),
         messages,
@@ -119,6 +257,8 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
         temperature: request.temperature,
         top_p: request.top_p,
         stream: request.stream,
+        tools,
+        tool_choice,
     }
 }
 
@@ -126,18 +266,46 @@ fn map_stop_reason(stop_reason: &Option<String>) -> Option<String> {
     stop_reason.as_ref().map(|r| match r.as_str() {
         "end_turn" => "stop".to_string(),
         "max_tokens" => "length".to_string(),
+        "tool_use" => "tool_calls".to_string(),
         other => other.to_string(),
     })
 }
 
 fn translate_response(resp: AnthropicResponse) -> ChatCompletionResponse {
-    let content_text: String = resp
-        .content
-        .iter()
-        .filter(|b| b.kind == "text")
-        .map(|b| b.text.as_str())
-        .collect::<Vec<_>>()
-        .join("");
+    let mut content_text = String::new();
+    let mut tool_calls = Vec::new();
+
+    for block in &resp.content {
+        match block.kind.as_str() {
+            "text" => content_text.push_str(&block.text),
+            "tool_use" => {
+                if let (Some(id), Some(name), Some(input)) = (&block.id, &block.name, &block.input)
+                {
+                    tool_calls.push(ToolCall {
+                        id: id.clone(),
+                        kind: "function".to_string(),
+                        function: FunctionCall {
+                            name: name.clone(),
+                            arguments: serde_json::to_string(input).unwrap_or_default(),
+                        },
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let tool_calls_opt = if tool_calls.is_empty() {
+        None
+    } else {
+        Some(tool_calls)
+    };
+
+    let content = if content_text.is_empty() && tool_calls_opt.is_some() {
+        None
+    } else {
+        Some(serde_json::Value::String(content_text))
+    };
 
     ChatCompletionResponse {
         id: resp.id,
@@ -148,8 +316,8 @@ fn translate_response(resp: AnthropicResponse) -> ChatCompletionResponse {
             index: 0,
             message: Message {
                 role: "assistant".to_string(),
-                content: Some(serde_json::Value::String(content_text)),
-                tool_calls: None,
+                content,
+                tool_calls: tool_calls_opt,
                 tool_call_id: None,
                 name: None,
             },
@@ -231,15 +399,25 @@ pub async fn chat_completion_stream(
     Ok(anthropic_sse_stream(resp, model))
 }
 
+/// Streaming state: tracks chunk counter and tool call counter for indexing.
+struct StreamState {
+    chunk_idx: u64,
+    tool_call_idx: u32,
+}
+
 fn anthropic_sse_stream(
     resp: reqwest::Response,
     model: String,
 ) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> {
     let byte_stream = resp.bytes_stream();
+    let state = StreamState {
+        chunk_idx: 0,
+        tool_call_idx: 0,
+    };
 
     stream::unfold(
-        (byte_stream, String::new(), model, 0u64),
-        |(mut byte_stream, mut buffer, model, mut chunk_idx)| async move {
+        (byte_stream, String::new(), model, state),
+        |(mut byte_stream, mut buffer, model, mut state)| async move {
             use futures::TryStreamExt;
 
             loop {
@@ -252,7 +430,6 @@ fn anthropic_sse_stream(
                     }
 
                     let Some(data) = line.strip_prefix("data: ") else {
-                        // Skip event: lines and other non-data lines.
                         continue;
                     };
                     let data = data.trim();
@@ -263,40 +440,113 @@ fn anthropic_sse_stream(
                     };
 
                     match event.kind.as_str() {
-                        "content_block_delta" => {
-                            if let Some(delta) = &event.delta
-                                && delta.kind == "text_delta"
+                        "content_block_start" => {
+                            // Tool use block start: emit initial ToolCallDelta.
+                            if let Some(cb) = &event.content_block
+                                && cb.kind == "tool_use"
                             {
-                                chunk_idx += 1;
+                                state.chunk_idx += 1;
+                                let tool_idx = state.tool_call_idx;
+                                state.tool_call_idx += 1;
                                 let chunk = ChatCompletionChunk {
-                                    id: format!("chatcmpl-{chunk_idx}"),
+                                    id: format!("chatcmpl-{}", state.chunk_idx),
                                     object: "chat.completion.chunk".to_string(),
                                     created: 0,
                                     model: model.clone(),
                                     choices: vec![ChunkChoice {
                                         index: 0,
                                         delta: Delta {
-                                            role: if chunk_idx == 1 {
+                                            role: if state.chunk_idx == 1 {
                                                 Some("assistant".to_string())
                                             } else {
                                                 None
                                             },
-                                            content: Some(delta.text.clone()),
-                                            tool_calls: None,
+                                            content: None,
+                                            tool_calls: Some(vec![ToolCallDelta {
+                                                index: tool_idx,
+                                                id: cb.id.clone(),
+                                                kind: Some("function".to_string()),
+                                                function: Some(FunctionCallDelta {
+                                                    name: cb.name.clone(),
+                                                    arguments: Some(String::new()),
+                                                }),
+                                            }]),
                                         },
                                         finish_reason: None,
                                     }],
                                     usage: None,
                                 };
-                                return Some((Ok(chunk), (byte_stream, buffer, model, chunk_idx)));
+                                return Some((Ok(chunk), (byte_stream, buffer, model, state)));
+                            }
+                        }
+                        "content_block_delta" => {
+                            if let Some(delta) = &event.delta {
+                                if delta.kind == "text_delta" {
+                                    state.chunk_idx += 1;
+                                    let chunk = ChatCompletionChunk {
+                                        id: format!("chatcmpl-{}", state.chunk_idx),
+                                        object: "chat.completion.chunk".to_string(),
+                                        created: 0,
+                                        model: model.clone(),
+                                        choices: vec![ChunkChoice {
+                                            index: 0,
+                                            delta: Delta {
+                                                role: if state.chunk_idx == 1 {
+                                                    Some("assistant".to_string())
+                                                } else {
+                                                    None
+                                                },
+                                                content: Some(delta.text.clone()),
+                                                tool_calls: None,
+                                            },
+                                            finish_reason: None,
+                                        }],
+                                        usage: None,
+                                    };
+                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
+                                } else if delta.kind == "input_json_delta" {
+                                    // Tool input delta: emit ToolCallDelta with partial JSON.
+                                    if let Some(partial) = &delta.partial_json {
+                                        state.chunk_idx += 1;
+                                        let tool_idx = state.tool_call_idx.saturating_sub(1);
+                                        let chunk = ChatCompletionChunk {
+                                            id: format!("chatcmpl-{}", state.chunk_idx),
+                                            object: "chat.completion.chunk".to_string(),
+                                            created: 0,
+                                            model: model.clone(),
+                                            choices: vec![ChunkChoice {
+                                                index: 0,
+                                                delta: Delta {
+                                                    role: None,
+                                                    content: None,
+                                                    tool_calls: Some(vec![ToolCallDelta {
+                                                        index: tool_idx,
+                                                        id: None,
+                                                        kind: None,
+                                                        function: Some(FunctionCallDelta {
+                                                            name: None,
+                                                            arguments: Some(partial.clone()),
+                                                        }),
+                                                    }]),
+                                                },
+                                                finish_reason: None,
+                                            }],
+                                            usage: None,
+                                        };
+                                        return Some((
+                                            Ok(chunk),
+                                            (byte_stream, buffer, model, state),
+                                        ));
+                                    }
+                                }
                             }
                         }
                         "message_delta" => {
                             if let Some(delta) = &event.delta {
                                 let finish_reason = map_stop_reason(&delta.stop_reason);
-                                chunk_idx += 1;
+                                state.chunk_idx += 1;
                                 let chunk = ChatCompletionChunk {
-                                    id: format!("chatcmpl-{chunk_idx}"),
+                                    id: format!("chatcmpl-{}", state.chunk_idx),
                                     object: "chat.completion.chunk".to_string(),
                                     created: 0,
                                     model: model.clone(),
@@ -315,11 +565,10 @@ fn anthropic_sse_stream(
                                         total_tokens: u.input_tokens + u.output_tokens,
                                     }),
                                 };
-                                return Some((Ok(chunk), (byte_stream, buffer, model, chunk_idx)));
+                                return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                             }
                         }
                         "message_stop" => return None,
-                        // Ignore: message_start, content_block_start, content_block_stop, ping
                         _ => continue,
                     }
                 }
@@ -332,7 +581,7 @@ fn anthropic_sse_stream(
                     Err(e) => {
                         return Some((
                             Err(Error::Internal(format!("stream error: {e}"))),
-                            (byte_stream, buffer, model, chunk_idx),
+                            (byte_stream, buffer, model, state),
                         ));
                     }
                 }

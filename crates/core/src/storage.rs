@@ -109,6 +109,13 @@ impl Storage for MemoryStorage {
                     result.push((entry.key().clone(), entry.value().clone()));
                 }
             }
+            // Also include counter keys (used by rate_limit, usage, budget).
+            for entry in self.counters.iter() {
+                if entry.key().starts_with(&prefix) {
+                    let val = entry.value().load(Ordering::Relaxed);
+                    result.push((entry.key().clone(), val.to_le_bytes().to_vec()));
+                }
+            }
             Ok(result)
         })
     }
