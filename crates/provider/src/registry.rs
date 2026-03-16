@@ -57,9 +57,33 @@ impl ProviderRegistry {
                         api_key: provider_config.api_key.clone(),
                     }
                 }
+                #[cfg(feature = "provider-bedrock")]
+                ProviderKind::Bedrock => {
+                    let region = provider_config.region.clone().ok_or_else(|| {
+                        Error::Config(format!(
+                            "provider '{provider_name}' (bedrock) requires a region",
+                        ))
+                    })?;
+                    let access_key = provider_config.access_key.clone().ok_or_else(|| {
+                        Error::Config(format!(
+                            "provider '{provider_name}' (bedrock) requires an access_key",
+                        ))
+                    })?;
+                    let secret_key = provider_config.secret_key.clone().ok_or_else(|| {
+                        Error::Config(format!(
+                            "provider '{provider_name}' (bedrock) requires a secret_key",
+                        ))
+                    })?;
+                    Provider::Bedrock {
+                        region,
+                        access_key,
+                        secret_key,
+                    }
+                }
+                #[cfg(not(feature = "provider-bedrock"))]
                 ProviderKind::Bedrock => {
                     return Err(Error::Config(format!(
-                        "provider '{provider_name}' (bedrock) is not yet supported",
+                        "provider '{provider_name}' (bedrock) requires the 'provider-bedrock' feature",
                     )));
                 }
                 ProviderKind::Ollama => {

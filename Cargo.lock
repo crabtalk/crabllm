@@ -331,10 +331,12 @@ version = "0.0.3"
 dependencies = [
  "crabtalk-core",
  "futures",
+ "hmac",
  "rand 0.9.2",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 

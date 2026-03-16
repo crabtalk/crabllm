@@ -50,6 +50,16 @@ impl Provider {
             Provider::Google { api_key } => {
                 provider::google::chat_completion(client, api_key, request).await
             }
+            #[cfg(feature = "provider-bedrock")]
+            Provider::Bedrock {
+                region,
+                access_key,
+                secret_key,
+            } => {
+                provider::bedrock::chat_completion(client, region, access_key, secret_key, request)
+                    .await
+            }
+            #[cfg(not(feature = "provider-bedrock"))]
             Provider::Bedrock { .. } => Err(provider::bedrock::not_implemented("chat")),
             Provider::Azure {
                 base_url,
@@ -117,6 +127,24 @@ impl Provider {
                 .await?;
                 Ok(s.boxed())
             }
+            #[cfg(feature = "provider-bedrock")]
+            Provider::Bedrock {
+                region,
+                access_key,
+                secret_key,
+            } => {
+                let s = provider::bedrock::chat_completion_stream(
+                    client,
+                    region,
+                    access_key,
+                    secret_key,
+                    request,
+                    &request.model,
+                )
+                .await?;
+                Ok(s.boxed())
+            }
+            #[cfg(not(feature = "provider-bedrock"))]
             Provider::Bedrock { .. } => Err(provider::bedrock::not_implemented("streaming")),
             Provider::Azure {
                 base_url,

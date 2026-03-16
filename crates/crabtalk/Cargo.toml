@@ -11,6 +11,7 @@ readme = "README.md"
 
 [features]
 storage-sqlite = ["crabtalk-core/storage-sqlite"]
+provider-bedrock = ["crabtalk-provider/provider-bedrock"]
 
 [[bin]]
 name = "crabtalk"

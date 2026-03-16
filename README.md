@@ -14,13 +14,39 @@ One API format. Many providers. Low overhead.
 
 ## Features
 
-- OpenAI-compatible API (`/v1/chat/completions`, `/v1/embeddings`, `/v1/models`)
-- Multi-provider support (OpenAI, Anthropic, Azure, Ollama, vLLM, Groq, and more)
-- SSE streaming pass-through
-- Anthropic Messages API translation (automatic OpenAI ↔ Anthropic format conversion)
-- API key authentication with virtual keys
-- TOML configuration with `${ENV_VAR}` interpolation
-- Single static binary
+Inspired by [LiteLLM][litellm]. Built in Rust for minimal overhead.
+
+| Feature | LiteLLM | Crabtalk |
+|---------|:-------:|:--------:|
+| `/chat/completions` | ✅ | ✅ |
+| `/embeddings` | ✅ | ✅ |
+| `/models` | ✅ | ✅ |
+| OpenAI provider | ✅ | ✅ |
+| Anthropic provider | ✅ | ✅ |
+| Google Gemini provider | ✅ | ✅ |
+| Azure OpenAI provider | ✅ | ✅ |
+| AWS Bedrock provider | ✅ | ✅ |
+| Tool/function calling | ✅ | ✅ |
+| SSE streaming | ✅ | ✅ |
+| Virtual keys + auth | ✅ | ✅ |
+| Weighted routing | ✅ | ✅ |
+| Model aliasing | ✅ | ✅ |
+| Retry + fallback | ✅ | ✅ |
+| Request timeouts | ✅ | ✅ |
+| Rate limiting (RPM) | ✅ | ✅ |
+| Cost/usage tracking | ✅ | ✅ |
+| Budget enforcement | ✅ | ✅ |
+| Request caching | ✅ | ✅ |
+| Graceful shutdown | ✅ | ✅ |
+| Storage (memory) | ✅ | ✅ |
+| Storage (persistent) | ✅ Postgres | ✅ SQLite |
+| `/completions` (text) | ✅ | — |
+| Image/audio endpoints | ✅ | — |
+| Rate limiting (TPM) | ✅ | — |
+| Redis cache | ✅ | — |
+| Dashboard/UI | ✅ | — |
+
+[litellm]: https://github.com/BerriAI/litellm
 
 ## Quick Start
 

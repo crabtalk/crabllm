@@ -70,6 +70,15 @@ pub struct ProviderConfig {
     /// Per-request timeout in seconds. Default: 30.
     #[serde(default = "default_timeout")]
     pub timeout: u64,
+    /// AWS region for Bedrock provider.
+    #[serde(default)]
+    pub region: Option<String>,
+    /// AWS access key ID for Bedrock provider.
+    #[serde(default)]
+    pub access_key: Option<String>,
+    /// AWS secret access key for Bedrock provider.
+    #[serde(default, skip_serializing)]
+    pub secret_key: Option<String>,
 }
 
 fn default_weight() -> u16 {
