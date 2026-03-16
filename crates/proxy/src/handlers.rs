@@ -13,6 +13,7 @@ use crabtalk_core::{
 };
 use crabtalk_provider::Deployment;
 use futures::StreamExt;
+use rand::Rng;
 use std::time::{Duration, Instant};
 
 /// POST /v1/chat/completions
@@ -242,6 +243,27 @@ pub async fn models<S: Storage + 'static>(State(state): State<AppState<S>>) -> J
     })
 }
 
+/// Call a provider with a timeout, converting elapsed to Error::Timeout.
+/// A zero duration disables the timeout.
+async fn with_timeout<F, T>(timeout: Duration, fut: F) -> Result<T, crabtalk_core::Error>
+where
+    F: std::future::Future<Output = Result<T, crabtalk_core::Error>>,
+{
+    if timeout.is_zero() {
+        return fut.await;
+    }
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(result) => result,
+        Err(_elapsed) => Err(crabtalk_core::Error::Timeout),
+    }
+}
+
+/// Apply full jitter: random duration in [backoff/2, backoff].
+fn jittered(backoff: Duration) -> Duration {
+    let lo = backoff / 2;
+    rand::rng().random_range(lo..=backoff)
+}
+
 /// Retry a non-streaming chat completion on a single deployment.
 async fn try_chat_with_retries(
     deployment: &Deployment,
@@ -249,7 +271,12 @@ async fn try_chat_with_retries(
     request: &ChatCompletionRequest,
 ) -> Result<crabtalk_core::ChatCompletionResponse, crabtalk_core::Error> {
     let mut last_err;
-    match deployment.provider.chat_completion(client, request).await {
+    match with_timeout(
+        deployment.timeout,
+        deployment.provider.chat_completion(client, request),
+    )
+    .await
+    {
         Ok(resp) => return Ok(resp),
         Err(e) => {
             if !e.is_transient() || deployment.max_retries == 0 {
@@ -261,9 +288,14 @@ async fn try_chat_with_retries(
 
     let mut backoff = Duration::from_millis(100);
     for _ in 0..deployment.max_retries {
-        tokio::time::sleep(backoff).await;
+        tokio::time::sleep(jittered(backoff)).await;
         backoff *= 2;
-        match deployment.provider.chat_completion(client, request).await {
+        match with_timeout(
+            deployment.timeout,
+            deployment.provider.chat_completion(client, request),
+        )
+        .await
+        {
             Ok(resp) => return Ok(resp),
             Err(e) => {
                 if !e.is_transient() {
@@ -290,10 +322,11 @@ async fn try_stream_with_retries(
     crabtalk_core::Error,
 > {
     let mut last_err;
-    match deployment
-        .provider
-        .chat_completion_stream(client, request)
-        .await
+    match with_timeout(
+        deployment.timeout,
+        deployment.provider.chat_completion_stream(client, request),
+    )
+    .await
     {
         Ok(stream) => return Ok(stream),
         Err(e) => {
@@ -306,12 +339,13 @@ async fn try_stream_with_retries(
 
     let mut backoff = Duration::from_millis(100);
     for _ in 0..deployment.max_retries {
-        tokio::time::sleep(backoff).await;
+        tokio::time::sleep(jittered(backoff)).await;
         backoff *= 2;
-        match deployment
-            .provider
-            .chat_completion_stream(client, request)
-            .await
+        match with_timeout(
+            deployment.timeout,
+            deployment.provider.chat_completion_stream(client, request),
+        )
+        .await
         {
             Ok(stream) => return Ok(stream),
             Err(e) => {
@@ -333,7 +367,12 @@ async fn try_embedding_with_retries(
     request: &EmbeddingRequest,
 ) -> Result<crabtalk_core::EmbeddingResponse, crabtalk_core::Error> {
     let mut last_err;
-    match deployment.provider.embedding(client, request).await {
+    match with_timeout(
+        deployment.timeout,
+        deployment.provider.embedding(client, request),
+    )
+    .await
+    {
         Ok(resp) => return Ok(resp),
         Err(e) => {
             if !e.is_transient() || deployment.max_retries == 0 {
@@ -345,9 +384,14 @@ async fn try_embedding_with_retries(
 
     let mut backoff = Duration::from_millis(100);
     for _ in 0..deployment.max_retries {
-        tokio::time::sleep(backoff).await;
+        tokio::time::sleep(jittered(backoff)).await;
         backoff *= 2;
-        match deployment.provider.embedding(client, request).await {
+        match with_timeout(
+            deployment.timeout,
+            deployment.provider.embedding(client, request),
+        )
+        .await
+        {
             Ok(resp) => return Ok(resp),
             Err(e) => {
                 if !e.is_transient() {
@@ -367,6 +411,10 @@ fn error_response(e: crabtalk_core::Error) -> Response {
         crabtalk_core::Error::Provider { status, body } => (
             StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY),
             ApiError::new(body.clone(), "upstream_error"),
+        ),
+        crabtalk_core::Error::Timeout => (
+            StatusCode::GATEWAY_TIMEOUT,
+            ApiError::new(e.to_string(), "timeout_error"),
         ),
         _ => (
             StatusCode::INTERNAL_SERVER_ERROR,

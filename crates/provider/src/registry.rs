@@ -1,7 +1,7 @@
 use crate::Provider;
 use crabtalk_core::{Error, GatewayConfig, ProviderKind};
 use rand::Rng;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 /// A provider entry with its routing weight and retry config.
 #[derive(Debug, Clone)]
@@ -9,6 +9,7 @@ pub struct Deployment {
     pub provider: Provider,
     pub weight: u16,
     pub max_retries: u32,
+    pub timeout: Duration,
 }
 
 /// Maps model names to weighted provider lists for routing.
@@ -94,6 +95,7 @@ impl ProviderRegistry {
                 provider,
                 weight: provider_config.weight,
                 max_retries: provider_config.max_retries,
+                timeout: Duration::from_secs(provider_config.timeout),
             };
             for model_name in &provider_config.models {
                 providers

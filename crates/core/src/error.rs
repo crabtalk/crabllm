@@ -12,6 +12,8 @@ pub enum Error {
     Json(serde_json::Error),
     /// Catch-all for internal errors.
     Internal(String),
+    /// Request to upstream provider timed out.
+    Timeout,
 }
 
 impl fmt::Display for Error {
@@ -23,6 +25,7 @@ impl fmt::Display for Error {
             }
             Error::Json(e) => write!(f, "json error: {e}"),
             Error::Internal(msg) => write!(f, "internal error: {msg}"),
+            Error::Timeout => write!(f, "request timed out"),
         }
     }
 }
@@ -34,7 +37,7 @@ impl Error {
     pub fn is_transient(&self) -> bool {
         match self {
             Error::Provider { status, .. } => matches!(status, 429 | 500 | 502 | 503 | 504),
-            Error::Internal(_) => true,
+            Error::Internal(_) | Error::Timeout => true,
             _ => false,
         }
     }

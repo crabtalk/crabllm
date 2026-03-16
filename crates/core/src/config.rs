@@ -39,6 +39,9 @@ pub struct GatewayConfig {
     /// Per-model token pricing for cost tracking and budget enforcement.
     #[serde(default)]
     pub pricing: HashMap<String, PricingConfig>,
+    /// Graceful shutdown timeout in seconds. Default: 30.
+    #[serde(default = "default_shutdown_timeout")]
+    pub shutdown_timeout: u64,
 }
 
 /// Configuration for a single LLM provider.
@@ -64,6 +67,9 @@ pub struct ProviderConfig {
     /// API version string, used by Azure OpenAI.
     #[serde(default)]
     pub api_version: Option<String>,
+    /// Per-request timeout in seconds. Default: 30.
+    #[serde(default = "default_timeout")]
+    pub timeout: u64,
 }
 
 fn default_weight() -> u16 {
@@ -72,6 +78,14 @@ fn default_weight() -> u16 {
 
 fn default_max_retries() -> u32 {
     2
+}
+
+fn default_timeout() -> u64 {
+    30
+}
+
+fn default_shutdown_timeout() -> u64 {
+    30
 }
 
 /// Which provider implementation to use.
