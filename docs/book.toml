@@ -1,0 +1,9 @@
+[book]
+title = "Crabtalk"
+description = "High-performance LLM API gateway"
+authors = ["clearloop"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/clearloop/crabtalk"
