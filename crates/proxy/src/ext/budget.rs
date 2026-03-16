@@ -180,14 +180,18 @@ async fn budget_handler(
     let pairs = storage.list(&prefix).await.unwrap_or_default();
 
     let mut entries = Vec::new();
-    for (raw_key, _) in &pairs {
+    for (raw_key, raw_value) in &pairs {
         let suffix = match std::str::from_utf8(&raw_key[crabtalk_core::PREFIX_LEN..]) {
             Ok(s) => s,
             Err(_) => continue,
         };
 
-        let counter_key = storage_key(&prefix, suffix.as_bytes());
-        let spent_micros = storage.increment(&counter_key, 0).await.unwrap_or(0);
+        // Parse the counter value directly from the list() result bytes.
+        let spent_micros = raw_value
+            .get(..8)
+            .and_then(|b| b.try_into().ok())
+            .map(i64::from_le_bytes)
+            .unwrap_or(0);
 
         let budget_micros = key_budgets
             .get(suffix)

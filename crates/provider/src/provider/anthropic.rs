@@ -416,32 +416,46 @@ fn anthropic_sse_stream(
     };
 
     stream::unfold(
-        (byte_stream, String::new(), model, state),
+        (byte_stream, Vec::<u8>::new(), model, state),
         |(mut byte_stream, mut buffer, model, mut state)| async move {
             use futures::TryStreamExt;
 
             loop {
-                if let Some(newline_pos) = buffer.find('\n') {
-                    let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
-                    buffer = buffer[newline_pos + 1..].to_string();
+                if let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let mut line_end = newline_pos;
+                    if line_end > 0 && buffer[line_end - 1] == b'\r' {
+                        line_end -= 1;
+                    }
+                    let line = &buffer[..line_end];
 
                     if line.is_empty() {
+                        buffer.drain(..newline_pos + 1);
                         continue;
                     }
 
-                    let Some(data) = line.strip_prefix("data: ") else {
+                    let Some(data) = line.strip_prefix(b"data: ") else {
+                        buffer.drain(..newline_pos + 1);
                         continue;
                     };
-                    let data = data.trim();
+                    let data = match std::str::from_utf8(data) {
+                        Ok(s) => s.trim(),
+                        Err(_) => {
+                            buffer.drain(..newline_pos + 1);
+                            continue;
+                        }
+                    };
 
                     let event: SseEvent = match serde_json::from_str(data) {
                         Ok(e) => e,
-                        Err(_) => continue,
+                        Err(_) => {
+                            buffer.drain(..newline_pos + 1);
+                            continue;
+                        }
                     };
+                    buffer.drain(..newline_pos + 1);
 
                     match event.kind.as_str() {
                         "content_block_start" => {
-                            // Tool use block start: emit initial ToolCallDelta.
                             if let Some(cb) = &event.content_block
                                 && cb.kind == "tool_use"
                             {
@@ -504,40 +518,36 @@ fn anthropic_sse_stream(
                                         usage: None,
                                     };
                                     return Some((Ok(chunk), (byte_stream, buffer, model, state)));
-                                } else if delta.kind == "input_json_delta" {
-                                    // Tool input delta: emit ToolCallDelta with partial JSON.
-                                    if let Some(partial) = &delta.partial_json {
-                                        state.chunk_idx += 1;
-                                        let tool_idx = state.tool_call_idx.saturating_sub(1);
-                                        let chunk = ChatCompletionChunk {
-                                            id: format!("chatcmpl-{}", state.chunk_idx),
-                                            object: "chat.completion.chunk".to_string(),
-                                            created: 0,
-                                            model: model.clone(),
-                                            choices: vec![ChunkChoice {
-                                                index: 0,
-                                                delta: Delta {
-                                                    role: None,
-                                                    content: None,
-                                                    tool_calls: Some(vec![ToolCallDelta {
-                                                        index: tool_idx,
-                                                        id: None,
-                                                        kind: None,
-                                                        function: Some(FunctionCallDelta {
-                                                            name: None,
-                                                            arguments: Some(partial.clone()),
-                                                        }),
-                                                    }]),
-                                                },
-                                                finish_reason: None,
-                                            }],
-                                            usage: None,
-                                        };
-                                        return Some((
-                                            Ok(chunk),
-                                            (byte_stream, buffer, model, state),
-                                        ));
-                                    }
+                                } else if delta.kind == "input_json_delta"
+                                    && let Some(partial) = &delta.partial_json
+                                {
+                                    state.chunk_idx += 1;
+                                    let tool_idx = state.tool_call_idx.saturating_sub(1);
+                                    let chunk = ChatCompletionChunk {
+                                        id: format!("chatcmpl-{}", state.chunk_idx),
+                                        object: "chat.completion.chunk".to_string(),
+                                        created: 0,
+                                        model: model.clone(),
+                                        choices: vec![ChunkChoice {
+                                            index: 0,
+                                            delta: Delta {
+                                                role: None,
+                                                content: None,
+                                                tool_calls: Some(vec![ToolCallDelta {
+                                                    index: tool_idx,
+                                                    id: None,
+                                                    kind: None,
+                                                    function: Some(FunctionCallDelta {
+                                                        name: None,
+                                                        arguments: Some(partial.clone()),
+                                                    }),
+                                                }]),
+                                            },
+                                            finish_reason: None,
+                                        }],
+                                        usage: None,
+                                    };
+                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                                 }
                             }
                         }
@@ -569,13 +579,14 @@ fn anthropic_sse_stream(
                             }
                         }
                         "message_stop" => return None,
-                        _ => continue,
+                        _ => {}
                     }
+                    continue;
                 }
 
                 match byte_stream.try_next().await {
                     Ok(Some(bytes)) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        buffer.extend_from_slice(&bytes);
                     }
                     Ok(None) => return None,
                     Err(e) => {

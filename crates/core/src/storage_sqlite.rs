@@ -100,10 +100,12 @@ impl Storage for SqliteStorage {
                     .await
                     .map_err(|e| Error::Internal(e.to_string()))?;
 
+            let seen: std::collections::HashSet<Vec<u8>> =
+                result.iter().map(|(k, _)| k.clone()).collect();
             for row in &counter_rows {
                 let k: Vec<u8> = row.get("key");
                 let v: i64 = row.get("value");
-                if !result.iter().any(|(rk, _)| rk == &k) {
+                if !seen.contains(&k) {
                     result.push((k, v.to_le_bytes().to_vec()));
                 }
             }

@@ -192,43 +192,50 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
     let byte_stream = resp.bytes_stream();
 
     stream::unfold(
-        (byte_stream, String::new()),
+        (byte_stream, Vec::<u8>::new()),
         |(mut byte_stream, mut buffer)| async move {
             use futures::TryStreamExt;
 
             loop {
-                // Try to extract a complete line from the buffer.
-                if let Some(newline_pos) = buffer.find('\n') {
-                    let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
-                    buffer = buffer[newline_pos + 1..].to_string();
+                if let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let mut line_end = newline_pos;
+                    if line_end > 0 && buffer[line_end - 1] == b'\r' {
+                        line_end -= 1;
+                    }
+                    let line = &buffer[..line_end];
 
                     if line.is_empty() {
+                        buffer.drain(..newline_pos + 1);
                         continue;
                     }
 
-                    if let Some(data) = line.strip_prefix("data: ") {
-                        let data = data.trim();
+                    if let Some(data) = line.strip_prefix(b"data: ") {
+                        let data = match std::str::from_utf8(data) {
+                            Ok(s) => s.trim(),
+                            Err(_) => {
+                                buffer.drain(..newline_pos + 1);
+                                continue;
+                            }
+                        };
                         if data == "[DONE]" {
                             return None;
                         }
-                        match serde_json::from_str::<ChatCompletionChunk>(data) {
-                            Ok(chunk) => return Some((Ok(chunk), (byte_stream, buffer))),
-                            Err(e) => {
-                                return Some((
-                                    Err(Error::Internal(format!("SSE parse error: {e}"))),
-                                    (byte_stream, buffer),
-                                ));
-                            }
-                        }
+                        let result = match serde_json::from_str::<ChatCompletionChunk>(data) {
+                            Ok(chunk) => Ok(chunk),
+                            Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
+                        };
+                        buffer.drain(..newline_pos + 1);
+                        return Some((result, (byte_stream, buffer)));
                     }
                     // Skip non-data lines (comments, event:, etc.)
+                    buffer.drain(..newline_pos + 1);
                     continue;
                 }
 
                 // Need more data from the stream.
                 match byte_stream.try_next().await {
                     Ok(Some(bytes)) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        buffer.extend_from_slice(&bytes);
                     }
                     Ok(None) => return None,
                     Err(e) => {
