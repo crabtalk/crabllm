@@ -74,12 +74,18 @@ impl Storage for RedisStorage {
                 keys
             };
 
-            let mut result = Vec::new();
-            for key in keys {
-                let val: Option<Vec<u8>> = conn
-                    .get(&key)
-                    .await
-                    .map_err(|e| Error::Internal(e.to_string()))?;
+            if keys.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let values: Vec<Option<Vec<u8>>> = redis::cmd("MGET")
+                .arg(&keys)
+                .query_async(&mut conn)
+                .await
+                .map_err(|e| Error::Internal(e.to_string()))?;
+
+            let mut result = Vec::with_capacity(keys.len());
+            for (key, val) in keys.into_iter().zip(values) {
                 if let Some(v) = val {
                     result.push((key, v));
                 }

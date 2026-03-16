@@ -1,0 +1,32 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mdbook
+        uses: taiki-e/install-action@mdbook
+      - name: Build
+        run: mdbook build docs/
+      - name: Deploy
+        run: |
+          cd docs/book
+          git init
+          git checkout --orphan gh-pages
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "deploy docs"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push --force origin gh-pages

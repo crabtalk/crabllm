@@ -3,18 +3,20 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "High-performance LLM API gateway"
 repository = "https://github.com/clearloop/crabtalk"
-keywords = ["llm", "gateway", "proxy", "openai"]
-categories = ["web-programming::http-server"]
+keywords = ["llm", "gateway", "proxy", "openai", "anthropic"]
+categories = ["web-programming::http-server", "network-programming"]
 
 [workspace.dependencies]
-crabtalk-core = { version = "0.0.3", path = "crates/core" }
-crabtalk-provider = { version = "0.0.3", path = "crates/provider" }
-crabtalk-proxy = { version = "0.0.3", path = "crates/proxy" }
+crabtalk-core = { version = "0.0.5", path = "crates/core" }
+crabtalk-provider = { version = "0.0.5", path = "crates/provider" }
+crabtalk-proxy = { version = "0.0.5", path = "crates/proxy" }
+crabtalk-bench = { version = "0.0.5", path = "crates/bench" }
+crabtalk = { version = "0.0.5", path = "crates/crabtalk" }
 
 # crates-io
 axum = { version = "0.8", features = ["multipart"] }

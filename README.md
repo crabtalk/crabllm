@@ -12,41 +12,10 @@ OpenAI, Anthropic, Azure, Ollama, and any OpenAI-compatible service.
 
 One API format. Many providers. Low overhead.
 
-## Features
-
 Inspired by [LiteLLM][litellm]. Built in Rust for minimal overhead.
+See the [docs][docs] for [providers][providers], [routing][routing],
+[extensions][extensions], and [configuration][configuration].
 
-| Feature | LiteLLM | Crabtalk |
-|---------|:-------:|:--------:|
-| `/chat/completions` | ✅ | ✅ |
-| `/embeddings` | ✅ | ✅ |
-| `/models` | ✅ | ✅ |
-| OpenAI provider | ✅ | ✅ |
-| Anthropic provider | ✅ | ✅ |
-| Google Gemini provider | ✅ | ✅ |
-| Azure OpenAI provider | ✅ | ✅ |
-| AWS Bedrock provider | ✅ | ✅ |
-| Tool/function calling | ✅ | ✅ |
-| SSE streaming | ✅ | ✅ |
-| Virtual keys + auth | ✅ | ✅ |
-| Weighted routing | ✅ | ✅ |
-| Model aliasing | ✅ | ✅ |
-| Retry + fallback | ✅ | ✅ |
-| Request timeouts | ✅ | ✅ |
-| Rate limiting (RPM) | ✅ | ✅ |
-| Cost/usage tracking | ✅ | ✅ |
-| Budget enforcement | ✅ | ✅ |
-| Request caching | ✅ | ✅ |
-| Graceful shutdown | ✅ | ✅ |
-| Storage (memory) | ✅ | ✅ |
-| Storage (persistent) | ✅ Postgres | ✅ SQLite |
-| `/completions` (text) | ✅ | — |
-| Image/audio endpoints | ✅ | ✅ |
-| Rate limiting (TPM) | ✅ | ✅ |
-| Redis storage | ✅ | ✅ |
-| Dashboard/UI | ✅ | — |
-
-[litellm]: https://github.com/BerriAI/litellm
 
 ## Quick Start
 
@@ -108,6 +77,13 @@ curl http://localhost:8080/v1/chat/completions \
 
 MIT OR Apache-2.0
 
+
 [crabtalk-badge]: https://img.shields.io/crates/v/crabtalk.svg
 [crabtalk-crate]: https://crates.io/crates/crabtalk
 [openwalrus]: https://openwalrus.xyz
+[litellm]: https://github.com/BerriAI/litellm
+[docs]: https://clearloop.github.io/crabtalk
+[providers]: https://clearloop.github.io/crabtalk/providers/overview.html
+[routing]: https://clearloop.github.io/crabtalk/features/routing.html
+[extensions]: https://clearloop.github.io/crabtalk/features/extensions.html
+[configuration]: https://clearloop.github.io/crabtalk/configuration.html

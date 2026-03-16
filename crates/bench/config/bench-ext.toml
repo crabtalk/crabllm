@@ -1,0 +1,14 @@
+listen = "127.0.0.1:8080"
+
+[providers.mock]
+kind = "openai_compat"
+base_url = "http://127.0.0.1:9999"
+api_key = "mock-key"
+models = ["bench-chat", "bench-embed"]
+max_retries = 0
+timeout = 10
+
+[extensions.logging]
+level = "error"
+
+[extensions.usage]

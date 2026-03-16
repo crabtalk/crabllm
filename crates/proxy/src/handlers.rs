@@ -15,6 +15,7 @@ use crabtalk_core::{
 use crabtalk_provider::Deployment;
 use futures::StreamExt;
 use rand::Rng;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// POST /v1/chat/completions
@@ -72,11 +73,11 @@ pub async fn chat_completions<S: Storage + 'static>(
             match try_stream_with_retries(deployment, &state.client, &request).await {
                 Ok(stream) => {
                     let extensions = state.extensions.clone();
-                    let ctx_clone = ctx.clone();
+                    let ctx = Arc::new(ctx);
 
                     let observed = stream.then(move |result| {
                         let extensions = extensions.clone();
-                        let ctx = ctx_clone.clone();
+                        let ctx = ctx.clone();
                         async move {
                             match &result {
                                 Ok(chunk) => {
@@ -400,14 +401,14 @@ struct BufferedField {
 fn rebuild_form(fields: &[BufferedField]) -> reqwest::multipart::Form {
     let mut form = reqwest::multipart::Form::new();
     for field in fields {
-        let mut part = reqwest::multipart::Part::bytes(field.bytes.to_vec());
+        let mut part = reqwest::multipart::Part::stream(field.bytes.clone());
         if let Some(ref filename) = field.filename {
             part = part.file_name(filename.clone());
         }
         if let Some(ref content_type) = field.content_type {
             part = part
                 .mime_str(content_type)
-                .unwrap_or_else(|_| reqwest::multipart::Part::bytes(field.bytes.to_vec()));
+                .unwrap_or_else(|_| reqwest::multipart::Part::stream(field.bytes.clone()));
         }
         form = form.part(field.name.clone(), part);
     }
@@ -421,7 +422,7 @@ pub async fn audio_transcriptions<S: Storage + 'static>(
     mut multipart: Multipart,
 ) -> Response {
     // Buffer all multipart fields and extract the model name.
-    let mut fields = Vec::new();
+    let mut fields = Vec::with_capacity(8);
     let mut model_value = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
@@ -446,7 +447,7 @@ pub async fn audio_transcriptions<S: Storage + 'static>(
         };
 
         if name == "model" {
-            model_value = Some(String::from_utf8_lossy(&bytes).to_string());
+            model_value = Some(String::from_utf8_lossy(&bytes).into_owned());
         }
         fields.push(BufferedField {
             name,

@@ -3,11 +3,11 @@ name = "crabtalk-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description.workspace = true
 repository.workspace = true
-keywords.workspace = true
-categories.workspace = true
 readme = "README.md"
+description = "Core types for the crabtalk LLM API gateway"
+keywords = ["llm", "openai", "api", "types", "gateway"]
+categories = ["data-structures", "web-programming"]
 
 [features]
 storage-redis = ["redis"]

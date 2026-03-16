@@ -121,7 +121,7 @@ async fn usage_handler(storage: Arc<dyn Storage>, prefix: Prefix) -> Json<Vec<Us
     let mut entries: std::collections::HashMap<(String, String), (i64, i64)> =
         std::collections::HashMap::new();
 
-    for (raw_key, _value) in &pairs {
+    for (raw_key, raw_value) in &pairs {
         // Skip the prefix bytes, parse the suffix as UTF-8.
         let suffix = match std::str::from_utf8(&raw_key[crabtalk_core::PREFIX_LEN..]) {
             Ok(s) => s,
@@ -137,9 +137,12 @@ async fn usage_handler(storage: Arc<dyn Storage>, prefix: Prefix) -> Json<Vec<Us
             continue;
         };
 
-        let counter_key = storage_key(&prefix, suffix.as_bytes());
-        // Read the counter value from the counters map via increment(0).
-        let val = storage.increment(&counter_key, 0).await.unwrap_or(0);
+        // Parse the counter value directly from the list() result bytes.
+        let val = raw_value
+            .get(..8)
+            .and_then(|b| b.try_into().ok())
+            .map(i64::from_le_bytes)
+            .unwrap_or(0);
 
         let entry = entries
             .entry((key_name.to_string(), model.to_string()))
