@@ -3,7 +3,11 @@ name = "crabtalk-bench"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+readme = "README.md"
 description = "Mock OpenAI backend for benchmarking crabtalk"
+keywords = ["llm", "benchmark", "mock", "openai", "testing"]
+categories = ["development-tools::testing"]
 
 [[bin]]
 name = "crabtalk-bench"

@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "axum",
  "clap",
@@ -349,7 +349,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-bench"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "axum",
  "clap",
@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-core"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "serde",
  "serde_json",
@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-provider"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "bytes",
  "crabtalk-core",
@@ -386,7 +386,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-proxy"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "axum",
  "bytes",
