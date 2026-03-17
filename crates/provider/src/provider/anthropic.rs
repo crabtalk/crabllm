@@ -2,7 +2,7 @@ use bytes::{Buf, BytesMut};
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
     Error, FinishReason, FunctionCall, FunctionCallDelta, Message, Role, Stop, ToolCall,
-    ToolCallDelta, ToolType, Usage,
+    ToolCallDelta, ToolChoice, ToolType, Usage,
 };
 use futures::{
     TryStreamExt,
@@ -311,7 +311,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
     };
 
     // B2: When tool_choice is "none", omit tools and tool_choice entirely.
-    let is_none = request.tool_choice.as_ref().and_then(|tc| tc.as_str()) == Some("none");
+    let is_none = request.tool_choice.as_ref() == Some(&ToolChoice::Disabled);
 
     let tools = if is_none {
         None
@@ -335,18 +335,11 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
     let tool_choice = if is_none {
         None
     } else {
-        request.tool_choice.as_ref().map(|tc| {
-            if let Some(s) = tc.as_str() {
-                match s {
-                    "auto" => serde_json::json!({"type": "auto"}),
-                    "required" => serde_json::json!({"type": "any"}),
-                    _ => serde_json::json!({"type": "auto"}),
-                }
-            } else if let Some(name) = tc.get("function").and_then(|f| f.get("name")) {
-                serde_json::json!({"type": "tool", "name": name})
-            } else {
-                serde_json::json!({"type": "auto"})
-            }
+        request.tool_choice.as_ref().map(|tc| match tc {
+            ToolChoice::Auto => serde_json::json!({"type": "auto"}),
+            ToolChoice::Required => serde_json::json!({"type": "any"}),
+            ToolChoice::Function { name } => serde_json::json!({"type": "tool", "name": name}),
+            ToolChoice::Disabled => unreachable!(),
         })
     };
 

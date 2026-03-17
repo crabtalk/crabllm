@@ -8,8 +8,8 @@ pub use types::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
     ChunkChoice, CompletionTokensDetails, Delta, Embedding, EmbeddingInput, EmbeddingRequest,
     EmbeddingResponse, EmbeddingUsage, FinishReason, FunctionCall, FunctionCallDelta, FunctionDef,
-    ImageRequest, Message, Model, ModelList, Role, Stop, Tool, ToolCall, ToolCallDelta, ToolType,
-    Usage,
+    ImageRequest, Message, Model, ModelList, Role, Stop, Tool, ToolCall, ToolCallDelta, ToolChoice,
+    ToolType, Usage,
 };
 
 mod config;

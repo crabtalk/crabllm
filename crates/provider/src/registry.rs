@@ -1,5 +1,5 @@
 use crate::Provider;
-use crabtalk_core::{Error, GatewayConfig, ProviderKind};
+use crabtalk_core::{Error, GatewayConfig};
 use rand::Rng;
 use std::{collections::HashMap, time::Duration};
 
@@ -41,100 +41,52 @@ impl ProviderRegistry {
         let mut providers: HashMap<String, Vec<Deployment>> = HashMap::new();
 
         for (provider_name, provider_config) in &config.providers {
-            let provider = match provider_config.kind {
-                ProviderKind::OpenaiCompat => {
-                    let base_url = provider_config
-                        .base_url
-                        .clone()
-                        .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-                    Provider::OpenAiCompat {
-                        base_url,
-                        api_key: provider_config.api_key.clone(),
-                    }
-                }
-                ProviderKind::Anthropic => {
-                    if provider_config.api_key.is_empty() {
-                        return Err(Error::Config(format!(
-                            "provider '{provider_name}' (anthropic) requires an api_key",
-                        )));
-                    }
-                    Provider::Anthropic {
-                        api_key: provider_config.api_key.clone(),
-                    }
-                }
-                ProviderKind::Google => {
-                    if provider_config.api_key.is_empty() {
-                        return Err(Error::Config(format!(
-                            "provider '{provider_name}' (google) requires an api_key",
-                        )));
-                    }
-                    Provider::Google {
-                        api_key: provider_config.api_key.clone(),
-                    }
-                }
-                #[cfg(feature = "provider-bedrock")]
-                ProviderKind::Bedrock => {
-                    let region = provider_config.region.clone().ok_or_else(|| {
-                        Error::Config(format!(
-                            "provider '{provider_name}' (bedrock) requires a region",
-                        ))
-                    })?;
-                    let access_key = provider_config.access_key.clone().ok_or_else(|| {
-                        Error::Config(format!(
-                            "provider '{provider_name}' (bedrock) requires an access_key",
-                        ))
-                    })?;
-                    let secret_key = provider_config.secret_key.clone().ok_or_else(|| {
-                        Error::Config(format!(
-                            "provider '{provider_name}' (bedrock) requires a secret_key",
-                        ))
-                    })?;
-                    Provider::Bedrock {
-                        region,
-                        access_key,
-                        secret_key,
-                    }
-                }
-                #[cfg(not(feature = "provider-bedrock"))]
-                ProviderKind::Bedrock => {
+            let provider = Provider::from(provider_config);
+
+            // Validate required fields.
+            match &provider {
+                Provider::Anthropic { api_key } | Provider::Google { api_key }
+                    if api_key.is_empty() =>
+                {
                     return Err(Error::Config(format!(
-                        "provider '{provider_name}' (bedrock) requires the 'provider-bedrock' feature",
+                        "provider '{provider_name}' ({:?}) requires an api_key",
+                        provider_config.kind,
                     )));
                 }
-                ProviderKind::Ollama => {
-                    let base_url = provider_config
-                        .base_url
-                        .clone()
-                        .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
-                    Provider::OpenAiCompat {
-                        base_url,
-                        api_key: provider_config.api_key.clone(),
-                    }
+                Provider::Azure { api_key, .. } if api_key.is_empty() => {
+                    return Err(Error::Config(format!(
+                        "provider '{provider_name}' (azure) requires an api_key",
+                    )));
                 }
-                ProviderKind::Azure => {
-                    if provider_config.api_key.is_empty() {
+                Provider::Bedrock {
+                    region,
+                    access_key,
+                    secret_key,
+                } => {
+                    if region.is_empty() {
                         return Err(Error::Config(format!(
-                            "provider '{provider_name}' (azure) requires an api_key",
+                            "provider '{provider_name}' (bedrock) requires a region",
                         )));
                     }
-                    let base_url = provider_config.base_url.clone().unwrap_or_default();
-                    let api_version = provider_config
-                        .api_version
-                        .clone()
-                        .unwrap_or_else(|| "2024-02-15-preview".to_string());
-                    Provider::Azure {
-                        base_url,
-                        api_key: provider_config.api_key.clone(),
-                        api_version,
+                    if access_key.is_empty() {
+                        return Err(Error::Config(format!(
+                            "provider '{provider_name}' (bedrock) requires an access_key",
+                        )));
+                    }
+                    if secret_key.is_empty() {
+                        return Err(Error::Config(format!(
+                            "provider '{provider_name}' (bedrock) requires a secret_key",
+                        )));
                     }
                 }
-            };
+                _ => {}
+            }
 
             let deployment = Deployment {
                 provider,
-                weight: provider_config.weight,
-                max_retries: provider_config.max_retries,
-                timeout: Duration::from_secs(provider_config.timeout),
+                weight: provider_config.weight.unwrap_or(1),
+                max_retries: provider_config.max_retries.unwrap_or(2),
+                timeout: Duration::from_secs(provider_config.timeout.unwrap_or(30)),
             };
             for model_name in &provider_config.models {
                 providers

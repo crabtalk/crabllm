@@ -92,6 +92,70 @@ pub enum ToolType {
     Function,
 }
 
+/// Controls which tool the model should call.
+///
+/// String variants (`Disabled`, `Auto`, `Required`) serialize as `"none"`,
+/// `"auto"`, `"required"`. `Function` serializes as
+/// `{"type":"function","function":{"name":"..."}}`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "serde_json::Value", try_from = "serde_json::Value")]
+pub enum ToolChoice {
+    Disabled,
+    #[default]
+    Auto,
+    Required,
+    Function {
+        name: String,
+    },
+}
+
+impl From<ToolChoice> for serde_json::Value {
+    fn from(tc: ToolChoice) -> Self {
+        match tc {
+            ToolChoice::Disabled => serde_json::Value::String("none".into()),
+            ToolChoice::Auto => serde_json::Value::String("auto".into()),
+            ToolChoice::Required => serde_json::Value::String("required".into()),
+            ToolChoice::Function { name } => {
+                serde_json::json!({"type": "function", "function": {"name": name}})
+            }
+        }
+    }
+}
+
+impl TryFrom<serde_json::Value> for ToolChoice {
+    type Error = String;
+
+    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        match &value {
+            serde_json::Value::String(s) => Ok(Self::from(s.as_str())),
+            serde_json::Value::Object(map) => {
+                let name = map
+                    .get("function")
+                    .and_then(|v| v.get("name"))
+                    .and_then(|v| v.as_str())
+                    .ok_or("missing function.name")?;
+                Ok(Self::Function {
+                    name: name.to_string(),
+                })
+            }
+            _ => Err("expected string or object".into()),
+        }
+    }
+}
+
+impl From<&str> for ToolChoice {
+    fn from(value: &str) -> Self {
+        match value {
+            "none" => Self::Disabled,
+            "auto" => Self::Auto,
+            "required" => Self::Required,
+            name => Self::Function {
+                name: name.to_string(),
+            },
+        }
+    }
+}
+
 // ── Request ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +175,7 @@ pub struct ChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<serde_json::Value>,
+    pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,7 +275,7 @@ pub struct Choice {
     pub logprobs: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -224,7 +288,7 @@ pub struct Usage {
     pub prompt_cache_miss_tokens: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct CompletionTokensDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,

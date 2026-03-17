@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use crabtalk_core::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
+    EmbeddingRequest, EmbeddingResponse, Error, ImageRequest, ProviderConfig, ProviderKind,
 };
 use futures::stream::{BoxStream, StreamExt};
 
@@ -32,6 +32,46 @@ pub enum Provider {
         api_key: String,
         api_version: String,
     },
+}
+
+impl From<&ProviderConfig> for Provider {
+    fn from(config: &ProviderConfig) -> Self {
+        match config.kind {
+            ProviderKind::OpenaiCompat => Provider::OpenAiCompat {
+                base_url: config
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+                api_key: config.api_key.clone().unwrap_or_default(),
+            },
+            ProviderKind::Anthropic => Provider::Anthropic {
+                api_key: config.api_key.clone().unwrap_or_default(),
+            },
+            ProviderKind::Google => Provider::Google {
+                api_key: config.api_key.clone().unwrap_or_default(),
+            },
+            ProviderKind::Ollama => Provider::OpenAiCompat {
+                base_url: config
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:11434/v1".to_string()),
+                api_key: config.api_key.clone().unwrap_or_default(),
+            },
+            ProviderKind::Azure => Provider::Azure {
+                base_url: config.base_url.clone().unwrap_or_default(),
+                api_key: config.api_key.clone().unwrap_or_default(),
+                api_version: config
+                    .api_version
+                    .clone()
+                    .unwrap_or_else(|| "2024-02-15-preview".to_string()),
+            },
+            ProviderKind::Bedrock => Provider::Bedrock {
+                region: config.region.clone().unwrap_or_default(),
+                access_key: config.access_key.clone().unwrap_or_default(),
+                secret_key: config.secret_key.clone().unwrap_or_default(),
+            },
+        }
+    }
 }
 
 impl Provider {

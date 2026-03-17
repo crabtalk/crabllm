@@ -48,49 +48,42 @@ pub struct GatewayConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     /// Provider kind determines the dispatch path.
+    #[serde(
+        default,
+        alias = "standard",
+        skip_serializing_if = "ProviderKind::is_default"
+    )]
     pub kind: ProviderKind,
     /// API key (supports `${ENV_VAR}` interpolation).
-    #[serde(default)]
-    pub api_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
     /// Base URL override. OpenAI-compat providers have sensible defaults.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     /// Model names served by this provider.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<String>,
     /// Routing weight for weighted random selection. Higher = more traffic.
-    #[serde(default = "default_weight")]
-    pub weight: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight: Option<u16>,
     /// Max retries on transient errors before fallback. 0 disables retry.
-    #[serde(default = "default_max_retries")]
-    pub max_retries: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
     /// API version string, used by Azure OpenAI.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_version: Option<String>,
     /// Per-request timeout in seconds. Default: 30.
-    #[serde(default = "default_timeout")]
-    pub timeout: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
     /// AWS region for Bedrock provider.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
     /// AWS access key ID for Bedrock provider.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub access_key: Option<String>,
     /// AWS secret access key for Bedrock provider.
     #[serde(default, skip_serializing)]
     pub secret_key: Option<String>,
-}
-
-fn default_weight() -> u16 {
-    1
-}
-
-fn default_max_retries() -> u32 {
-    2
-}
-
-fn default_timeout() -> u64 {
-    30
 }
 
 fn default_shutdown_timeout() -> u64 {
@@ -98,15 +91,80 @@ fn default_shutdown_timeout() -> u64 {
 }
 
 /// Which provider implementation to use.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
+    #[default]
+    #[serde(alias = "openai")]
     OpenaiCompat,
     Anthropic,
     Google,
     Bedrock,
     Ollama,
     Azure,
+}
+
+impl ProviderKind {
+    /// Returns true if this is the default variant (OpenaiCompat).
+    pub fn is_default(&self) -> bool {
+        *self == Self::OpenaiCompat
+    }
+}
+
+impl ProviderConfig {
+    /// Resolve the effective provider kind.
+    ///
+    /// Returns `Anthropic` if the field is explicitly set to `Anthropic`,
+    /// or if `base_url` contains "anthropic". Otherwise returns the
+    /// configured kind.
+    pub fn effective_kind(&self) -> ProviderKind {
+        if self.kind == ProviderKind::Anthropic {
+            return ProviderKind::Anthropic;
+        }
+        if let Some(url) = &self.base_url
+            && url.contains("anthropic")
+        {
+            return ProviderKind::Anthropic;
+        }
+        self.kind
+    }
+
+    /// Validate field combinations.
+    pub fn validate(&self, provider_name: &str) -> Result<(), String> {
+        if self.models.is_empty() {
+            return Err(format!("provider '{provider_name}' has no models"));
+        }
+        match self.kind {
+            ProviderKind::Bedrock => {
+                if self.region.is_none() {
+                    return Err(format!(
+                        "provider '{provider_name}' (bedrock) requires region"
+                    ));
+                }
+                if self.access_key.is_none() {
+                    return Err(format!(
+                        "provider '{provider_name}' (bedrock) requires access_key"
+                    ));
+                }
+                if self.secret_key.is_none() {
+                    return Err(format!(
+                        "provider '{provider_name}' (bedrock) requires secret_key"
+                    ));
+                }
+            }
+            ProviderKind::Ollama => {
+                // Ollama doesn't require api_key or base_url.
+            }
+            _ => {
+                if self.api_key.is_none() && self.base_url.is_none() {
+                    return Err(format!(
+                        "provider '{provider_name}' requires api_key or base_url"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Virtual API key for client authentication.
