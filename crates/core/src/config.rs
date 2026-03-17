@@ -146,17 +146,6 @@ impl GatewayConfig {
         let config: GatewayConfig = toml::from_str(&expanded)?;
         Ok(config)
     }
-
-    /// Flatten all providers' model lists into a model_name → provider_name map.
-    pub fn models(&self) -> HashMap<String, String> {
-        let mut map = HashMap::new();
-        for (provider_name, provider_config) in &self.providers {
-            for model in &provider_config.models {
-                map.insert(model.clone(), provider_name.clone());
-            }
-        }
-        map
-    }
 }
 
 /// Expand `${VAR}` patterns in a string using environment variables.

@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes, BytesMut};
 use crabtalk_core::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
@@ -192,7 +192,7 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
     let byte_stream = resp.bytes_stream();
 
     stream::unfold(
-        (byte_stream, Vec::<u8>::new()),
+        (byte_stream, BytesMut::new()),
         |(mut byte_stream, mut buffer)| async move {
             use futures::TryStreamExt;
 
@@ -205,7 +205,7 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
                     let line = &buffer[..line_end];
 
                     if line.is_empty() {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     }
 
@@ -213,7 +213,7 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
                         let data = match std::str::from_utf8(data) {
                             Ok(s) => s.trim(),
                             Err(_) => {
-                                buffer.drain(..newline_pos + 1);
+                                buffer.advance(newline_pos + 1);
                                 continue;
                             }
                         };
@@ -224,11 +224,11 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
                             Ok(chunk) => Ok(chunk),
                             Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
                         };
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         return Some((result, (byte_stream, buffer)));
                     }
                     // Skip non-data lines (comments, event:, etc.)
-                    buffer.drain(..newline_pos + 1);
+                    buffer.advance(newline_pos + 1);
                     continue;
                 }
 

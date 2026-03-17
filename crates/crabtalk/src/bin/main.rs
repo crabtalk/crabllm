@@ -120,9 +120,15 @@ async fn run<S: Storage + 'static>(
 
     let ext_count = extensions.len();
     let addr = config.listen.clone();
-    let model_count = config.models().len();
+    let model_count = registry.model_names().count();
     let provider_count = config.providers.len();
     let shutdown_timeout = Duration::from_secs(config.shutdown_timeout);
+
+    let key_map = config
+        .keys
+        .iter()
+        .map(|k| (k.key.clone(), k.name.clone()))
+        .collect();
 
     let state = AppState {
         registry,
@@ -130,6 +136,7 @@ async fn run<S: Storage + 'static>(
         config,
         extensions: Arc::new(extensions),
         storage,
+        key_map,
     };
 
     let app = crabtalk_proxy::router(state, admin_routes);

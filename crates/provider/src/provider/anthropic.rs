@@ -1,3 +1,4 @@
+use bytes::{Buf, BytesMut};
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
     Error, FinishReason, FunctionCall, FunctionCallDelta, Message, Role, Stop, ToolCall,
@@ -581,7 +582,7 @@ fn anthropic_sse_stream(
     };
 
     stream::unfold(
-        (byte_stream, Vec::<u8>::new(), model, state),
+        (byte_stream, BytesMut::new(), model, state),
         |(mut byte_stream, mut buffer, model, mut state)| async move {
             loop {
                 if let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
@@ -592,18 +593,18 @@ fn anthropic_sse_stream(
                     let line = &buffer[..line_end];
 
                     if line.is_empty() {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     }
 
                     let Some(data) = line.strip_prefix(b"data: ") else {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     };
                     let data = match std::str::from_utf8(data) {
                         Ok(s) => s.trim(),
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -611,11 +612,11 @@ fn anthropic_sse_stream(
                     let event: SseEvent = match serde_json::from_str(data) {
                         Ok(e) => e,
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
-                    buffer.drain(..newline_pos + 1);
+                    buffer.advance(newline_pos + 1);
 
                     match event.kind.as_str() {
                         "message_start" => {

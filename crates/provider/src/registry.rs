@@ -17,6 +17,8 @@ pub struct Deployment {
 pub struct ProviderRegistry {
     providers: HashMap<String, Vec<Deployment>>,
     aliases: HashMap<String, String>,
+    /// Precomputed model name → provider name lookup (avoids per-request HashMap rebuild).
+    model_providers: HashMap<String, String>,
 }
 
 impl ProviderRegistry {
@@ -24,8 +26,13 @@ impl ProviderRegistry {
     pub fn new(
         providers: HashMap<String, Vec<Deployment>>,
         aliases: HashMap<String, String>,
+        model_providers: HashMap<String, String>,
     ) -> Self {
-        ProviderRegistry { providers, aliases }
+        ProviderRegistry {
+            providers,
+            aliases,
+            model_providers,
+        }
     }
 
     /// Build the registry from gateway config.
@@ -137,7 +144,28 @@ impl ProviderRegistry {
             }
         }
 
-        Ok(Self::new(providers, config.aliases.clone()))
+        let mut model_providers = HashMap::new();
+        for (provider_name, provider_config) in &config.providers {
+            for model in &provider_config.models {
+                model_providers.insert(model.clone(), provider_name.clone());
+            }
+        }
+
+        Ok(Self::new(
+            providers,
+            config.aliases.clone(),
+            model_providers,
+        ))
+    }
+
+    /// Look up the provider name for a model. O(1) HashMap lookup.
+    pub fn provider_name(&self, model: &str) -> Option<&str> {
+        self.model_providers.get(model).map(|s| s.as_str())
+    }
+
+    /// Return all registered model names.
+    pub fn model_names(&self) -> impl Iterator<Item = &str> {
+        self.model_providers.keys().map(|s| s.as_str())
     }
 
     /// Resolve a model name through aliases. Returns the canonical name.

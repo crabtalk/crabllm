@@ -9,6 +9,19 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// Adapter that feeds bytes directly into a SHA-256 digest (no intermediate buffer).
+struct DigestWriter<'a>(&'a mut Sha256);
+
+impl std::io::Write for DigestWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct Cache {
     storage: Arc<dyn Storage>,
     ttl_seconds: u64,
@@ -30,9 +43,10 @@ impl Cache {
     }
 
     fn cache_key(request: &ChatCompletionRequest) -> Vec<u8> {
-        let json = serde_json::to_string(request).unwrap_or_default();
-        let hash = Sha256::digest(json.as_bytes());
-        storage_key(&Self::PREFIX, &hash)
+        let mut hasher = Sha256::new();
+        // Write JSON directly into the hasher — no intermediate String allocation.
+        let _ = serde_json::to_writer(DigestWriter(&mut hasher), request);
+        storage_key(&Self::PREFIX, &hasher.finalize())
     }
 
     fn now_secs() -> u64 {

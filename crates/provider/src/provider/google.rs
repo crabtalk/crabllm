@@ -1,3 +1,4 @@
+use bytes::{Buf, BytesMut};
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
     Error, FinishReason, FunctionCall, FunctionCallDelta, Message, Role, ToolCall, ToolCallDelta,
@@ -416,7 +417,7 @@ fn gemini_sse_stream(
     let byte_stream = resp.bytes_stream();
 
     stream::unfold(
-        (byte_stream, Vec::<u8>::new(), model, 0u64),
+        (byte_stream, BytesMut::new(), model, 0u64),
         |(mut byte_stream, mut buffer, model, mut chunk_idx)| async move {
             use futures::TryStreamExt;
 
@@ -429,18 +430,18 @@ fn gemini_sse_stream(
                     let line = &buffer[..line_end];
 
                     if line.is_empty() {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     }
 
                     let Some(data) = line.strip_prefix(b"data: ") else {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     };
                     let data = match std::str::from_utf8(data) {
                         Ok(s) => s.trim(),
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -448,7 +449,7 @@ fn gemini_sse_stream(
                     let gemini_resp: GeminiResponse = match serde_json::from_str(data) {
                         Ok(r) => r,
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -456,7 +457,7 @@ fn gemini_sse_stream(
                     let candidate = match gemini_resp.candidates.first() {
                         Some(c) => c,
                         None => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -468,11 +469,11 @@ fn gemini_sse_stream(
                     let has_tools = !tool_calls.is_empty();
 
                     if !has_text && !has_tools && finish_reason.is_none() {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     }
 
-                    buffer.drain(..newline_pos + 1);
+                    buffer.advance(newline_pos + 1);
 
                     chunk_idx += 1;
                     let tool_call_deltas = if has_tools {
