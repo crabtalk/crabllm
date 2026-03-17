@@ -45,20 +45,17 @@ pub async fn auth<S: Storage + 'static>(
         }
     };
 
-    let key_config = match state.config.keys.iter().find(|k| k.key == token) {
-        Some(k) => k,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(ApiError::new("invalid API key", "authentication_error")),
-            )
-                .into_response();
-        }
+    let Some(key_name) = state.key_map.get(token) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ApiError::new("invalid API key", "authentication_error")),
+        )
+            .into_response();
     };
 
     request
         .extensions_mut()
-        .insert(KeyName(Some(key_config.name.clone())));
+        .insert(KeyName(Some(key_name.clone())));
 
     next.run(request).await
 }

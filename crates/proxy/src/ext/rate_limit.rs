@@ -14,10 +14,10 @@ pub struct RateLimit {
 }
 
 impl RateLimit {
-    pub fn new(config: &toml::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
+    pub fn new(config: &serde_json::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
         let rpm = config
             .get("requests_per_minute")
-            .and_then(|v| v.as_integer())
+            .and_then(|v| v.as_i64())
             .ok_or("rate_limit: missing or invalid 'requests_per_minute'")?;
 
         if rpm <= 0 {
@@ -26,7 +26,7 @@ impl RateLimit {
 
         let tpm = config
             .get("tokens_per_minute")
-            .and_then(|v| v.as_integer())
+            .and_then(|v| v.as_i64())
             .map(|v| {
                 if v <= 0 {
                     Err("rate_limit: 'tokens_per_minute' must be positive".to_string())

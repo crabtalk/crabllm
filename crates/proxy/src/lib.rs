@@ -11,9 +11,10 @@ pub mod auth;
 pub mod ext;
 mod handlers;
 mod state;
+pub mod storage;
 
-/// Build the Axum router with all API routes and extension routes.
-pub fn router<S: Storage + 'static>(state: AppState<S>) -> Router {
+/// Build the Axum router with all API routes and admin routes.
+pub fn router<S: Storage + 'static>(state: AppState<S>, admin_routes: Vec<Router>) -> Router {
     let mut app = Router::<AppState<S>>::new()
         .route(
             "/v1/chat/completions",
@@ -34,14 +35,12 @@ pub fn router<S: Storage + 'static>(state: AppState<S>) -> Router {
             state.clone(),
             auth::auth::<S>,
         ))
-        .with_state(state.clone());
+        .with_state(state);
 
     // Merge extension-provided admin routes (stateless — extensions
     // capture their own state via closures in the Router<()>).
-    for ext in state.extensions.iter() {
-        if let Some(ext_router) = ext.routes() {
-            app = app.merge(ext_router);
-        }
+    for admin_router in admin_routes {
+        app = app.merge(admin_router);
     }
 
     app

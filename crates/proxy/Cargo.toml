@@ -9,21 +9,29 @@ description = "HTTP proxy server for the crabtalk LLM API gateway"
 keywords = ["llm", "proxy", "openai", "streaming", "gateway"]
 categories = ["web-programming::http-server", "network-programming"]
 
+[features]
+storage-redis = ["redis"]
+storage-sqlite = ["sqlx"]
+
 [dependencies]
-crabtalk-core.workspace = true
+crabtalk-core = { workspace = true, features = ["gateway"] }
 crabtalk-provider.workspace = true
 
 # crates-io
 axum.workspace = true
 bytes.workspace = true
+dashmap.workspace = true
 futures.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 tokio.workspace = true
-toml.workspace = true
 tower.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 sha2.workspace = true
 rand.workspace = true
+
+# optional
+redis = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }

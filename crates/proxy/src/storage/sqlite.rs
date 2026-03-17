@@ -1,4 +1,4 @@
-use crate::{BoxFuture, Error, KvPairs, Prefix, Storage};
+use crabtalk_core::{BoxFuture, Error, KvPairs, Prefix, Storage};
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 
 pub struct SqliteStorage {

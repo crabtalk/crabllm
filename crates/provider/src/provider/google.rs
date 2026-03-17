@@ -1,6 +1,8 @@
+use bytes::{Buf, BytesMut};
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
-    Error, FunctionCall, FunctionCallDelta, Message, ToolCall, ToolCallDelta, Usage,
+    Error, FinishReason, FunctionCall, FunctionCallDelta, Message, Role, ToolCall, ToolCallDelta,
+    ToolType, Usage,
 };
 use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
@@ -119,7 +121,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     let mut contents = Vec::new();
 
     for msg in &request.messages {
-        if msg.role == "system" {
+        if msg.role == Role::System {
             if let Some(content) = &msg.content
                 && let Some(s) = content.as_str()
             {
@@ -129,7 +131,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                     function_response: None,
                 });
             }
-        } else if msg.role == "tool" {
+        } else if msg.role == Role::Tool {
             // Tool result → user message with functionResponse part.
             let name = msg.name.clone().unwrap_or_default();
             let response_val = msg
@@ -156,7 +158,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                     }),
                 }],
             });
-        } else if msg.role == "assistant"
+        } else if msg.role == Role::Assistant
             && let Some(tool_calls) = &msg.tool_calls
         {
             // Assistant message with tool_calls → model message with functionCall parts.
@@ -188,9 +190,9 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                 parts,
             });
         } else {
-            let role = match msg.role.as_str() {
-                "assistant" => "model",
-                other => other,
+            let role = match &msg.role {
+                Role::Assistant => "model",
+                other => other.as_str(),
             };
             let text = msg
                 .content
@@ -251,12 +253,12 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     }
 }
 
-fn map_finish_reason(reason: &Option<String>) -> Option<String> {
+fn map_finish_reason(reason: &Option<String>) -> Option<FinishReason> {
     reason.as_ref().map(|r| match r.as_str() {
-        "STOP" => "stop".to_string(),
-        "MAX_TOKENS" => "length".to_string(),
-        "SAFETY" => "content_filter".to_string(),
-        other => other.to_lowercase(),
+        "STOP" => FinishReason::Stop,
+        "MAX_TOKENS" => FinishReason::Length,
+        "SAFETY" => FinishReason::ContentFilter,
+        other => FinishReason::Custom(other.to_lowercase()),
     })
 }
 
@@ -272,8 +274,9 @@ fn extract_parts(candidate: &GeminiCandidate) -> (String, Vec<ToolCall>) {
             }
             if let Some(fc) = &part.function_call {
                 tool_calls.push(ToolCall {
+                    index: None,
                     id: format!("call_{i}"),
-                    kind: "function".to_string(),
+                    kind: ToolType::Function,
                     function: FunctionCall {
                         name: fc.name.clone(),
                         arguments: serde_json::to_string(&fc.args).unwrap_or_default(),
@@ -316,19 +319,26 @@ fn translate_response(resp: GeminiResponse, model: &str) -> ChatCompletionRespon
         choices: vec![Choice {
             index: 0,
             message: Message {
-                role: "assistant".to_string(),
+                role: Role::Assistant,
                 content,
                 tool_calls: tool_calls_opt,
                 tool_call_id: None,
                 name: None,
+                reasoning_content: None,
+                extra: Default::default(),
             },
             finish_reason,
+            logprobs: None,
         }],
         usage: resp.usage_metadata.map(|u| Usage {
             prompt_tokens: u.prompt_token_count,
             completion_tokens: u.candidates_token_count,
             total_tokens: u.total_token_count,
+            completion_tokens_details: None,
+            prompt_cache_hit_tokens: None,
+            prompt_cache_miss_tokens: None,
         }),
+        system_fingerprint: None,
     }
 }
 
@@ -407,7 +417,7 @@ fn gemini_sse_stream(
     let byte_stream = resp.bytes_stream();
 
     stream::unfold(
-        (byte_stream, Vec::<u8>::new(), model, 0u64),
+        (byte_stream, BytesMut::new(), model, 0u64),
         |(mut byte_stream, mut buffer, model, mut chunk_idx)| async move {
             use futures::TryStreamExt;
 
@@ -420,18 +430,18 @@ fn gemini_sse_stream(
                     let line = &buffer[..line_end];
 
                     if line.is_empty() {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     }
 
                     let Some(data) = line.strip_prefix(b"data: ") else {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     };
                     let data = match std::str::from_utf8(data) {
                         Ok(s) => s.trim(),
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -439,7 +449,7 @@ fn gemini_sse_stream(
                     let gemini_resp: GeminiResponse = match serde_json::from_str(data) {
                         Ok(r) => r,
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -447,7 +457,7 @@ fn gemini_sse_stream(
                     let candidate = match gemini_resp.candidates.first() {
                         Some(c) => c,
                         None => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -459,11 +469,11 @@ fn gemini_sse_stream(
                     let has_tools = !tool_calls.is_empty();
 
                     if !has_text && !has_tools && finish_reason.is_none() {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     }
 
-                    buffer.drain(..newline_pos + 1);
+                    buffer.advance(newline_pos + 1);
 
                     chunk_idx += 1;
                     let tool_call_deltas = if has_tools {
@@ -474,7 +484,7 @@ fn gemini_sse_stream(
                                 .map(|(i, tc)| ToolCallDelta {
                                     index: i as u32,
                                     id: Some(tc.id),
-                                    kind: Some("function".to_string()),
+                                    kind: Some(ToolType::Function),
                                     function: Some(FunctionCallDelta {
                                         name: Some(tc.function.name),
                                         arguments: Some(tc.function.arguments),
@@ -495,20 +505,26 @@ fn gemini_sse_stream(
                             index: 0,
                             delta: Delta {
                                 role: if chunk_idx == 1 {
-                                    Some("assistant".to_string())
+                                    Some(Role::Assistant)
                                 } else {
                                     None
                                 },
                                 content: if has_text { Some(text) } else { None },
                                 tool_calls: tool_call_deltas,
+                                reasoning_content: None,
                             },
                             finish_reason,
+                            logprobs: None,
                         }],
                         usage: gemini_resp.usage_metadata.map(|u| Usage {
                             prompt_tokens: u.prompt_token_count,
                             completion_tokens: u.candidates_token_count,
                             total_tokens: u.total_token_count,
+                            completion_tokens_details: None,
+                            prompt_cache_hit_tokens: None,
+                            prompt_cache_miss_tokens: None,
                         }),
+                        system_fingerprint: None,
                     };
                     return Some((Ok(chunk), (byte_stream, buffer, model, chunk_idx)));
                 }

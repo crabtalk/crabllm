@@ -9,6 +9,19 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// Adapter that feeds bytes directly into a SHA-256 digest (no intermediate buffer).
+struct DigestWriter<'a>(&'a mut Sha256);
+
+impl std::io::Write for DigestWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct Cache {
     storage: Arc<dyn Storage>,
     ttl_seconds: u64,
@@ -17,10 +30,10 @@ pub struct Cache {
 impl Cache {
     const PREFIX: Prefix = *b"cach";
 
-    pub fn new(config: &toml::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
+    pub fn new(config: &serde_json::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
         let ttl_seconds = config
             .get("ttl_seconds")
-            .and_then(|v| v.as_integer())
+            .and_then(|v| v.as_i64())
             .unwrap_or(300) as u64;
 
         Ok(Self {
@@ -30,9 +43,10 @@ impl Cache {
     }
 
     fn cache_key(request: &ChatCompletionRequest) -> Vec<u8> {
-        let json = serde_json::to_string(request).unwrap_or_default();
-        let hash = Sha256::digest(json.as_bytes());
-        storage_key(&Self::PREFIX, &hash)
+        let mut hasher = Sha256::new();
+        // Write JSON directly into the hasher — no intermediate String allocation.
+        let _ = serde_json::to_writer(DigestWriter(&mut hasher), request);
+        storage_key(&Self::PREFIX, &hasher.finalize())
     }
 
     fn now_secs() -> u64 {
@@ -40,6 +54,24 @@ impl Cache {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
+    }
+
+    pub fn admin_routes(&self) -> Router {
+        let storage = self.storage.clone();
+        let prefix = Self::PREFIX;
+        Router::new().route(
+            "/v1/cache",
+            delete(move || {
+                let storage = storage.clone();
+                async move {
+                    let pairs = storage.list(&prefix).await.unwrap_or_default();
+                    for (key, _) in pairs {
+                        let _ = storage.delete(&key).await;
+                    }
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        )
     }
 }
 
@@ -97,24 +129,5 @@ impl crabtalk_core::Extension for Cache {
         Box::pin(async move {
             let _ = self.storage.set(&key, value).await;
         })
-    }
-
-    fn routes(&self) -> Option<Router> {
-        let storage = self.storage.clone();
-        let prefix = Self::PREFIX;
-        let router = Router::new().route(
-            "/v1/cache",
-            delete(move || {
-                let storage = storage.clone();
-                async move {
-                    let pairs = storage.list(&prefix).await.unwrap_or_default();
-                    for (key, _) in pairs {
-                        let _ = storage.delete(&key).await;
-                    }
-                    StatusCode::NO_CONTENT
-                }
-            }),
-        );
-        Some(router)
     }
 }

@@ -5,7 +5,7 @@ use crabtalk_core::{
 pub struct RequestLogger;
 
 impl RequestLogger {
-    pub fn new(_config: &toml::Value) -> Result<Self, String> {
+    pub fn new(_config: &serde_json::Value) -> Result<Self, String> {
         Ok(Self)
     }
 }

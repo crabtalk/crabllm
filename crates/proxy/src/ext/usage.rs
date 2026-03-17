@@ -11,12 +11,24 @@ pub struct UsageTracker {
 }
 
 impl UsageTracker {
-    pub fn new(_config: &toml::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
+    pub fn new(_config: &serde_json::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
         Ok(Self { storage })
     }
 
     /// The fixed prefix for this extension.
     const PREFIX: Prefix = *b"usge";
+
+    pub fn admin_routes(&self) -> Router {
+        let storage = self.storage.clone();
+        let prefix = Self::PREFIX;
+        Router::new().route(
+            "/v1/usage",
+            get(move || {
+                let storage = storage.clone();
+                async move { usage_handler(storage, prefix).await }
+            }),
+        )
+    }
 
     /// Record token usage for a given key and model.
     async fn record(
@@ -90,19 +102,6 @@ impl crabtalk_core::Extension for UsageTracker {
                     .await;
             }
         })
-    }
-
-    fn routes(&self) -> Option<Router> {
-        let storage = self.storage.clone();
-        let prefix = Self::PREFIX;
-        let router = Router::new().route(
-            "/v1/usage",
-            get(move || {
-                let storage = storage.clone();
-                async move { usage_handler(storage, prefix).await }
-            }),
-        );
-        Some(router)
     }
 }
 

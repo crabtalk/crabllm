@@ -9,7 +9,7 @@ use axum::{
 use clap::Parser;
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionResponse, Choice, ChunkChoice, Delta, Embedding,
-    EmbeddingResponse, EmbeddingUsage, Message, Model, ModelList, Usage,
+    EmbeddingResponse, EmbeddingUsage, FinishReason, Message, Model, ModelList, Role, Usage,
 };
 use futures::stream;
 use std::sync::Arc;
@@ -80,17 +80,20 @@ async fn chat_completions(
                 choices: vec![ChunkChoice {
                     index: 0,
                     delta: Delta {
-                        role: if i == 0 {
-                            Some("assistant".into())
-                        } else {
-                            None
-                        },
+                        role: if i == 0 { Some(Role::Assistant) } else { None },
                         content: if is_last { None } else { Some("word ".into()) },
                         tool_calls: None,
+                        reasoning_content: None,
                     },
-                    finish_reason: if is_last { Some("stop".into()) } else { None },
+                    finish_reason: if is_last {
+                        Some(FinishReason::Stop)
+                    } else {
+                        None
+                    },
+                    logprobs: None,
                 }],
                 usage: None,
+                system_fingerprint: None,
             };
             let json = serde_json::to_string(&chunk).unwrap();
             Ok::<_, std::convert::Infallible>(Event::default().data(json))
@@ -134,21 +137,28 @@ fn canned_chat_response() -> ChatCompletionResponse {
         choices: vec![Choice {
             index: 0,
             message: Message {
-                role: "assistant".into(),
+                role: Role::Assistant,
                 content: Some(serde_json::Value::String(
                     "This is a benchmark response.".into(),
                 )),
                 tool_calls: None,
                 tool_call_id: None,
                 name: None,
+                reasoning_content: None,
+                extra: Default::default(),
             },
-            finish_reason: Some("stop".into()),
+            finish_reason: Some(FinishReason::Stop),
+            logprobs: None,
         }],
         usage: Some(Usage {
             prompt_tokens: 10,
             completion_tokens: 20,
             total_tokens: 30,
+            completion_tokens_details: None,
+            prompt_cache_hit_tokens: None,
+            prompt_cache_miss_tokens: None,
         }),
+        system_fingerprint: None,
     }
 }
 

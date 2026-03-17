@@ -1,14 +1,14 @@
-use crate::{BoxFuture, Error, KvPairs, Prefix, Storage};
-use redis::AsyncCommands;
+use ::redis::AsyncCommands;
+use crabtalk_core::{BoxFuture, Error, KvPairs, Prefix, Storage};
 
 pub struct RedisStorage {
-    conn: redis::aio::MultiplexedConnection,
+    conn: ::redis::aio::MultiplexedConnection,
 }
 
 impl RedisStorage {
     pub async fn open(url: &str) -> Result<Self, Error> {
         let client =
-            redis::Client::open(url).map_err(|e| Error::Internal(format!("redis open: {e}")))?;
+            ::redis::Client::open(url).map_err(|e| Error::Internal(format!("redis open: {e}")))?;
         let conn = client
             .get_multiplexed_async_connection()
             .await
@@ -63,7 +63,7 @@ impl Storage for RedisStorage {
         };
         Box::pin(async move {
             let keys: Vec<Vec<u8>> = {
-                let mut iter: redis::AsyncIter<Vec<u8>> = conn
+                let mut iter: ::redis::AsyncIter<Vec<u8>> = conn
                     .scan_match(&pattern)
                     .await
                     .map_err(|e| Error::Internal(e.to_string()))?;
@@ -78,7 +78,7 @@ impl Storage for RedisStorage {
                 return Ok(Vec::new());
             }
 
-            let values: Vec<Option<Vec<u8>>> = redis::cmd("MGET")
+            let values: Vec<Option<Vec<u8>>> = ::redis::cmd("MGET")
                 .arg(&keys)
                 .query_async(&mut conn)
                 .await

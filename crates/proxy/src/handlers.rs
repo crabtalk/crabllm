@@ -40,11 +40,10 @@ pub async fn chat_completions<S: Storage + 'static>(
     };
 
     let provider_name = state
-        .config
-        .models()
-        .get(&model)
-        .cloned()
-        .unwrap_or_default();
+        .registry
+        .provider_name(&model)
+        .unwrap_or_default()
+        .to_string();
 
     let ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
@@ -183,11 +182,10 @@ pub async fn embeddings<S: Storage + 'static>(
     };
 
     let provider_name = state
-        .config
-        .models()
-        .get(&model)
-        .cloned()
-        .unwrap_or_default();
+        .registry
+        .provider_name(&model)
+        .unwrap_or_default()
+        .to_string();
 
     let ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
@@ -228,11 +226,10 @@ pub async fn embeddings<S: Storage + 'static>(
 /// GET /v1/models
 pub async fn models<S: Storage + 'static>(State(state): State<AppState<S>>) -> Json<ModelList> {
     let data: Vec<Model> = state
-        .config
-        .models()
-        .into_keys()
+        .registry
+        .model_names()
         .map(|name| Model {
-            id: name,
+            id: name.to_string(),
             object: "model".to_string(),
             created: 0,
             owned_by: "crabtalk".to_string(),
@@ -267,11 +264,10 @@ pub async fn image_generations<S: Storage + 'static>(
     };
 
     let provider_name = state
-        .config
-        .models()
-        .get(&model)
-        .cloned()
-        .unwrap_or_default();
+        .registry
+        .provider_name(&model)
+        .unwrap_or_default()
+        .to_string();
 
     let ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
@@ -340,11 +336,10 @@ pub async fn audio_speech<S: Storage + 'static>(
     };
 
     let provider_name = state
-        .config
-        .models()
-        .get(&model)
-        .cloned()
-        .unwrap_or_default();
+        .registry
+        .provider_name(&model)
+        .unwrap_or_default()
+        .to_string();
 
     let ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
@@ -486,11 +481,10 @@ pub async fn audio_transcriptions<S: Storage + 'static>(
     };
 
     let provider_name = state
-        .config
-        .models()
-        .get(&model)
-        .cloned()
-        .unwrap_or_default();
+        .registry
+        .provider_name(&model)
+        .unwrap_or_default()
+        .to_string();
 
     let ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),

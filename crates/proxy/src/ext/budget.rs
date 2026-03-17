@@ -17,13 +17,13 @@ impl Budget {
     const PREFIX: Prefix = *b"bdgt";
 
     pub fn new(
-        config: &toml::Value,
+        config: &serde_json::Value,
         storage: Arc<dyn Storage>,
         pricing: HashMap<String, PricingConfig>,
     ) -> Result<Self, String> {
         let default_budget = config
             .get("default_budget")
-            .and_then(|v| v.as_float())
+            .and_then(|v| v.as_f64())
             .ok_or("budget: missing or invalid 'default_budget' (USD float)")?;
 
         if default_budget <= 0.0 {
@@ -33,11 +33,11 @@ impl Budget {
         let default_budget_micros = (default_budget * 1_000_000.0) as i64;
 
         let mut key_budgets = HashMap::new();
-        if let Some(keys_table) = config.get("keys").and_then(|v| v.as_table()) {
+        if let Some(keys_table) = config.get("keys").and_then(|v| v.as_object()) {
             for (key_name, key_config) in keys_table {
                 let budget = key_config
                     .get("budget")
-                    .and_then(|v| v.as_float())
+                    .and_then(|v| v.as_f64())
                     .ok_or(format!(
                         "budget: key '{key_name}' missing or invalid 'budget'"
                     ))?;
@@ -65,6 +65,22 @@ impl Budget {
             return 0;
         };
         (cost(pricing, prompt_tokens, completion_tokens) * 1_000_000.0) as i64
+    }
+
+    pub fn admin_routes(&self) -> Router {
+        let storage = self.storage.clone();
+        let prefix = Self::PREFIX;
+        let default_budget = self.default_budget_micros;
+        let key_budgets = self.key_budgets.clone();
+
+        Router::new().route(
+            "/v1/budget",
+            get(move || {
+                let storage = storage.clone();
+                let key_budgets = key_budgets.clone();
+                async move { budget_handler(storage, prefix, default_budget, key_budgets).await }
+            }),
+        )
     }
 
     async fn record_cost(&self, key_name: &str, model: &str, prompt: u32, completion: u32) {
@@ -143,23 +159,6 @@ impl crabtalk_core::Extension for Budget {
                     .await;
             }
         })
-    }
-
-    fn routes(&self) -> Option<Router> {
-        let storage = self.storage.clone();
-        let prefix = Self::PREFIX;
-        let default_budget = self.default_budget_micros;
-        let key_budgets = self.key_budgets.clone();
-
-        let router = Router::new().route(
-            "/v1/budget",
-            get(move || {
-                let storage = storage.clone();
-                let key_budgets = key_budgets.clone();
-                async move { budget_handler(storage, prefix, default_budget, key_budgets).await }
-            }),
-        );
-        Some(router)
     }
 }
 

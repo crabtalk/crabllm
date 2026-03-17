@@ -1,6 +1,6 @@
 use crabtalk_core::{Extension, GatewayConfig, Storage};
 use crabtalk_provider::ProviderRegistry;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 /// Shared application state passed to all handlers.
 pub struct AppState<S: Storage> {
@@ -9,6 +9,8 @@ pub struct AppState<S: Storage> {
     pub config: GatewayConfig,
     pub extensions: Arc<Vec<Box<dyn Extension>>>,
     pub storage: Arc<S>,
+    /// Precomputed token → key name lookup for O(1) auth.
+    pub key_map: HashMap<String, String>,
 }
 
 impl<S: Storage> Clone for AppState<S> {
@@ -19,6 +21,7 @@ impl<S: Storage> Clone for AppState<S> {
             config: self.config.clone(),
             extensions: self.extensions.clone(),
             storage: self.storage.clone(),
+            key_map: self.key_map.clone(),
         }
     }
 }

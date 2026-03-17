@@ -342,8 +342,8 @@ dependencies = [
  "crabtalk-provider",
  "crabtalk-proxy",
  "reqwest",
+ "serde_json",
  "tokio",
- "toml",
  "tracing-subscriber",
 ]
 
@@ -363,13 +363,8 @@ dependencies = [
 name = "crabtalk-core"
 version = "0.0.5"
 dependencies = [
- "axum",
- "dashmap",
- "redis",
  "serde",
  "serde_json",
- "sqlx",
- "tokio",
  "toml",
 ]
 
@@ -397,14 +392,16 @@ dependencies = [
  "bytes",
  "crabtalk-core",
  "crabtalk-provider",
+ "dashmap",
  "futures",
  "rand 0.9.2",
+ "redis",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
+ "sqlx",
  "tokio",
- "toml",
  "tower",
  "tracing",
  "uuid",

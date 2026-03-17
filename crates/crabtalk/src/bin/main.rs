@@ -1,5 +1,5 @@
 use clap::Parser;
-use crabtalk_core::{Extension, GatewayConfig, MemoryStorage, Storage};
+use crabtalk_core::{Extension, GatewayConfig, Storage};
 use crabtalk_provider::ProviderRegistry;
 use crabtalk_proxy::{
     AppState,
@@ -7,6 +7,7 @@ use crabtalk_proxy::{
         budget::Budget, cache::Cache, logging::RequestLogger, rate_limit::RateLimit,
         usage::UsageTracker,
     },
+    storage::MemoryStorage,
 };
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
@@ -60,7 +61,7 @@ async fn main() {
                 .as_ref()
                 .and_then(|s| s.path.as_deref())
                 .unwrap_or("redis://127.0.0.1:6379");
-            let storage = match crabtalk_core::RedisStorage::open(url).await {
+            let storage = match crabtalk_proxy::storage::RedisStorage::open(url).await {
                 Ok(s) => Arc::new(s),
                 Err(e) => {
                     eprintln!("error: failed to open redis storage: {e}");
@@ -82,7 +83,7 @@ async fn main() {
                 .and_then(|s| s.path.as_deref())
                 .unwrap_or("crabtalk.db");
             let url = format!("sqlite:{path}?mode=rwc");
-            let storage = match crabtalk_core::SqliteStorage::open(&url).await {
+            let storage = match crabtalk_proxy::storage::SqliteStorage::open(&url).await {
                 Ok(s) => Arc::new(s),
                 Err(e) => {
                     eprintln!("error: failed to open sqlite storage: {e}");
@@ -108,19 +109,26 @@ async fn run<S: Storage + 'static>(
     registry: ProviderRegistry,
     storage: Arc<S>,
 ) {
-    let extensions = match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
-        Ok(exts) => exts,
-        Err(e) => {
-            eprintln!("error: failed to build extensions: {e}");
-            std::process::exit(1);
-        }
-    };
+    let (extensions, admin_routes) =
+        match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("error: failed to build extensions: {e}");
+                std::process::exit(1);
+            }
+        };
 
     let ext_count = extensions.len();
     let addr = config.listen.clone();
-    let model_count = config.models().len();
+    let model_count = registry.model_names().count();
     let provider_count = config.providers.len();
     let shutdown_timeout = Duration::from_secs(config.shutdown_timeout);
+
+    let key_map = config
+        .keys
+        .iter()
+        .map(|k| (k.key.clone(), k.name.clone()))
+        .collect();
 
     let state = AppState {
         registry,
@@ -128,9 +136,10 @@ async fn run<S: Storage + 'static>(
         config,
         extensions: Arc::new(extensions),
         storage,
+        key_map,
     };
 
-    let app = crabtalk_proxy::router(state);
+    let app = crabtalk_proxy::router(state, admin_routes);
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
@@ -180,17 +189,20 @@ async fn shutdown_signal(drain_timeout: Duration) {
     });
 }
 
+type Extensions = (Vec<Box<dyn Extension>>, Vec<axum::Router>);
+
 fn build_extensions(
     config: &GatewayConfig,
     storage: Arc<dyn Storage>,
-) -> Result<Vec<Box<dyn Extension>>, String> {
+) -> Result<Extensions, String> {
     let mut extensions: Vec<Box<dyn Extension>> = Vec::new();
+    let mut admin_routes: Vec<axum::Router> = Vec::new();
     let mut has_logging = false;
 
     let ext_table = match &config.extensions {
-        Some(toml::Value::Table(t)) => t,
-        Some(_) => return Err("[extensions] must be a TOML table".to_string()),
-        None => return Ok(extensions),
+        Some(serde_json::Value::Object(t)) => t,
+        Some(_) => return Err("[extensions] must be a table".to_string()),
+        None => return Ok((extensions, admin_routes)),
     };
 
     for (name, value) in ext_table {
@@ -201,14 +213,17 @@ fn build_extensions(
             }
             "usage" => {
                 let ext = UsageTracker::new(value, storage.clone())?;
+                admin_routes.push(ext.admin_routes());
                 extensions.push(Box::new(ext));
             }
             "cache" => {
                 let ext = Cache::new(value, storage.clone())?;
+                admin_routes.push(ext.admin_routes());
                 extensions.push(Box::new(ext));
             }
             "budget" => {
                 let ext = Budget::new(value, storage.clone(), config.pricing.clone())?;
+                admin_routes.push(ext.admin_routes());
                 extensions.push(Box::new(ext));
             }
             "logging" => {
@@ -229,5 +244,5 @@ fn build_extensions(
         tracing_subscriber::fmt::init();
     }
 
-    Ok(extensions)
+    Ok((extensions, admin_routes))
 }

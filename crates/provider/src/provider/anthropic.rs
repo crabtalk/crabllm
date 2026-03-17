@@ -1,14 +1,26 @@
+use bytes::{Buf, BytesMut};
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
-    Error, FunctionCall, FunctionCallDelta, Message, ToolCall, ToolCallDelta, Usage,
+    Error, FinishReason, FunctionCall, FunctionCallDelta, Message, Role, Stop, ToolCall,
+    ToolCallDelta, ToolType, Usage,
 };
-use futures::stream::{self, Stream};
+use futures::{
+    TryStreamExt,
+    stream::{self, Stream},
+};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_MAX_TOKENS: u32 = 4096;
 const BASE_URL: &str = "https://api.anthropic.com/v1";
 
 // ── Anthropic-native request types ──
+
+#[derive(Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "type")]
+    kind: String,
+    budget_tokens: u32,
+}
 
 #[derive(Serialize)]
 struct AnthropicRequest {
@@ -27,6 +39,10 @@ struct AnthropicRequest {
     tools: Option<Vec<AnthropicTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop_sequences: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingConfig>,
 }
 
 #[derive(Serialize)]
@@ -43,12 +59,14 @@ enum AnthropicContent {
     Blocks(Vec<AnthropicContentBlock>),
 }
 
-/// A content block in a message (text, tool_use, or tool_result).
+/// A content block in a message (text, image, tool_use, or tool_result).
 #[derive(Serialize)]
 #[serde(tag = "type")]
 enum AnthropicContentBlock {
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "image")]
+    Image { source: serde_json::Value },
     #[serde(rename = "tool_use")]
     ToolUse {
         id: String,
@@ -99,6 +117,10 @@ struct ResponseContentBlock {
 struct AnthropicUsage {
     input_tokens: u32,
     output_tokens: u32,
+    #[serde(default)]
+    cache_read_input_tokens: Option<u32>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<u32>,
 }
 
 // ── Anthropic SSE event types ──
@@ -116,6 +138,24 @@ struct SseEvent {
     content_block: Option<SseContentBlock>,
     #[serde(default)]
     usage: Option<AnthropicUsage>,
+    #[serde(default)]
+    message: Option<SseMessage>,
+    #[serde(default)]
+    error: Option<SseError>,
+}
+
+#[derive(Deserialize)]
+struct SseMessage {
+    #[serde(default)]
+    usage: Option<AnthropicUsage>,
+}
+
+#[derive(Deserialize)]
+struct SseError {
+    #[serde(rename = "type", default)]
+    kind: String,
+    #[serde(default)]
+    message: String,
 }
 
 #[derive(Deserialize)]
@@ -128,6 +168,8 @@ struct SseDelta {
     partial_json: Option<String>,
     #[serde(default)]
     stop_reason: Option<String>,
+    #[serde(default)]
+    thinking: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -147,13 +189,13 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
     let mut messages = Vec::new();
 
     for msg in &request.messages {
-        if msg.role == "system" {
+        if msg.role == Role::System {
             if let Some(content) = &msg.content
                 && let Some(s) = content.as_str()
             {
                 system_parts.push(s.to_string());
             }
-        } else if msg.role == "tool" {
+        } else if msg.role == Role::Tool {
             // Tool result → user message with tool_result content block.
             let content_str = msg
                 .content
@@ -174,7 +216,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                     content: content_str,
                 }]),
             });
-        } else if msg.role == "assistant"
+        } else if msg.role == Role::Assistant
             && let Some(tool_calls) = &msg.tool_calls
         {
             // Assistant message with tool_calls → content blocks.
@@ -201,15 +243,63 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                 content: AnthropicContent::Blocks(blocks),
             });
         } else {
-            let content = msg
-                .content
-                .as_ref()
-                .and_then(|c| c.as_str())
-                .unwrap_or("")
-                .to_string();
+            let anthropic_content = match msg.content.as_ref() {
+                Some(c) if c.is_array() => {
+                    let mut blocks = Vec::new();
+                    if let Some(parts) = c.as_array() {
+                        for part in parts {
+                            match part.get("type").and_then(|t| t.as_str()) {
+                                Some("text") => {
+                                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                                        blocks.push(AnthropicContentBlock::Text {
+                                            text: text.to_string(),
+                                        });
+                                    }
+                                }
+                                Some("image_url") => {
+                                    if let Some(url) = part
+                                        .get("image_url")
+                                        .and_then(|iu| iu.get("url"))
+                                        .and_then(|u| u.as_str())
+                                    {
+                                        let source = if let Some(rest) = url.strip_prefix("data:") {
+                                            // data:image/png;base64,<data>
+                                            let (meta, data) = rest.split_once(',').unwrap_or((
+                                                "application/octet-stream;base64",
+                                                rest,
+                                            ));
+                                            let media_type =
+                                                meta.strip_suffix(";base64").unwrap_or(meta);
+                                            serde_json::json!({
+                                                "type": "base64",
+                                                "media_type": media_type,
+                                                "data": data,
+                                            })
+                                        } else {
+                                            serde_json::json!({
+                                                "type": "url",
+                                                "url": url,
+                                            })
+                                        };
+                                        blocks.push(AnthropicContentBlock::Image { source });
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    if blocks.is_empty() {
+                        AnthropicContent::Text(String::new())
+                    } else {
+                        AnthropicContent::Blocks(blocks)
+                    }
+                }
+                Some(c) => AnthropicContent::Text(c.as_str().unwrap_or("").to_string()),
+                None => AnthropicContent::Text(String::new()),
+            };
             messages.push(AnthropicMessage {
-                role: msg.role.clone(),
-                content: AnthropicContent::Text(content),
+                role: msg.role.as_str().to_string(),
+                content: anthropic_content,
             });
         }
     }
@@ -220,70 +310,129 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
         Some(system_parts.join("\n"))
     };
 
-    let tools = request.tools.as_ref().map(|tools| {
-        tools
-            .iter()
-            .map(|t| AnthropicTool {
-                name: t.function.name.clone(),
-                description: t.function.description.clone(),
-                input_schema: t
-                    .function
-                    .parameters
-                    .clone()
-                    .unwrap_or(serde_json::json!({"type": "object"})),
-            })
-            .collect()
+    // B2: When tool_choice is "none", omit tools and tool_choice entirely.
+    let is_none = request.tool_choice.as_ref().and_then(|tc| tc.as_str()) == Some("none");
+
+    let tools = if is_none {
+        None
+    } else {
+        request.tools.as_ref().map(|tools| {
+            tools
+                .iter()
+                .map(|t| AnthropicTool {
+                    name: t.function.name.clone(),
+                    description: t.function.description.clone(),
+                    input_schema: t
+                        .function
+                        .parameters
+                        .clone()
+                        .unwrap_or(serde_json::json!({"type": "object"})),
+                })
+                .collect()
+        })
+    };
+
+    let tool_choice = if is_none {
+        None
+    } else {
+        request.tool_choice.as_ref().map(|tc| {
+            if let Some(s) = tc.as_str() {
+                match s {
+                    "auto" => serde_json::json!({"type": "auto"}),
+                    "required" => serde_json::json!({"type": "any"}),
+                    _ => serde_json::json!({"type": "auto"}),
+                }
+            } else if let Some(name) = tc.get("function").and_then(|f| f.get("name")) {
+                serde_json::json!({"type": "tool", "name": name})
+            } else {
+                serde_json::json!({"type": "auto"})
+            }
+        })
+    };
+
+    let stop_sequences = request.stop.as_ref().map(|s| match s {
+        Stop::Single(s) => vec![s.clone()],
+        Stop::Multiple(v) => v.clone(),
     });
 
-    let tool_choice = request.tool_choice.as_ref().map(|tc| {
-        if let Some(s) = tc.as_str() {
-            match s {
-                "auto" | "none" => serde_json::json!({"type": "auto"}),
-                "required" => serde_json::json!({"type": "any"}),
-                _ => serde_json::json!({"type": "auto"}),
-            }
-        } else if let Some(name) = tc.get("function").and_then(|f| f.get("name")) {
-            serde_json::json!({"type": "tool", "name": name})
+    let max_tokens = request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
+
+    // Derive thinking config from request.extra["thinking"].
+    let thinking = request.extra.get("thinking").and_then(|v| {
+        if v.as_bool() == Some(true) {
+            Some(ThinkingConfig {
+                kind: "enabled".to_string(),
+                budget_tokens: max_tokens.saturating_sub(1),
+            })
+        } else if let Some(obj) = v.as_object() {
+            let budget = obj
+                .get("budget_tokens")
+                .and_then(|b| b.as_u64())
+                .unwrap_or(max_tokens.saturating_sub(1) as u64) as u32;
+            Some(ThinkingConfig {
+                kind: "enabled".to_string(),
+                budget_tokens: budget,
+            })
         } else {
-            serde_json::json!({"type": "auto"})
+            None
         }
     });
 
     AnthropicRequest {
         model: request.model.clone(),
         messages,
-        max_tokens: request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+        max_tokens,
         system,
         temperature: request.temperature,
         top_p: request.top_p,
         stream: request.stream,
         tools,
         tool_choice,
+        stop_sequences,
+        thinking,
     }
 }
 
-fn map_stop_reason(stop_reason: &Option<String>) -> Option<String> {
+fn map_usage(u: &AnthropicUsage) -> Usage {
+    Usage {
+        prompt_tokens: u.input_tokens,
+        completion_tokens: u.output_tokens,
+        total_tokens: u.input_tokens + u.output_tokens,
+        completion_tokens_details: None,
+        prompt_cache_hit_tokens: u.cache_read_input_tokens,
+        prompt_cache_miss_tokens: u.cache_creation_input_tokens,
+    }
+}
+
+fn map_stop_reason(stop_reason: &Option<String>) -> Option<FinishReason> {
     stop_reason.as_ref().map(|r| match r.as_str() {
-        "end_turn" => "stop".to_string(),
-        "max_tokens" => "length".to_string(),
-        "tool_use" => "tool_calls".to_string(),
-        other => other.to_string(),
+        "end_turn" => FinishReason::Stop,
+        "max_tokens" => FinishReason::Length,
+        "tool_use" => FinishReason::ToolCalls,
+        other => FinishReason::Custom(other.to_string()),
     })
 }
 
 fn translate_response(resp: AnthropicResponse) -> ChatCompletionResponse {
     let mut content_text = String::new();
     let mut tool_calls = Vec::new();
+    let mut reasoning_content = None;
 
     for block in &resp.content {
         match block.kind.as_str() {
+            "thinking" => {
+                if !block.text.is_empty() {
+                    reasoning_content = Some(block.text.clone());
+                }
+            }
             "text" => content_text.push_str(&block.text),
             "tool_use" => {
                 if let (Some(id), Some(name), Some(input)) = (&block.id, &block.name, &block.input)
                 {
                     tool_calls.push(ToolCall {
+                        index: None,
                         id: id.clone(),
-                        kind: "function".to_string(),
+                        kind: ToolType::Function,
                         function: FunctionCall {
                             name: name.clone(),
                             arguments: serde_json::to_string(input).unwrap_or_default(),
@@ -315,19 +464,19 @@ fn translate_response(resp: AnthropicResponse) -> ChatCompletionResponse {
         choices: vec![Choice {
             index: 0,
             message: Message {
-                role: "assistant".to_string(),
+                role: Role::Assistant,
                 content,
                 tool_calls: tool_calls_opt,
                 tool_call_id: None,
                 name: None,
+                reasoning_content,
+                extra: Default::default(),
             },
             finish_reason: map_stop_reason(&resp.stop_reason),
+            logprobs: None,
         }],
-        usage: Some(Usage {
-            prompt_tokens: resp.usage.input_tokens,
-            completion_tokens: resp.usage.output_tokens,
-            total_tokens: resp.usage.input_tokens + resp.usage.output_tokens,
-        }),
+        usage: Some(map_usage(&resp.usage)),
+        system_fingerprint: None,
     }
 }
 
@@ -345,11 +494,15 @@ pub async fn chat_completion(
     let anthropic_req = translate_request(request);
     let url = format!("{BASE_URL}/messages");
 
-    let resp = client
+    let mut req = client
         .post(&url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
+        .header("content-type", "application/json");
+    if anthropic_req.thinking.is_some() {
+        req = req.header("anthropic-beta", "interleaved-thinking-2025-05-14");
+    }
+    let resp = req
         .json(&anthropic_req)
         .send()
         .await
@@ -379,11 +532,15 @@ pub async fn chat_completion_stream(
     anthropic_req.stream = Some(true);
     let url = format!("{BASE_URL}/messages");
 
-    let resp = client
+    let mut req = client
         .post(&url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
+        .header("content-type", "application/json");
+    if anthropic_req.thinking.is_some() {
+        req = req.header("anthropic-beta", "interleaved-thinking-2025-05-14");
+    }
+    let resp = req
         .json(&anthropic_req)
         .send()
         .await
@@ -399,10 +556,15 @@ pub async fn chat_completion_stream(
     Ok(anthropic_sse_stream(resp, model))
 }
 
-/// Streaming state: tracks chunk counter and tool call counter for indexing.
+/// Streaming state: tracks chunk counter, tool call counter, cached input tokens,
+/// and whether the current content block is a thinking block.
 struct StreamState {
     chunk_idx: u64,
     tool_call_idx: u32,
+    input_tokens: u32,
+    cache_read_input_tokens: Option<u32>,
+    cache_creation_input_tokens: Option<u32>,
+    is_thinking_block: bool,
 }
 
 fn anthropic_sse_stream(
@@ -413,13 +575,15 @@ fn anthropic_sse_stream(
     let state = StreamState {
         chunk_idx: 0,
         tool_call_idx: 0,
+        input_tokens: 0,
+        cache_read_input_tokens: None,
+        cache_creation_input_tokens: None,
+        is_thinking_block: false,
     };
 
     stream::unfold(
-        (byte_stream, Vec::<u8>::new(), model, state),
+        (byte_stream, BytesMut::new(), model, state),
         |(mut byte_stream, mut buffer, model, mut state)| async move {
-            use futures::TryStreamExt;
-
             loop {
                 if let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
                     let mut line_end = newline_pos;
@@ -429,18 +593,18 @@ fn anthropic_sse_stream(
                     let line = &buffer[..line_end];
 
                     if line.is_empty() {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     }
 
                     let Some(data) = line.strip_prefix(b"data: ") else {
-                        buffer.drain(..newline_pos + 1);
+                        buffer.advance(newline_pos + 1);
                         continue;
                     };
                     let data = match std::str::from_utf8(data) {
                         Ok(s) => s.trim(),
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
@@ -448,54 +612,94 @@ fn anthropic_sse_stream(
                     let event: SseEvent = match serde_json::from_str(data) {
                         Ok(e) => e,
                         Err(_) => {
-                            buffer.drain(..newline_pos + 1);
+                            buffer.advance(newline_pos + 1);
                             continue;
                         }
                     };
-                    buffer.drain(..newline_pos + 1);
+                    buffer.advance(newline_pos + 1);
 
                     match event.kind.as_str() {
-                        "content_block_start" => {
-                            if let Some(cb) = &event.content_block
-                                && cb.kind == "tool_use"
+                        "message_start" => {
+                            if let Some(msg) = &event.message
+                                && let Some(usage) = &msg.usage
                             {
-                                state.chunk_idx += 1;
-                                let tool_idx = state.tool_call_idx;
-                                state.tool_call_idx += 1;
-                                let chunk = ChatCompletionChunk {
-                                    id: format!("chatcmpl-{}", state.chunk_idx),
-                                    object: "chat.completion.chunk".to_string(),
-                                    created: 0,
-                                    model: model.clone(),
-                                    choices: vec![ChunkChoice {
-                                        index: 0,
-                                        delta: Delta {
-                                            role: if state.chunk_idx == 1 {
-                                                Some("assistant".to_string())
-                                            } else {
-                                                None
-                                            },
-                                            content: None,
-                                            tool_calls: Some(vec![ToolCallDelta {
-                                                index: tool_idx,
-                                                id: cb.id.clone(),
-                                                kind: Some("function".to_string()),
-                                                function: Some(FunctionCallDelta {
-                                                    name: cb.name.clone(),
-                                                    arguments: Some(String::new()),
-                                                }),
-                                            }]),
-                                        },
-                                        finish_reason: None,
-                                    }],
-                                    usage: None,
-                                };
-                                return Some((Ok(chunk), (byte_stream, buffer, model, state)));
+                                state.input_tokens = usage.input_tokens;
+                                state.cache_read_input_tokens = usage.cache_read_input_tokens;
+                                state.cache_creation_input_tokens =
+                                    usage.cache_creation_input_tokens;
                             }
                         }
+                        "error" => {
+                            let msg = if let Some(err) = &event.error {
+                                format!("anthropic stream error: {}: {}", err.kind, err.message)
+                            } else {
+                                "anthropic stream error: unknown".to_string()
+                            };
+                            return Some((
+                                Err(Error::Internal(msg)),
+                                (byte_stream, buffer, model, state),
+                            ));
+                        }
+                        "content_block_start" => {
+                            let Some(cb) = &event.content_block else {
+                                continue;
+                            };
+                            match cb.kind.as_str() {
+                                "thinking" => state.is_thinking_block = true,
+                                "tool_use" => {
+                                    state.is_thinking_block = false;
+                                    state.chunk_idx += 1;
+                                    let tool_idx = state.tool_call_idx;
+                                    state.tool_call_idx += 1;
+                                    let chunk = ChatCompletionChunk {
+                                        id: format!("chatcmpl-{}", state.chunk_idx),
+                                        object: "chat.completion.chunk".to_string(),
+                                        created: 0,
+                                        model: model.clone(),
+                                        choices: vec![ChunkChoice {
+                                            index: 0,
+                                            delta: Delta {
+                                                role: if state.chunk_idx == 1 {
+                                                    Some(Role::Assistant)
+                                                } else {
+                                                    None
+                                                },
+                                                content: None,
+                                                tool_calls: Some(vec![ToolCallDelta {
+                                                    index: tool_idx,
+                                                    id: cb.id.clone(),
+                                                    kind: Some(ToolType::Function),
+                                                    function: Some(FunctionCallDelta {
+                                                        name: cb.name.clone(),
+                                                        arguments: Some(String::new()),
+                                                    }),
+                                                }]),
+                                                reasoning_content: None,
+                                            },
+                                            finish_reason: None,
+                                            logprobs: None,
+                                        }],
+                                        usage: None,
+                                        system_fingerprint: None,
+                                    };
+                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
+                                }
+                                _ => state.is_thinking_block = false,
+                            }
+                        }
+                        "content_block_stop" => {
+                            state.is_thinking_block = false;
+                        }
                         "content_block_delta" => {
-                            if let Some(delta) = &event.delta {
-                                if delta.kind == "text_delta" {
+                            let Some(delta) = &event.delta else {
+                                continue;
+                            };
+                            match delta.kind.as_str() {
+                                "thinking_delta" => {
+                                    let text = delta.thinking.as_deref().unwrap_or(&delta.text);
+                                    if text.is_empty() {
+                                        continue;
+                                    }
                                     state.chunk_idx += 1;
                                     let chunk = ChatCompletionChunk {
                                         id: format!("chatcmpl-{}", state.chunk_idx),
@@ -506,21 +710,53 @@ fn anthropic_sse_stream(
                                             index: 0,
                                             delta: Delta {
                                                 role: if state.chunk_idx == 1 {
-                                                    Some("assistant".to_string())
+                                                    Some(Role::Assistant)
+                                                } else {
+                                                    None
+                                                },
+                                                content: None,
+                                                tool_calls: None,
+                                                reasoning_content: Some(text.to_string()),
+                                            },
+                                            finish_reason: None,
+                                            logprobs: None,
+                                        }],
+                                        usage: None,
+                                        system_fingerprint: None,
+                                    };
+                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
+                                }
+                                "text_delta" => {
+                                    state.chunk_idx += 1;
+                                    let chunk = ChatCompletionChunk {
+                                        id: format!("chatcmpl-{}", state.chunk_idx),
+                                        object: "chat.completion.chunk".to_string(),
+                                        created: 0,
+                                        model: model.clone(),
+                                        choices: vec![ChunkChoice {
+                                            index: 0,
+                                            delta: Delta {
+                                                role: if state.chunk_idx == 1 {
+                                                    Some(Role::Assistant)
                                                 } else {
                                                     None
                                                 },
                                                 content: Some(delta.text.clone()),
                                                 tool_calls: None,
+                                                reasoning_content: None,
                                             },
                                             finish_reason: None,
+                                            logprobs: None,
                                         }],
                                         usage: None,
+                                        system_fingerprint: None,
                                     };
                                     return Some((Ok(chunk), (byte_stream, buffer, model, state)));
-                                } else if delta.kind == "input_json_delta"
-                                    && let Some(partial) = &delta.partial_json
-                                {
+                                }
+                                "input_json_delta" => {
+                                    let Some(partial) = &delta.partial_json else {
+                                        continue;
+                                    };
                                     state.chunk_idx += 1;
                                     let tool_idx = state.tool_call_idx.saturating_sub(1);
                                     let chunk = ChatCompletionChunk {
@@ -542,41 +778,52 @@ fn anthropic_sse_stream(
                                                         arguments: Some(partial.clone()),
                                                     }),
                                                 }]),
+                                                reasoning_content: None,
                                             },
                                             finish_reason: None,
+                                            logprobs: None,
                                         }],
                                         usage: None,
+                                        system_fingerprint: None,
                                     };
                                     return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                                 }
+                                _ => {}
                             }
                         }
                         "message_delta" => {
-                            if let Some(delta) = &event.delta {
-                                let finish_reason = map_stop_reason(&delta.stop_reason);
-                                state.chunk_idx += 1;
-                                let chunk = ChatCompletionChunk {
-                                    id: format!("chatcmpl-{}", state.chunk_idx),
-                                    object: "chat.completion.chunk".to_string(),
-                                    created: 0,
-                                    model: model.clone(),
-                                    choices: vec![ChunkChoice {
-                                        index: 0,
-                                        delta: Delta {
-                                            role: None,
-                                            content: None,
-                                            tool_calls: None,
-                                        },
-                                        finish_reason,
-                                    }],
-                                    usage: event.usage.map(|u| Usage {
-                                        prompt_tokens: u.input_tokens,
-                                        completion_tokens: u.output_tokens,
-                                        total_tokens: u.input_tokens + u.output_tokens,
-                                    }),
-                                };
-                                return Some((Ok(chunk), (byte_stream, buffer, model, state)));
-                            }
+                            let Some(delta) = &event.delta else {
+                                continue;
+                            };
+                            let finish_reason = map_stop_reason(&delta.stop_reason);
+                            state.chunk_idx += 1;
+                            let chunk = ChatCompletionChunk {
+                                id: format!("chatcmpl-{}", state.chunk_idx),
+                                object: "chat.completion.chunk".to_string(),
+                                created: 0,
+                                model: model.clone(),
+                                choices: vec![ChunkChoice {
+                                    index: 0,
+                                    delta: Delta {
+                                        role: None,
+                                        content: None,
+                                        tool_calls: None,
+                                        reasoning_content: None,
+                                    },
+                                    finish_reason,
+                                    logprobs: None,
+                                }],
+                                usage: event.usage.map(|u| Usage {
+                                    prompt_tokens: state.input_tokens,
+                                    completion_tokens: u.output_tokens,
+                                    total_tokens: state.input_tokens + u.output_tokens,
+                                    completion_tokens_details: None,
+                                    prompt_cache_hit_tokens: state.cache_read_input_tokens,
+                                    prompt_cache_miss_tokens: state.cache_creation_input_tokens,
+                                }),
+                                system_fingerprint: None,
+                            };
+                            return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                         }
                         "message_stop" => return None,
                         _ => {}

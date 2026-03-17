@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, path::Path};
+use std::collections::HashMap;
 
 /// Per-model token pricing configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub struct GatewayConfig {
     pub keys: Vec<KeyConfig>,
     /// Extension configurations. Each key is an extension name, value is its config.
     #[serde(default)]
-    pub extensions: Option<toml::Value>,
+    pub extensions: Option<serde_json::Value>,
     /// Storage backend configuration.
     #[serde(default)]
     pub storage: Option<StorageConfig>,
@@ -139,27 +139,18 @@ impl StorageConfig {
 
 impl GatewayConfig {
     /// Load config from a TOML file, expanding `${VAR}` patterns in string values.
-    pub fn from_file(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    #[cfg(feature = "gateway")]
+    pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let raw = std::fs::read_to_string(path)?;
         let expanded = expand_env_vars(&raw);
         let config: GatewayConfig = toml::from_str(&expanded)?;
         Ok(config)
     }
-
-    /// Flatten all providers' model lists into a model_name → provider_name map.
-    pub fn models(&self) -> HashMap<String, String> {
-        let mut map = HashMap::new();
-        for (provider_name, provider_config) in &self.providers {
-            for model in &provider_config.models {
-                map.insert(model.clone(), provider_name.clone());
-            }
-        }
-        map
-    }
 }
 
 /// Expand `${VAR}` patterns in a string using environment variables.
 /// Unknown variables are replaced with empty string.
+#[cfg(feature = "gateway")]
 fn expand_env_vars(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
@@ -174,7 +165,7 @@ fn expand_env_vars(input: &str) -> String {
                 }
                 var_name.push(ch);
             }
-            if let Ok(val) = env::var(&var_name) {
+            if let Ok(val) = std::env::var(&var_name) {
                 result.push_str(&val);
             }
         } else {

@@ -52,6 +52,7 @@ impl std::error::Error for Error {
     }
 }
 
+#[cfg(feature = "gateway")]
 impl From<toml::de::Error> for Error {
     fn from(e: toml::de::Error) -> Self {
         Error::Config(e.to_string())

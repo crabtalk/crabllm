@@ -2,7 +2,6 @@ use crate::{
     ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
     Prefix, storage_key,
 };
-use axum::Router;
 use std::time::Instant;
 
 /// Per-request metadata passed to extension hooks.
@@ -37,7 +36,7 @@ impl ExtensionError {
 /// Extensions are registered at startup and receive hooks at each stage of request
 /// processing. All methods have default no-op implementations except `name` and `prefix`.
 ///
-/// Extensions must be `Send + Sync` for use across Axum handler tasks.
+/// Extensions must be `Send + Sync` for use across async handler tasks.
 /// Hook methods return `BoxFuture` for dyn-compatibility.
 pub trait Extension: Send + Sync {
     /// Human-readable name for this extension, used in logs and diagnostics.
@@ -84,11 +83,5 @@ pub trait Extension: Send + Sync {
     /// Called when the provider returns an error.
     fn on_error(&self, _ctx: &RequestContext, _error: &Error) -> BoxFuture<'_, ()> {
         Box::pin(async {})
-    }
-
-    /// Return an Axum router with admin endpoints for this extension.
-    /// The proxy merges non-None routers into the main router.
-    fn routes(&self) -> Option<Router> {
-        None
     }
 }
