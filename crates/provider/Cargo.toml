@@ -10,6 +10,8 @@ keywords = ["llm", "openai", "anthropic", "gemini", "bedrock"]
 categories = ["web-programming::http-client", "network-programming"]
 
 [features]
+native-tls = ["reqwest/native-tls"]
+rustls-tls = ["reqwest/rustls-tls"]
 provider-bedrock = ["hmac", "sha2"]
 
 [dependencies]
