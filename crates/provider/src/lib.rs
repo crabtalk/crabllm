@@ -7,6 +7,7 @@ use futures::stream::{BoxStream, StreamExt};
 
 pub use registry::{Deployment, ProviderRegistry};
 
+pub mod llamacpp;
 mod provider;
 mod registry;
 

@@ -38,3 +38,5 @@ hmac = "0.12"
 sha2 = "0.10"
 redis = { version = "0.27", features = ["aio", "tokio-comp"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+ureq = "3"
+which = "7"
