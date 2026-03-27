@@ -4,15 +4,13 @@
 //! finding it on disk, downloading it from GitHub releases, spawning
 //! the process, health-checking, and tearing it down on drop.
 
-mod download;
-mod server;
-
+use crabllm_core::Error;
 pub use download::{download, install_dir};
 pub use server::{LlamaCppConfig, LlamaCppServer};
-
 use std::path::PathBuf;
 
-use crabllm_core::Error;
+mod download;
+mod server;
 
 /// The platform-specific binary name for llama-server.
 pub const BINARY_NAME: &str = if cfg!(windows) {

@@ -1,10 +1,11 @@
-use std::io::{BufRead, BufReader};
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::Duration;
-
 use crabllm_core::Error;
+use std::{
+    io::{BufRead, BufReader},
+    net::TcpListener,
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    time::Duration,
+};
 
 /// Configuration needed to spawn a llama-server process.
 pub struct LlamaCppConfig {

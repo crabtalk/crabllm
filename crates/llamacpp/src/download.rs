@@ -1,8 +1,6 @@
-use std::path::{Path, PathBuf};
-
-use crabllm_core::Error;
-
 use crate::BINARY_NAME;
+use crabllm_core::Error;
+use std::path::{Path, PathBuf};
 
 /// Default directory for downloaded llama-server binaries.
 ///
