@@ -206,9 +206,7 @@ fn validate_provider(
     provider: &Provider,
 ) -> Result<(), Error> {
     match provider {
-        Provider::Anthropic { api_key } | Provider::Google { api_key }
-            if api_key.is_empty() =>
-        {
+        Provider::Anthropic { api_key } | Provider::Google { api_key } if api_key.is_empty() => {
             Err(Error::Config(format!(
                 "provider '{name}' ({:?}) requires an api_key",
                 config.kind,
@@ -262,10 +260,9 @@ fn spawn_llamacpp_server(
     config: &crabllm_core::ProviderConfig,
     bin: &std::path::Path,
 ) -> Result<LlamaCppServer, Error> {
-    let model_path = config
-        .model_path
-        .as_ref()
-        .ok_or_else(|| Error::Config(format!("provider '{name}' (llamacpp) requires model_path")))?;
+    let model_path = config.model_path.as_ref().ok_or_else(|| {
+        Error::Config(format!("provider '{name}' (llamacpp) requires model_path"))
+    })?;
 
     eprintln!("starting llama-server for provider '{name}' (model: {model_path})");
 

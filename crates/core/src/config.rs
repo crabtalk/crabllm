@@ -169,22 +169,20 @@ impl ProviderConfig {
             ProviderKind::Ollama => {
                 // Ollama doesn't require api_key or base_url.
             }
-            ProviderKind::LlamaCpp => {
-                match &self.model_path {
-                    None => {
+            ProviderKind::LlamaCpp => match &self.model_path {
+                None => {
+                    return Err(format!(
+                        "provider '{provider_name}' (llamacpp) requires model_path"
+                    ));
+                }
+                Some(path) => {
+                    if !std::path::Path::new(path).exists() {
                         return Err(format!(
-                            "provider '{provider_name}' (llamacpp) requires model_path"
+                            "provider '{provider_name}' (llamacpp): model_path '{path}' does not exist"
                         ));
                     }
-                    Some(path) => {
-                        if !std::path::Path::new(path).exists() {
-                            return Err(format!(
-                                "provider '{provider_name}' (llamacpp): model_path '{path}' does not exist"
-                            ));
-                        }
-                    }
                 }
-            }
+            },
             _ => {
                 if self.api_key.is_none() && self.base_url.is_none() {
                     return Err(format!(

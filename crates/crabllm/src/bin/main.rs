@@ -64,9 +64,7 @@ fn run_llamacpp(action: LlamaCppAction) {
             match crabllm_provider::llamacpp::find_server_binary() {
                 Ok(path) => {
                     eprintln!("llama-server found: {}", path.display());
-                    let output = std::process::Command::new(&path)
-                        .arg("--version")
-                        .output();
+                    let output = std::process::Command::new(&path).arg("--version").output();
                     match output {
                         Ok(out) => {
                             // llama-server may print version to stdout or stderr.
