@@ -1,0 +1,21 @@
+[package]
+name = "crabllm-llamacpp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Managed llama.cpp server for the crabllm LLM API gateway"
+keywords = ["llm", "llamacpp", "gguf", "local", "inference"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+crabllm-core.workspace = true
+serde_json.workspace = true
+
+# llamacpp process management
+ureq = { workspace = true }
+which = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+zip = { workspace = true }
+dirs = { workspace = true }

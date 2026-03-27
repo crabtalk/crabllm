@@ -3,8 +3,8 @@ use crabllm_core::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     EmbeddingRequest, EmbeddingResponse, Error, ImageRequest, ProviderConfig, ProviderKind,
 };
+pub use crabllm_llamacpp::{self as llamacpp, LlamaCppServer};
 use futures::stream::{BoxStream, StreamExt};
-
 pub use registry::{Deployment, ProviderRegistry};
 
 mod provider;
@@ -70,6 +70,16 @@ impl From<&ProviderConfig> for Provider {
                 access_key: config.access_key.clone().unwrap_or_default(),
                 secret_key: config.secret_key.clone().unwrap_or_default(),
             },
+            ProviderKind::LlamaCpp => {
+                // LlamaCpp providers are constructed after the managed
+                // llama-server process starts and a port is known.
+                // Use base_url if explicitly set (external llama-server),
+                // otherwise this will be overwritten by the process manager.
+                Provider::OpenAiCompat {
+                    base_url: config.base_url.clone().unwrap_or_default(),
+                    api_key: String::new(),
+                }
+            }
         }
     }
 }

@@ -17,6 +17,7 @@ crabllm-provider = { version = "0.0.6", path = "crates/provider" }
 crabllm-proxy = { version = "0.0.6", path = "crates/proxy" }
 crabllm-bench = { version = "0.0.6", path = "crates/bench" }
 crabllm = { version = "0.0.6", path = "crates/crabllm" }
+crabllm-llamacpp = { version = "0.0.6", path = "crates/llamacpp" }
 
 # crates-io
 axum = { version = "0.8", features = ["multipart"] }
@@ -38,3 +39,9 @@ hmac = "0.12"
 sha2 = "0.10"
 redis = { version = "0.27", features = ["aio", "tokio-comp"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+ureq = "3"
+which = "7"
+flate2 = "1"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+dirs = "6"

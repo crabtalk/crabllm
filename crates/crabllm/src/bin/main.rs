@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use crabllm_core::{Extension, GatewayConfig, Storage};
 use crabllm_provider::ProviderRegistry;
 use crabllm_proxy::{
@@ -14,20 +14,108 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 #[derive(Parser)]
 #[command(name = "crabllm", about = "High-performance LLM API gateway")]
 struct Cli {
-    /// Path to config file
-    #[arg(short, long, default_value = "crabllm.toml")]
-    config: PathBuf,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
 
-    /// Override listen address (e.g. 0.0.0.0:8080)
-    #[arg(short, long)]
-    bind: Option<String>,
+#[derive(Subcommand)]
+enum Commands {
+    /// Start the API gateway
+    Serve {
+        /// Path to config file
+        #[arg(short, long, default_value = "crabllm.toml")]
+        config: PathBuf,
+
+        /// Override listen address (e.g. 0.0.0.0:8080)
+        #[arg(short, long)]
+        bind: Option<String>,
+    },
+    /// Manage llama.cpp server and models
+    #[command(name = "llamacpp")]
+    LlamaCpp {
+        #[command(subcommand)]
+        action: LlamaCppAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum LlamaCppAction {
+    /// Download the llama-server binary for this platform
+    Download {
+        /// Release tag (e.g. b4567). Defaults to latest.
+        #[arg(short, long)]
+        tag: Option<String>,
+    },
+    /// Check that llama-server is installed and reachable
+    Check,
+    /// Show the resolved path to the llama-server binary
+    Which,
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    let mut config = match GatewayConfig::from_file(&cli.config) {
+    match cli.command {
+        Some(Commands::LlamaCpp { action }) => run_llamacpp(action),
+        Some(Commands::Serve { config, bind }) => serve(config, bind).await,
+        // Default: serve with default config path.
+        None => serve(PathBuf::from("crabllm.toml"), None).await,
+    }
+}
+
+fn run_llamacpp(action: LlamaCppAction) {
+    match action {
+        LlamaCppAction::Download { tag } => match crabllm_llamacpp::download(tag.as_deref()) {
+            Ok(path) => {
+                eprintln!("llama-server ready at {}", path.display());
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        },
+        LlamaCppAction::Check => {
+            match crabllm_llamacpp::find_server_binary() {
+                Ok(path) => {
+                    eprintln!("llama-server found: {}", path.display());
+                    let output = std::process::Command::new(&path).arg("--version").output();
+                    match output {
+                        Ok(out) => {
+                            // llama-server may print version to stdout or stderr.
+                            let version = String::from_utf8_lossy(&out.stdout);
+                            let version = version.trim();
+                            if !version.is_empty() {
+                                eprintln!("{version}");
+                            } else {
+                                let version = String::from_utf8_lossy(&out.stderr);
+                                let version = version.trim();
+                                if !version.is_empty() {
+                                    eprintln!("{version}");
+                                }
+                            }
+                        }
+                        Err(_) => eprintln!("(could not determine version)"),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        LlamaCppAction::Which => match crabllm_llamacpp::find_server_binary() {
+            Ok(path) => println!("{}", path.display()),
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        },
+    }
+}
+
+async fn serve(config_path: PathBuf, bind: Option<String>) {
+    let mut config = match GatewayConfig::from_file(&config_path) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: failed to load config: {e}");
@@ -35,11 +123,11 @@ async fn main() {
         }
     };
 
-    if let Some(bind) = cli.bind {
+    if let Some(bind) = bind {
         config.listen = bind;
     }
 
-    let registry = match ProviderRegistry::from_config(&config) {
+    let (registry, llama_servers) = match ProviderRegistry::from_config(&config) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: failed to build provider registry: {e}");
@@ -68,7 +156,7 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
-            run(config, registry, storage).await;
+            run(config, registry, storage, llama_servers).await;
         }
         #[cfg(not(feature = "storage-redis"))]
         "redis" => {
@@ -90,7 +178,7 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
-            run(config, registry, storage).await;
+            run(config, registry, storage, llama_servers).await;
         }
         #[cfg(not(feature = "storage-sqlite"))]
         "sqlite" => {
@@ -99,7 +187,7 @@ async fn main() {
         }
         _ => {
             let storage = Arc::new(MemoryStorage::new());
-            run(config, registry, storage).await;
+            run(config, registry, storage, llama_servers).await;
         }
     }
 }
@@ -108,6 +196,7 @@ async fn run<S: Storage + 'static>(
     config: GatewayConfig,
     registry: ProviderRegistry,
     storage: Arc<S>,
+    mut llama_servers: Vec<crabllm_provider::LlamaCppServer>,
 ) {
     let (extensions, admin_routes) =
         match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
@@ -156,7 +245,13 @@ async fn run<S: Storage + 'static>(
         axum::serve(listener, app).with_graceful_shutdown(shutdown_signal(shutdown_timeout));
     if let Err(e) = server.await {
         eprintln!("error: server failed: {e}");
-        std::process::exit(1);
+    }
+
+    // Explicitly stop llama-server children before exit.
+    // This runs after graceful shutdown completes, ensuring destructors
+    // fire rather than relying on process::exit which skips them.
+    for server in &mut llama_servers {
+        server.stop();
     }
 }
 

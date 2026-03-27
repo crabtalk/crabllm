@@ -23,6 +23,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 crabllm-core = { workspace = true, features = ["gateway"] }
+crabllm-llamacpp.workspace = true
 crabllm-provider.workspace = true
 crabllm-proxy.workspace = true
 

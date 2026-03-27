@@ -1,7 +1,8 @@
 use crate::Provider;
-use crabllm_core::{Error, GatewayConfig};
+use crabllm_core::{Error, GatewayConfig, ProviderKind};
+use crabllm_llamacpp::{self as llamacpp, LlamaCppConfig, LlamaCppServer};
 use rand::Rng;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 /// A provider entry with its routing weight and retry config.
 #[derive(Debug, Clone)]
@@ -36,51 +37,54 @@ impl ProviderRegistry {
     }
 
     /// Build the registry from gateway config.
-    /// Returns an error if a provider is missing a required api_key.
-    pub fn from_config(config: &GatewayConfig) -> Result<Self, Error> {
-        let mut providers: HashMap<String, Vec<Deployment>> = HashMap::new();
+    ///
+    /// Returns the registry and a vec of managed llama-server processes.
+    /// The caller must hold the returned `Vec<LlamaCppServer>` alive for
+    /// the lifetime of the gateway — dropping it kills the child processes.
+    pub fn from_config(config: &GatewayConfig) -> Result<(Self, Vec<LlamaCppServer>), Error> {
+        // Validate all providers before spawning any llama-server processes.
+        // This avoids starting (and then killing) servers when a later
+        // config entry has an obvious error like a missing api_key.
+        //
+        // For LlamaCpp providers, we also resolve the binary path once here
+        // so we don't do redundant PATH lookups during spawn.
+        let has_llamacpp = config
+            .providers
+            .values()
+            .any(|c| c.kind == ProviderKind::LlamaCpp);
+        let llamacpp_bin = if has_llamacpp {
+            Some(llamacpp::find_server_binary()?)
+        } else {
+            None
+        };
 
         for (provider_name, provider_config) in &config.providers {
-            let provider = Provider::from(provider_config);
-
-            // Validate required fields.
-            match &provider {
-                Provider::Anthropic { api_key } | Provider::Google { api_key }
-                    if api_key.is_empty() =>
-                {
-                    return Err(Error::Config(format!(
-                        "provider '{provider_name}' ({:?}) requires an api_key",
-                        provider_config.kind,
-                    )));
-                }
-                Provider::Azure { api_key, .. } if api_key.is_empty() => {
-                    return Err(Error::Config(format!(
-                        "provider '{provider_name}' (azure) requires an api_key",
-                    )));
-                }
-                Provider::Bedrock {
-                    region,
-                    access_key,
-                    secret_key,
-                } => {
-                    if region.is_empty() {
-                        return Err(Error::Config(format!(
-                            "provider '{provider_name}' (bedrock) requires a region",
-                        )));
-                    }
-                    if access_key.is_empty() {
-                        return Err(Error::Config(format!(
-                            "provider '{provider_name}' (bedrock) requires an access_key",
-                        )));
-                    }
-                    if secret_key.is_empty() {
-                        return Err(Error::Config(format!(
-                            "provider '{provider_name}' (bedrock) requires a secret_key",
-                        )));
-                    }
-                }
-                _ => {}
+            if provider_config.kind == ProviderKind::LlamaCpp {
+                validate_llamacpp_config(provider_name, provider_config)?;
+            } else {
+                let p = Provider::from(provider_config);
+                validate_provider(provider_name, provider_config, &p)?;
             }
+        }
+
+        let mut providers: HashMap<String, Vec<Deployment>> = HashMap::new();
+        let mut servers: Vec<LlamaCppServer> = Vec::new();
+
+        for (provider_name, provider_config) in &config.providers {
+            let provider = if provider_config.kind == ProviderKind::LlamaCpp {
+                let bin = llamacpp_bin.as_ref().expect("validated above");
+                let server = spawn_llamacpp_server(provider_name, provider_config, bin)?;
+                let base_url = server.base_url();
+                servers.push(server);
+                Provider::OpenAiCompat {
+                    base_url,
+                    api_key: String::new(),
+                }
+            } else {
+                let p = Provider::from(provider_config);
+                validate_provider(provider_name, provider_config, &p)?;
+                p
+            };
 
             let deployment = Deployment {
                 provider,
@@ -103,11 +107,8 @@ impl ProviderRegistry {
             }
         }
 
-        Ok(Self::new(
-            providers,
-            config.aliases.clone(),
-            model_providers,
-        ))
+        let registry = Self::new(providers, config.aliases.clone(), model_providers);
+        Ok((registry, servers))
     }
 
     /// Look up the provider name for a model. O(1) HashMap lookup.
@@ -196,4 +197,92 @@ impl ProviderRegistry {
     pub fn has_model(&self, model: &str) -> bool {
         self.providers.contains_key(model)
     }
+}
+
+/// Validate provider-specific required fields.
+fn validate_provider(
+    name: &str,
+    config: &crabllm_core::ProviderConfig,
+    provider: &Provider,
+) -> Result<(), Error> {
+    match provider {
+        Provider::Anthropic { api_key } | Provider::Google { api_key } if api_key.is_empty() => {
+            Err(Error::Config(format!(
+                "provider '{name}' ({:?}) requires an api_key",
+                config.kind,
+            )))
+        }
+        Provider::Azure { api_key, .. } if api_key.is_empty() => Err(Error::Config(format!(
+            "provider '{name}' (azure) requires an api_key",
+        ))),
+        Provider::Bedrock {
+            region,
+            access_key,
+            secret_key,
+        } => {
+            if region.is_empty() {
+                return Err(Error::Config(format!(
+                    "provider '{name}' (bedrock) requires a region",
+                )));
+            }
+            if access_key.is_empty() {
+                return Err(Error::Config(format!(
+                    "provider '{name}' (bedrock) requires an access_key",
+                )));
+            }
+            if secret_key.is_empty() {
+                return Err(Error::Config(format!(
+                    "provider '{name}' (bedrock) requires a secret_key",
+                )));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Validate LlamaCpp config without spawning anything.
+fn validate_llamacpp_config(
+    name: &str,
+    config: &crabllm_core::ProviderConfig,
+) -> Result<(), Error> {
+    if config.model_path.is_none() {
+        return Err(Error::Config(format!(
+            "provider '{name}' (llamacpp) requires model_path"
+        )));
+    }
+    Ok(())
+}
+
+/// Spawn a llama-server for a LlamaCpp provider config.
+fn spawn_llamacpp_server(
+    name: &str,
+    config: &crabllm_core::ProviderConfig,
+    bin: &std::path::Path,
+) -> Result<LlamaCppServer, Error> {
+    let model_path = config.model_path.as_ref().ok_or_else(|| {
+        Error::Config(format!("provider '{name}' (llamacpp) requires model_path"))
+    })?;
+
+    eprintln!("starting llama-server for provider '{name}' (model: {model_path})");
+
+    let llama_config = LlamaCppConfig {
+        model_path: PathBuf::from(model_path),
+        n_gpu_layers: config.n_gpu_layers.unwrap_or(0),
+        n_ctx: config.n_ctx.unwrap_or(2048),
+        n_threads: config.n_threads,
+    };
+
+    let server = LlamaCppServer::spawn(bin, &llama_config).map_err(|e| {
+        Error::Config(format!(
+            "provider '{name}': failed to start llama-server: {e}"
+        ))
+    })?;
+
+    eprintln!(
+        "llama-server for provider '{name}' ready on port {}",
+        server.port()
+    );
+
+    Ok(server)
 }

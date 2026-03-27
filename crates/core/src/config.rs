@@ -84,6 +84,18 @@ pub struct ProviderConfig {
     /// AWS secret access key for Bedrock provider.
     #[serde(default, skip_serializing)]
     pub secret_key: Option<String>,
+    /// Path to a GGUF model file for the LlamaCpp provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_path: Option<String>,
+    /// Number of GPU layers to offload (LlamaCpp). Default: 0 (CPU only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub n_gpu_layers: Option<u32>,
+    /// Context size in tokens (LlamaCpp). Default: 2048.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub n_ctx: Option<u32>,
+    /// Number of threads for inference (LlamaCpp). Default: system-chosen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub n_threads: Option<u32>,
 }
 
 fn default_shutdown_timeout() -> u64 {
@@ -102,6 +114,8 @@ pub enum ProviderKind {
     Bedrock,
     Ollama,
     Azure,
+    #[serde(alias = "llama_cpp")]
+    LlamaCpp,
 }
 
 impl ProviderKind {
@@ -155,6 +169,20 @@ impl ProviderConfig {
             ProviderKind::Ollama => {
                 // Ollama doesn't require api_key or base_url.
             }
+            ProviderKind::LlamaCpp => match &self.model_path {
+                None => {
+                    return Err(format!(
+                        "provider '{provider_name}' (llamacpp) requires model_path"
+                    ));
+                }
+                Some(path) => {
+                    if !std::path::Path::new(path).exists() {
+                        return Err(format!(
+                            "provider '{provider_name}' (llamacpp): model_path '{path}' does not exist"
+                        ));
+                    }
+                }
+            },
             _ => {
                 if self.api_key.is_none() && self.base_url.is_none() {
                     return Err(format!(
