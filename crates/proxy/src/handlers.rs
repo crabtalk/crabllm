@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 pub async fn chat_completions<S: Storage + 'static>(
     State(state): State<AppState<S>>,
     Extension(key_name): Extension<KeyName>,
-    Json(request): Json<ChatCompletionRequest>,
+    Json(mut request): Json<ChatCompletionRequest>,
 ) -> Response {
     let model = state.registry.resolve(&request.model).to_string();
     let deployments = match state.registry.dispatch_list(&model) {
@@ -66,6 +66,14 @@ pub async fn chat_completions<S: Storage + 'static>(
     }
 
     if ctx.is_stream {
+        // Ensure OpenAI-compatible providers include token usage in the final
+        // streaming chunk. Harmlessly ignored by Anthropic/Google/Bedrock which
+        // build their own request format and don't read `extra`.
+        request
+            .extra
+            .entry("stream_options".to_string())
+            .or_insert(serde_json::json!({ "include_usage": true }));
+
         // Streaming: retry + fallback on connection errors only (pre-stream).
         let mut last_err = None;
         for deployment in &deployments {
