@@ -33,6 +33,7 @@ tracing.workspace = true
 uuid.workspace = true
 sha2.workspace = true
 rand.workspace = true
+metrics.workspace = true
 
 # optional
 redis = { workspace = true, optional = true }

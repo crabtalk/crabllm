@@ -1,5 +1,8 @@
 use axum::{
-    Json, Router, middleware,
+    Json, Router,
+    extract::Request,
+    middleware,
+    response::Response,
     routing::{get, post},
 };
 use crabllm_core::Storage;
@@ -12,6 +15,16 @@ pub mod ext;
 mod handlers;
 mod state;
 pub mod storage;
+
+/// Middleware that tracks the number of in-flight API requests.
+/// For SSE streams, the gauge decrements when the response starts (not when the
+/// stream ends), so it undercounts long-lived streaming connections.
+async fn track_active_connections(request: Request, next: middleware::Next) -> Response {
+    metrics::gauge!("crabllm_active_connections").increment(1.0);
+    let response = next.run(request).await;
+    metrics::gauge!("crabllm_active_connections").decrement(1.0);
+    response
+}
 
 /// Build the Axum router with all API routes and admin routes.
 pub fn router<S: Storage + 'static>(state: AppState<S>, admin_routes: Vec<Router>) -> Router {
@@ -35,6 +48,7 @@ pub fn router<S: Storage + 'static>(state: AppState<S>, admin_routes: Vec<Router
             state.clone(),
             auth::auth::<S>,
         ))
+        .layer(middleware::from_fn(track_active_connections))
         .with_state(state);
 
     // Health check — outside auth middleware so load balancers can probe it.

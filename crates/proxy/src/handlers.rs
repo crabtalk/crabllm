@@ -15,8 +15,51 @@ use crabllm_core::{
 use crabllm_provider::Deployment;
 use futures::StreamExt;
 use rand::Rng;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
+
+fn record_duration(ctx: &RequestContext, status: &'static str) {
+    metrics::histogram!("crabllm_request_duration_seconds",
+        "provider" => ctx.provider.clone(),
+        "model" => ctx.model.clone(),
+        "status" => status,
+        "stream" => if ctx.is_stream { "true" } else { "false" },
+    )
+    .record(ctx.started_at.elapsed().as_secs_f64());
+}
+
+fn error_status(e: &crabllm_core::Error) -> &'static str {
+    match e {
+        crabllm_core::Error::Provider { status, .. } => match status {
+            429 => "429",
+            400..=499 => "4xx",
+            _ => "5xx",
+        },
+        _ => "5xx",
+    }
+}
+
+fn record_tokens(ctx: &RequestContext, prompt: u32, completion: u32) {
+    if prompt > 0 {
+        metrics::counter!("crabllm_tokens_total",
+            "provider" => ctx.provider.clone(),
+            "model" => ctx.model.clone(),
+            "direction" => "prompt",
+        )
+        .increment(prompt as u64);
+    }
+    if completion > 0 {
+        metrics::counter!("crabllm_tokens_total",
+            "provider" => ctx.provider.clone(),
+            "model" => ctx.model.clone(),
+            "direction" => "completion",
+        )
+        .increment(completion as u64);
+    }
+}
 
 /// POST /v1/chat/completions
 pub async fn chat_completions<S: Storage + 'static>(
@@ -81,18 +124,33 @@ pub async fn chat_completions<S: Storage + 'static>(
                 Ok(stream) => {
                     let extensions = state.extensions.clone();
                     let ctx = Arc::new(ctx);
+                    let errored = Arc::new(AtomicBool::new(false));
+
+                    let ctx_done = ctx.clone();
+                    let errored_done = errored.clone();
 
                     let observed = stream.then(move |result| {
                         let extensions = extensions.clone();
                         let ctx = ctx.clone();
+                        let errored = errored.clone();
                         async move {
                             match &result {
                                 Ok(chunk) => {
+                                    // Token usage arrives in the final chunk when
+                                    // the provider supports stream_options.include_usage.
+                                    if let Some(ref usage) = chunk.usage {
+                                        record_tokens(
+                                            &ctx,
+                                            usage.prompt_tokens,
+                                            usage.completion_tokens,
+                                        );
+                                    }
                                     for ext in extensions.iter() {
                                         ext.on_chunk(&ctx, chunk).await;
                                     }
                                 }
                                 Err(error) => {
+                                    errored.store(true, Ordering::Relaxed);
                                     for ext in extensions.iter() {
                                         ext.on_error(&ctx, error).await;
                                     }
@@ -117,7 +175,14 @@ pub async fn chat_completions<S: Storage + 'static>(
                         }
                     });
 
-                    let done = futures::stream::once(async {
+                    // Record duration once when the stream terminates.
+                    let done = futures::stream::once(async move {
+                        let status = if errored_done.load(Ordering::Relaxed) {
+                            "5xx"
+                        } else {
+                            "2xx"
+                        };
+                        record_duration(&ctx_done, status);
                         Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]"))
                     });
                     let full_stream = sse_stream.chain(done);
@@ -135,9 +200,12 @@ pub async fn chat_completions<S: Storage + 'static>(
         for ext in state.extensions.iter() {
             ext.on_error(&ctx, &e).await;
         }
+        record_duration(&ctx, "5xx");
         error_response(e)
     } else {
         // Non-streaming: check cache first.
+        // Cache hits skip duration recording — sub-millisecond responses
+        // would skew the histogram, which should reflect provider latency.
         for ext in state.extensions.iter() {
             if let Some(cached) = ext.on_cache_lookup(&request).await {
                 return Json(cached).into_response();
@@ -148,6 +216,10 @@ pub async fn chat_completions<S: Storage + 'static>(
         for deployment in &deployments {
             match try_chat_with_retries(deployment, &state.client, &request).await {
                 Ok(resp) => {
+                    if let Some(ref usage) = resp.usage {
+                        record_tokens(&ctx, usage.prompt_tokens, usage.completion_tokens);
+                    }
+                    record_duration(&ctx, "2xx");
                     for ext in state.extensions.iter() {
                         ext.on_response(&ctx, &request, &resp).await;
                     }
@@ -162,6 +234,7 @@ pub async fn chat_completions<S: Storage + 'static>(
         for ext in state.extensions.iter() {
             ext.on_error(&ctx, &e).await;
         }
+        record_duration(&ctx, error_status(&e));
         error_response(e)
     }
 }
@@ -216,7 +289,10 @@ pub async fn embeddings<S: Storage + 'static>(
     let mut last_err = None;
     for deployment in &deployments {
         match try_embedding_with_retries(deployment, &state.client, &request).await {
-            Ok(resp) => return Json(resp).into_response(),
+            Ok(resp) => {
+                record_duration(&ctx, "2xx");
+                return Json(resp).into_response();
+            }
             Err(e) => last_err = Some(e),
         }
     }
@@ -226,6 +302,7 @@ pub async fn embeddings<S: Storage + 'static>(
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
+    record_duration(&ctx, error_status(&e));
     error_response(e)
 }
 
@@ -306,6 +383,7 @@ pub async fn image_generations<S: Storage + 'static>(
         .await
         {
             Ok((bytes, content_type)) => {
+                record_duration(&ctx, "2xx");
                 return ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
             }
             Err(e) => last_err = Some(e),
@@ -317,6 +395,7 @@ pub async fn image_generations<S: Storage + 'static>(
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
+    record_duration(&ctx, error_status(&e));
     error_response(e)
 }
 
@@ -376,6 +455,7 @@ pub async fn audio_speech<S: Storage + 'static>(
         .await
         {
             Ok((bytes, content_type)) => {
+                record_duration(&ctx, "2xx");
                 return ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
             }
             Err(e) => last_err = Some(e),
@@ -387,6 +467,7 @@ pub async fn audio_speech<S: Storage + 'static>(
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
+    record_duration(&ctx, error_status(&e));
     error_response(e)
 }
 
@@ -524,6 +605,7 @@ pub async fn audio_transcriptions<S: Storage + 'static>(
         .await
         {
             Ok((bytes, content_type)) => {
+                record_duration(&ctx, "2xx");
                 return ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
             }
             Err(e) => last_err = Some(e),
@@ -535,6 +617,7 @@ pub async fn audio_transcriptions<S: Storage + 'static>(
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
+    record_duration(&ctx, error_status(&e));
     error_response(e)
 }
 

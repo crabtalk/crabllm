@@ -198,7 +198,7 @@ async fn run<S: Storage + 'static>(
     storage: Arc<S>,
     mut llama_servers: Vec<crabllm_provider::LlamaCppServer>,
 ) {
-    let (extensions, admin_routes) =
+    let (extensions, mut admin_routes) =
         match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
             Ok(result) => result,
             Err(e) => {
@@ -206,6 +206,15 @@ async fn run<S: Storage + 'static>(
                 std::process::exit(1);
             }
         };
+
+    // Install Prometheus metrics recorder and expose /metrics endpoint.
+    let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .install_recorder()
+        .expect("failed to install metrics recorder");
+    admin_routes.push(axum::Router::new().route(
+        "/metrics",
+        axum::routing::get(move || async move { handle.render() }),
+    ));
 
     let ext_count = extensions.len();
     let addr = config.listen.clone();
