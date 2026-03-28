@@ -69,9 +69,10 @@ pub async fn chat_completions<S: Storage + 'static>(
         // Ensure OpenAI-compatible providers include token usage in the final
         // streaming chunk. Harmlessly ignored by Anthropic/Google/Bedrock which
         // build their own request format and don't read `extra`.
-        request.extra.entry("stream_options".to_string()).or_insert(
-            serde_json::json!({ "include_usage": true }),
-        );
+        request
+            .extra
+            .entry("stream_options".to_string())
+            .or_insert(serde_json::json!({ "include_usage": true }));
 
         // Streaming: retry + fallback on connection errors only (pre-stream).
         let mut last_err = None;
