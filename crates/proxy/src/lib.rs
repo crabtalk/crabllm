@@ -7,6 +7,7 @@ use crabllm_core::Storage;
 pub use auth::KeyName;
 pub use state::AppState;
 
+pub mod admin;
 pub mod auth;
 pub mod ext;
 mod handlers;
