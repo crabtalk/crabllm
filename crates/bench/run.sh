@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Benchmark runner for crabllm.
-# Usage: ./run.sh [--target URL] [--duration SECS] [--rps LEVELS]
+# Usage: ./run.sh [--target URL] [--duration SECS] [--rps LEVELS] [--output DIR]
 
 TARGET="http://127.0.0.1:8080"
 DURATION=30
@@ -54,26 +54,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Start mock backend.
-echo "==> Starting mock backend on :9999..."
-"$MOCK" --port 9999 &
-MOCK_PID=$!
-wait_for "http://127.0.0.1:9999/v1/models"
-
 # Run a single benchmark scenario.
+# Args: name config body endpoint [mock_args...]
 run_scenario() {
     local name="$1"
     local config="$2"
     local body="$3"
     local endpoint="$4"
+    shift 4
+    local mock_args=("$@")
 
     echo ""
     echo "== Scenario: $name =="
 
+    # Start mock backend with scenario-specific flags.
+    "$MOCK" --port 9999 "${mock_args[@]}" &
+    MOCK_PID=$!
+    wait_for "http://127.0.0.1:9999/v1/models"
+
     # Start gateway.
-    "$GATEWAY" --config "$config" &
+    "$GATEWAY" serve --config "$config" &
     GW_PID=$!
-    wait_for "$TARGET/v1/models"
+    wait_for "$TARGET/health"
 
     for rps in $RPS_LEVELS; do
         local outfile="$OUTDIR/${name}-${rps}rps.json"
@@ -87,10 +89,13 @@ run_scenario() {
             "${TARGET}${endpoint}" > "$outfile" 2>/dev/null || true
     done
 
-    # Stop gateway.
+    # Stop gateway and mock.
     kill "$GW_PID" 2>/dev/null || true
     wait "$GW_PID" 2>/dev/null || true
     unset GW_PID
+    kill "$MOCK_PID" 2>/dev/null || true
+    wait "$MOCK_PID" 2>/dev/null || true
+    unset MOCK_PID
     sleep 0.2
 }
 
@@ -101,13 +106,21 @@ EMBED_BODY='{"model":"bench-embed","input":"benchmark text"}'
 CONFIG_BASE="$SCRIPT_DIR/config/bench.toml"
 CONFIG_EXT="$SCRIPT_DIR/config/bench-ext.toml"
 
+# Baseline scenarios (instant mock responses).
 run_scenario "chat-nostream"     "$CONFIG_BASE" "$CHAT_BODY"   "/v1/chat/completions"
 run_scenario "chat-nostream-ext" "$CONFIG_EXT"  "$CHAT_BODY"   "/v1/chat/completions"
 run_scenario "chat-stream"       "$CONFIG_BASE" "$STREAM_BODY" "/v1/chat/completions"
 run_scenario "embeddings"        "$CONFIG_BASE" "$EMBED_BODY"  "/v1/embeddings"
 
-# Print summary. oha JSON: latency in seconds at .latencyPercentiles.pNN,
-# RPS at .summary.requestsPerSec, success rate at .summary.successRate.
+# Slow upstream: 500ms delay per chunk simulates real LLM inference.
+run_scenario "slow-upstream"     "$CONFIG_BASE" "$STREAM_BODY" "/v1/chat/completions" \
+    --delay 500
+
+# Error storm: 50% of upstream requests return HTTP 500.
+run_scenario "error-storm"       "$CONFIG_BASE" "$CHAT_BODY"   "/v1/chat/completions" \
+    --error-rate 0.5
+
+# Print summary.
 echo ""
 echo "== Summary =="
 printf "%-25s %10s %10s %10s %10s %8s\n" "scenario" "RPS" "P50" "P90" "P99" "success"
@@ -129,3 +142,6 @@ done
 
 echo ""
 echo "Results saved to $OUTDIR/"
+echo ""
+echo "NOTE: Bottleneck analysis and fixes should be filed as separate issues"
+echo "based on the results above."
