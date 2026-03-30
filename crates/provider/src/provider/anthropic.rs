@@ -1,3 +1,4 @@
+use crate::provider::schema;
 use bytes::{Buf, BytesMut};
 use crabllm_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
@@ -322,11 +323,15 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                 .map(|t| AnthropicTool {
                     name: t.function.name.clone(),
                     description: t.function.description.clone(),
-                    input_schema: t
-                        .function
-                        .parameters
-                        .clone()
-                        .unwrap_or(serde_json::json!({"type": "object"})),
+                    input_schema: {
+                        let mut s = t
+                            .function
+                            .parameters
+                            .clone()
+                            .unwrap_or(serde_json::json!({"type": "object"}));
+                        schema::inline_refs(&mut s);
+                        s
+                    },
                 })
                 .collect()
         })

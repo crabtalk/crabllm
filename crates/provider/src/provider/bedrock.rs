@@ -10,6 +10,8 @@ pub(crate) use self::sigv4::sign_request;
 // ── Converse API (feature-gated) ──
 
 #[cfg(feature = "provider-bedrock")]
+use crate::provider::schema;
+#[cfg(feature = "provider-bedrock")]
 use crabllm_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
     FinishReason, FunctionCall, FunctionCallDelta, Message, Role, ToolCall, ToolCallDelta,
@@ -253,11 +255,15 @@ fn translate_request(request: &ChatCompletionRequest) -> ConverseRequest {
                     name: t.function.name.clone(),
                     description: t.function.description.clone(),
                     input_schema: InputSchema {
-                        json: t
-                            .function
-                            .parameters
-                            .clone()
-                            .unwrap_or(serde_json::json!({"type": "object"})),
+                        json: {
+                            let mut s = t
+                                .function
+                                .parameters
+                                .clone()
+                                .unwrap_or(serde_json::json!({"type": "object"}));
+                            schema::inline_refs(&mut s);
+                            s
+                        },
                     },
                 },
             })

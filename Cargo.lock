@@ -390,7 +390,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm"
-version = "0.0.6"
+version = "0.0.8"
 dependencies = [
  "axum",
  "clap",
@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-bench"
-version = "0.0.6"
+version = "0.0.8"
 dependencies = [
  "axum",
  "clap",
@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.6"
+version = "0.0.8"
 dependencies = [
  "serde",
  "serde_json",
@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-llamacpp"
-version = "0.0.6"
+version = "0.0.8"
 dependencies = [
  "crabllm-core",
  "dirs",
@@ -442,7 +442,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-provider"
-version = "0.0.6"
+version = "0.0.8"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-proxy"
-version = "0.0.6"
+version = "0.0.8"
 dependencies = [
  "axum",
  "bytes",
