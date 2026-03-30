@@ -21,16 +21,6 @@ services:
       mock:
         condition: service_healthy
 
-  bifrost:
-    image: maximhq/bifrost
-    volumes:
-      - ./config/bifrost.json:/app/config.json:ro
-    environment:
-      OPENAI_API_KEY: "mock-key"
-    depends_on:
-      mock:
-        condition: service_healthy
-
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     command: --config /app/config.yaml --port 4000
@@ -53,7 +43,5 @@ services:
         condition: service_healthy
       crabllm:
         condition: service_healthy
-      bifrost:
-        condition: service_started
       litellm:
         condition: service_started
