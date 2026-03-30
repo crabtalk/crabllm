@@ -36,6 +36,7 @@ enum Commands {
         bind: Option<String>,
     },
     /// Manage llama.cpp server and models
+    #[cfg(feature = "llamacpp")]
     #[command(name = "llamacpp")]
     LlamaCpp {
         #[command(subcommand)]
@@ -43,6 +44,7 @@ enum Commands {
     },
 }
 
+#[cfg(feature = "llamacpp")]
 #[derive(Subcommand)]
 enum LlamaCppAction {
     /// Download the llama-server binary for this platform
@@ -62,6 +64,7 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        #[cfg(feature = "llamacpp")]
         Some(Commands::LlamaCpp { action }) => run_llamacpp(action),
         Some(Commands::Serve { config, bind }) => serve(config, bind).await,
         // Default: serve with default config path.
@@ -69,6 +72,7 @@ async fn main() {
     }
 }
 
+#[cfg(feature = "llamacpp")]
 fn run_llamacpp(action: LlamaCppAction) {
     match action {
         LlamaCppAction::Download { tag } => match crabllm_llamacpp::download(tag.as_deref()) {
@@ -119,6 +123,69 @@ fn run_llamacpp(action: LlamaCppAction) {
     }
 }
 
+/// Spawn llama-server processes for all LlamaCpp providers in config.
+///
+/// For each LlamaCpp provider, this finds the llama-server binary, spawns a
+/// child process, waits for it to become healthy, then rewrites the config
+/// entry to OpenaiCompat pointing at the local server. The caller must hold
+/// the returned handles alive — dropping them kills the child processes.
+#[cfg(feature = "llamacpp")]
+fn spawn_llamacpp_servers(
+    config: &mut GatewayConfig,
+) -> Result<Vec<crabllm_llamacpp::LlamaCppServer>, crabllm_core::Error> {
+    use crabllm_core::ProviderKind;
+    use crabllm_llamacpp::{LlamaCppConfig, LlamaCppServer};
+
+    let has_llamacpp = config
+        .providers
+        .values()
+        .any(|c| c.kind == ProviderKind::LlamaCpp);
+    if !has_llamacpp {
+        return Ok(Vec::new());
+    }
+
+    let bin = crabllm_llamacpp::find_server_binary()?;
+    let mut servers = Vec::new();
+
+    for (name, pc) in &mut config.providers {
+        if pc.kind != ProviderKind::LlamaCpp {
+            continue;
+        }
+
+        let model_path = pc.model_path.as_ref().ok_or_else(|| {
+            crabllm_core::Error::Config(format!("provider '{name}' (llamacpp) requires model_path"))
+        })?;
+
+        eprintln!("starting llama-server for provider '{name}' (model: {model_path})");
+
+        let llama_config = LlamaCppConfig {
+            model_path: PathBuf::from(model_path),
+            n_gpu_layers: pc.n_gpu_layers.unwrap_or(0),
+            n_ctx: pc.n_ctx.unwrap_or(2048),
+            n_threads: pc.n_threads,
+        };
+
+        let server = LlamaCppServer::spawn(&bin, &llama_config).map_err(|e| {
+            crabllm_core::Error::Config(format!(
+                "provider '{name}': failed to start llama-server: {e}"
+            ))
+        })?;
+
+        eprintln!(
+            "llama-server for provider '{name}' ready on port {}",
+            server.port()
+        );
+
+        // Rewrite config entry so the provider crate sees OpenaiCompat.
+        pc.kind = ProviderKind::OpenaiCompat;
+        pc.base_url = Some(server.base_url());
+
+        servers.push(server);
+    }
+
+    Ok(servers)
+}
+
 async fn serve(config_path: PathBuf, bind: Option<String>) {
     let mut config = match GatewayConfig::from_file(&config_path) {
         Ok(c) => c,
@@ -132,7 +199,19 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
         config.listen = bind;
     }
 
-    let (registry, llama_servers) = match ProviderRegistry::from_config(&config) {
+    // Spawn llama-server processes and rewrite their config entries to
+    // OpenaiCompat before building the registry. Held on this stack frame
+    // for lifetime — Drop kills the child processes after run() returns.
+    #[cfg(feature = "llamacpp")]
+    let _llama_servers = match spawn_llamacpp_servers(&mut config) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to start llama-server: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let registry = match ProviderRegistry::from_config(&config) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: failed to build provider registry: {e}");
@@ -161,7 +240,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
                     std::process::exit(1);
                 }
             };
-            run(config, registry, storage, llama_servers).await;
+            run(config, registry, storage).await;
         }
         #[cfg(not(feature = "storage-redis"))]
         "redis" => {
@@ -183,7 +262,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
                     std::process::exit(1);
                 }
             };
-            run(config, registry, storage, llama_servers).await;
+            run(config, registry, storage).await;
         }
         #[cfg(not(feature = "storage-sqlite"))]
         "sqlite" => {
@@ -192,7 +271,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
         }
         _ => {
             let storage = Arc::new(MemoryStorage::new());
-            run(config, registry, storage, llama_servers).await;
+            run(config, registry, storage).await;
         }
     }
 }
@@ -201,7 +280,6 @@ async fn run<S: Storage + 'static>(
     config: GatewayConfig,
     registry: ProviderRegistry,
     storage: Arc<S>,
-    mut llama_servers: Vec<crabllm_provider::LlamaCppServer>,
 ) {
     let (extensions, mut admin_routes) =
         match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
@@ -279,13 +357,6 @@ async fn run<S: Storage + 'static>(
         axum::serve(listener, app).with_graceful_shutdown(shutdown_signal(shutdown_timeout));
     if let Err(e) = server.await {
         eprintln!("error: server failed: {e}");
-    }
-
-    // Explicitly stop llama-server children before exit.
-    // This runs after graceful shutdown completes, ensuring destructors
-    // fire rather than relying on process::exit which skips them.
-    for server in &mut llama_servers {
-        server.stop();
     }
 }
 

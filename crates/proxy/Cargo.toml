@@ -11,7 +11,7 @@ categories = ["web-programming::http-server", "network-programming"]
 
 [features]
 native-tls = ["crabllm-provider/native-tls"]
-rustls-tls = ["crabllm-provider/rustls-tls"]
+rustls = ["crabllm-provider/rustls"]
 storage-redis = ["redis"]
 storage-sqlite = ["sqlx"]
 

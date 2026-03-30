@@ -3,7 +3,6 @@ use crabllm_core::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     EmbeddingRequest, EmbeddingResponse, Error, ImageRequest, ProviderConfig, ProviderKind,
 };
-pub use crabllm_llamacpp::{self as llamacpp, LlamaCppServer};
 use futures::stream::{BoxStream, StreamExt};
 pub use registry::{Deployment, ProviderRegistry};
 

@@ -1,8 +1,7 @@
 use crate::Provider;
-use crabllm_core::{Error, GatewayConfig, ProviderKind};
-use crabllm_llamacpp::{self as llamacpp, LlamaCppConfig, LlamaCppServer};
+use crabllm_core::{Error, GatewayConfig};
 use rand::Rng;
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 /// A provider entry with its routing weight and retry config.
 #[derive(Debug, Clone)]
@@ -37,54 +36,16 @@ impl ProviderRegistry {
     }
 
     /// Build the registry from gateway config.
-    ///
-    /// Returns the registry and a vec of managed llama-server processes.
-    /// The caller must hold the returned `Vec<LlamaCppServer>` alive for
-    /// the lifetime of the gateway — dropping it kills the child processes.
-    pub fn from_config(config: &GatewayConfig) -> Result<(Self, Vec<LlamaCppServer>), Error> {
-        // Validate all providers before spawning any llama-server processes.
-        // This avoids starting (and then killing) servers when a later
-        // config entry has an obvious error like a missing api_key.
-        //
-        // For LlamaCpp providers, we also resolve the binary path once here
-        // so we don't do redundant PATH lookups during spawn.
-        let has_llamacpp = config
-            .providers
-            .values()
-            .any(|c| c.kind == ProviderKind::LlamaCpp);
-        let llamacpp_bin = if has_llamacpp {
-            Some(llamacpp::find_server_binary()?)
-        } else {
-            None
-        };
-
+    pub fn from_config(config: &GatewayConfig) -> Result<Self, Error> {
         for (provider_name, provider_config) in &config.providers {
-            if provider_config.kind == ProviderKind::LlamaCpp {
-                validate_llamacpp_config(provider_name, provider_config)?;
-            } else {
-                let p = Provider::from(provider_config);
-                validate_provider(provider_name, provider_config, &p)?;
-            }
+            let p = Provider::from(provider_config);
+            validate_provider(provider_name, provider_config, &p)?;
         }
 
         let mut providers: HashMap<String, Vec<Deployment>> = HashMap::new();
-        let mut servers: Vec<LlamaCppServer> = Vec::new();
 
-        for (provider_name, provider_config) in &config.providers {
-            let provider = if provider_config.kind == ProviderKind::LlamaCpp {
-                let bin = llamacpp_bin.as_ref().expect("validated above");
-                let server = spawn_llamacpp_server(provider_name, provider_config, bin)?;
-                let base_url = server.base_url();
-                servers.push(server);
-                Provider::OpenAiCompat {
-                    base_url,
-                    api_key: String::new(),
-                }
-            } else {
-                let p = Provider::from(provider_config);
-                validate_provider(provider_name, provider_config, &p)?;
-                p
-            };
+        for provider_config in config.providers.values() {
+            let provider = Provider::from(provider_config);
 
             let deployment = Deployment {
                 provider,
@@ -107,8 +68,11 @@ impl ProviderRegistry {
             }
         }
 
-        let registry = Self::new(providers, config.aliases.clone(), model_providers);
-        Ok((registry, servers))
+        Ok(Self::new(
+            providers,
+            config.aliases.clone(),
+            model_providers,
+        ))
     }
 
     /// Look up the provider name for a model. O(1) HashMap lookup.
@@ -206,6 +170,9 @@ fn validate_provider(
     provider: &Provider,
 ) -> Result<(), Error> {
     match provider {
+        Provider::OpenAiCompat { base_url, .. } if base_url.is_empty() => Err(Error::Config(
+            format!("provider '{name}' ({:?}) requires a base_url", config.kind,),
+        )),
         Provider::Anthropic { api_key } | Provider::Google { api_key } if api_key.is_empty() => {
             Err(Error::Config(format!(
                 "provider '{name}' ({:?}) requires an api_key",
@@ -239,50 +206,4 @@ fn validate_provider(
         }
         _ => Ok(()),
     }
-}
-
-/// Validate LlamaCpp config without spawning anything.
-fn validate_llamacpp_config(
-    name: &str,
-    config: &crabllm_core::ProviderConfig,
-) -> Result<(), Error> {
-    if config.model_path.is_none() {
-        return Err(Error::Config(format!(
-            "provider '{name}' (llamacpp) requires model_path"
-        )));
-    }
-    Ok(())
-}
-
-/// Spawn a llama-server for a LlamaCpp provider config.
-fn spawn_llamacpp_server(
-    name: &str,
-    config: &crabllm_core::ProviderConfig,
-    bin: &std::path::Path,
-) -> Result<LlamaCppServer, Error> {
-    let model_path = config.model_path.as_ref().ok_or_else(|| {
-        Error::Config(format!("provider '{name}' (llamacpp) requires model_path"))
-    })?;
-
-    eprintln!("starting llama-server for provider '{name}' (model: {model_path})");
-
-    let llama_config = LlamaCppConfig {
-        model_path: PathBuf::from(model_path),
-        n_gpu_layers: config.n_gpu_layers.unwrap_or(0),
-        n_ctx: config.n_ctx.unwrap_or(2048),
-        n_threads: config.n_threads,
-    };
-
-    let server = LlamaCppServer::spawn(bin, &llama_config).map_err(|e| {
-        Error::Config(format!(
-            "provider '{name}': failed to start llama-server: {e}"
-        ))
-    })?;
-
-    eprintln!(
-        "llama-server for provider '{name}' ready on port {}",
-        server.port()
-    );
-
-    Ok(server)
 }
