@@ -1,0 +1,11 @@
+version: 1
+disable_existing_loggers: false
+loggers:
+  uvicorn.access:
+    level: ERROR
+  uvicorn.error:
+    level: ERROR
+  litellm:
+    level: ERROR
+root:
+  level: ERROR

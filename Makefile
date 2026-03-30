@@ -13,8 +13,8 @@ bench-image: bench-runner
 # Run the full competitive benchmark
 bench: bench-image
 	cd crates/bench && mkdir -p results && \
-	docker compose up -d mock crabllm bifrost litellm && \
-	BENCH_ARGS="$(ARGS)" docker compose run --rm --no-deps runner python3 bench.py $(ARGS) ; \
+	BENCH_ARGS="$(ARGS)" docker compose up -d && \
+	docker compose logs -f runner ; \
 	docker compose down
 
 # Generate charts from results

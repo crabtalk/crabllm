@@ -46,10 +46,11 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     network_mode: host
-    command: --config /app/config.yaml --port 4000
+    command: --config /app/config.yaml --port 4000 --log_config /app/log_config.yaml
     <<: *gw-resources
     volumes:
       - ./config/litellm.yaml:/app/config.yaml:ro
+      - ./config/litellm-log.yaml:/app/log_config.yaml:ro
     environment:
       LITELLM_LOG: "ERROR"
       LITELLM_TELEMETRY: "False"
