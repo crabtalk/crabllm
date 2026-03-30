@@ -1,9 +1,14 @@
+networks:
+  bench:
+    driver: bridge
+
 services:
   mock:
     image: crabllm-bench:local
     build:
       context: .
       target: runner
+    networks: [bench]
     command: crabllm-bench --port 9999
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9999/v1/models"]
@@ -12,6 +17,7 @@ services:
 
   crabllm:
     image: crabllm-bench:local
+    networks: [bench]
     command: crabllm serve --config /app/config/bench-docker.toml
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
@@ -23,6 +29,7 @@ services:
 
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
+    networks: [bench]
     command: --config /app/config.yaml --port 4000
     volumes:
       - ./config/litellm.yaml:/app/config.yaml:ro
@@ -35,6 +42,7 @@ services:
 
   runner:
     image: crabllm-bench:local
+    networks: [bench]
     command: ./compare.sh ${BENCH_ARGS:-}
     volumes:
       - ./results:/results
