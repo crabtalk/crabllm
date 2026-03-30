@@ -30,16 +30,18 @@ mkdir -p "$OUTDIR"
 declare -A GW_URLS=(
     [direct]="http://localhost:9999"
     [crabllm]="http://localhost:8080"
+    [bifrost]="http://localhost:8081"
     [litellm]="http://localhost:4000"
 )
 
 declare -A GW_HEALTH=(
     [direct]="http://localhost:9999/v1/models"
     [crabllm]="http://localhost:8080/health"
+    [bifrost]="http://localhost:8081/v1/models"
     [litellm]="http://localhost:4000/health/liveliness"
 )
 
-GW_LIST=(direct crabllm litellm)
+GW_LIST=(direct crabllm bifrost litellm)
 
 # ── Helpers ──
 

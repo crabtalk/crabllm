@@ -10,7 +10,7 @@
         }
       ],
       "network_config": {
-        "base_url": "http://mock:9999/v1"
+        "base_url": "http://localhost:9999/v1"
       }
     }
   }
