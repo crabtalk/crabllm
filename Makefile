@@ -13,7 +13,8 @@ bench-image: bench-runner
 # Run the full competitive benchmark
 bench: bench-image
 	cd crates/bench && mkdir -p results && \
-	BENCH_ARGS="$(ARGS)" docker compose up --abort-on-container-exit ; \
+	BENCH_ARGS="$(ARGS)" docker compose up -d && \
+	docker compose wait runner ; \
 	docker compose down
 
 # Generate charts from results
