@@ -1,4 +1,4 @@
-FROM rust:1.87-bookworm AS builder
+FROM rust:1.87-slim-bookworm AS builder
 WORKDIR /src
 COPY . .
 RUN cargo build --profile prod -p crabllm -p crabllm-bench
