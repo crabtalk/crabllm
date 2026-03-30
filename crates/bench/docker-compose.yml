@@ -1,3 +1,7 @@
+x-gateway-resources: &gw-resources
+  cpus: "2"
+  mem_limit: 512m
+
 services:
   mock:
     image: crabllm-bench:local
@@ -6,6 +10,8 @@ services:
       target: runner
     network_mode: host
     command: crabllm-bench --port 9999
+    cpus: "1"
+    mem_limit: 256m
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9999/v1/models"]
       interval: 1s
@@ -15,6 +21,7 @@ services:
     image: crabllm-bench:local
     network_mode: host
     command: crabllm serve --config /app/config/bench-docker.toml
+    <<: *gw-resources
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:6666/health"]
       interval: 1s
@@ -27,6 +34,7 @@ services:
     image: maximhq/bifrost
     network_mode: host
     command: -port 6668 -log-level error
+    <<: *gw-resources
     volumes:
       - ./config/bifrost.json:/app/config.json:ro
     environment:
@@ -39,6 +47,7 @@ services:
     image: ghcr.io/berriai/litellm:main-stable
     network_mode: host
     command: --config /app/config.yaml --port 4000
+    <<: *gw-resources
     volumes:
       - ./config/litellm.yaml:/app/config.yaml:ro
     environment:
@@ -53,6 +62,8 @@ services:
     image: crabllm-bench:local
     network_mode: host
     pid: host
+    cpus: "2"
+    mem_limit: 1g
     command: python3 bench.py ${BENCH_ARGS:-}
     volumes:
       - ./results:/results
