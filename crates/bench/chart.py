@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate benchmark comparison charts from oha JSON results.
 
-Usage: python3 chart.py [results_dir] [output_dir]
-  results_dir defaults to ./results
-  output_dir  defaults to ./charts
+Usage:
+  python3 chart.py [results_dir]          # terminal output (default)
+  python3 chart.py [results_dir] --png    # save PNGs to charts/
 """
 
 import json
@@ -12,20 +12,12 @@ import re
 import sys
 from collections import defaultdict
 
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.ticker as ticker
-except ImportError:
-    print("error: matplotlib required — pip install matplotlib", file=sys.stderr)
-    sys.exit(1)
+RESULTS_DIR = next((a for a in sys.argv[1:] if not a.startswith("-")), "results")
+PNG_MODE = "--png" in sys.argv
 
-RESULTS_DIR = sys.argv[1] if len(sys.argv) > 1 else "results"
-CHARTS_DIR = sys.argv[2] if len(sys.argv) > 2 else "charts"
-
-# gateway -> scenario -> rps -> {p50, p90, p99, rps_actual, success}
+# gateway -> scenario -> rps -> metrics
 data = defaultdict(lambda: defaultdict(dict))
 
-# Filename patterns: {gw}-{scenario}-{rps}rps.json or {gw}-concurrent-{conc}.json
 FILE_RE = re.compile(r"^(.+?)-(.+?)-(\d+)(rps|)\.json$")
 
 for fname in sorted(os.listdir(RESULTS_DIR)):
@@ -49,7 +41,7 @@ for fname in sorted(os.listdir(RESULTS_DIR)):
         continue
 
     data[gw][scenario][level] = {
-        "p50": p["p50"] * 1000,  # seconds -> ms
+        "p50": p["p50"] * 1000,
         "p90": p["p90"] * 1000,
         "p99": p["p99"] * 1000,
         "rps": s.get("requestsPerSec", 0),
@@ -60,27 +52,154 @@ if not data:
     print(f"No results found in {RESULTS_DIR}/", file=sys.stderr)
     sys.exit(1)
 
-os.makedirs(CHARTS_DIR, exist_ok=True)
-
-# Collect all scenarios and gateways
 gateways = sorted(data.keys())
 all_scenarios = sorted({s for gw in data.values() for s in gw})
 
-COLORS = {
+COLORS_ANSI = {
+    "direct": "\033[90m",
+    "crabllm": "\033[91m",
+    "bifrost": "\033[94m",
+    "litellm": "\033[92m",
+}
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+
+BAR_CHAR = "█"
+BAR_HALF = "▌"
+BAR_WIDTH = 50
+
+
+def ansi(gw):
+    return COLORS_ANSI.get(gw, "\033[37m")
+
+
+def bar(value, max_val):
+    if max_val <= 0:
+        return ""
+    ratio = value / max_val
+    full = int(ratio * BAR_WIDTH)
+    half = 1 if (ratio * BAR_WIDTH - full) >= 0.5 else 0
+    return BAR_CHAR * full + (BAR_HALF if half else "")
+
+
+def print_header(title):
+    print(f"\n{BOLD}{'─' * 70}{RESET}")
+    print(f"{BOLD}  {title}{RESET}")
+    print(f"{BOLD}{'─' * 70}{RESET}")
+
+
+def chart_latency_scenario(scenario):
+    """Show P50/P99 latency bars per gateway at each RPS level."""
+    all_levels = sorted({
+        l for gw in gateways for l in data[gw].get(scenario, {})
+    })
+    if not all_levels:
+        return
+
+    print_header(f"Latency — {scenario}")
+
+    for level in all_levels:
+        entries = []
+        for gw in gateways:
+            e = data[gw].get(scenario, {}).get(level)
+            if e:
+                entries.append((gw, e))
+        if not entries:
+            continue
+
+        max_p99 = max(e["p99"] for _, e in entries)
+        print(f"\n  {DIM}{level} RPS{RESET}")
+        for gw, e in entries:
+            c = ansi(gw)
+            p50_bar = bar(e["p50"], max_p99)
+            p99_bar = bar(e["p99"], max_p99)
+            print(f"    {c}{gw:>8}{RESET} P50 {c}{p50_bar}{RESET} {e['p50']:.2f}ms")
+            print(f"    {' ':>8} P99 {c}{p99_bar}{RESET} {e['p99']:.2f}ms")
+
+
+def chart_overhead_summary():
+    """Compare P50 across gateways at max common RPS per scenario."""
+    print_header("Gateway Overhead Summary (P50)")
+
+    for scenario in all_scenarios:
+        common = None
+        for gw in gateways:
+            levels = set(data[gw].get(scenario, {}).keys())
+            if levels:
+                common = levels if common is None else common & levels
+        if not common:
+            continue
+
+        level = max(common)
+        entries = [(gw, data[gw][scenario][level]) for gw in gateways if level in data[gw].get(scenario, {})]
+        if not entries:
+            continue
+
+        max_val = max(e["p50"] for _, e in entries)
+        print(f"\n  {DIM}{scenario} @ {level} RPS{RESET}")
+        for gw, e in entries:
+            c = ansi(gw)
+            b = bar(e["p50"], max_val)
+            print(f"    {c}{gw:>8}{RESET} {c}{b}{RESET} {e['p50']:.2f}ms")
+
+
+def chart_success_summary():
+    """Show success rates where they're below 100%."""
+    print_header("Success Rates (showing < 100% only)")
+
+    found = False
+    for scenario in all_scenarios:
+        for gw in gateways:
+            for level, e in sorted(data[gw].get(scenario, {}).items()):
+                rate = e["success"]
+                if rate < 1.0:
+                    found = True
+                    c = ansi(gw)
+                    pct = rate * 100
+                    b = bar(rate, 1.0)
+                    print(f"    {c}{gw:>8}{RESET} {scenario}@{level} {c}{b}{RESET} {pct:.1f}%")
+
+    if not found:
+        print(f"    {DIM}All scenarios at 100% success{RESET}")
+
+
+# ── Terminal output ──
+
+if not PNG_MODE:
+    for scenario in all_scenarios:
+        chart_latency_scenario(scenario)
+    chart_overhead_summary()
+    chart_success_summary()
+    print()
+    sys.exit(0)
+
+# ── PNG output (requires matplotlib) ──
+
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
+except ImportError:
+    print("error: --png requires matplotlib — pip install matplotlib", file=sys.stderr)
+    sys.exit(1)
+
+CHARTS_DIR = "charts"
+os.makedirs(CHARTS_DIR, exist_ok=True)
+
+COLORS_HEX = {
     "direct": "#999999",
     "crabllm": "#e74c3c",
     "bifrost": "#3498db",
     "litellm": "#2ecc71",
 }
 
+
 def gw_color(gw):
-    return COLORS.get(gw, "#95a5a6")
+    return COLORS_HEX.get(gw, "#95a5a6")
 
 
-def chart_latency_vs_rps(scenario):
-    """Line chart: P50/P99 latency vs RPS for each gateway."""
+for scenario in all_scenarios:
     fig, ax = plt.subplots(figsize=(10, 5))
-
     for gw in gateways:
         points = data[gw].get(scenario, {})
         if not points:
@@ -88,11 +207,9 @@ def chart_latency_vs_rps(scenario):
         levels = sorted(points.keys())
         p50 = [points[l]["p50"] for l in levels]
         p99 = [points[l]["p99"] for l in levels]
-
         color = gw_color(gw)
         ax.plot(levels, p50, "o-", color=color, label=f"{gw} P50")
         ax.plot(levels, p99, "s--", color=color, alpha=0.5, label=f"{gw} P99")
-
     ax.set_xlabel("Target RPS")
     ax.set_ylabel("Latency (ms)")
     ax.set_title(f"Latency vs RPS — {scenario}")
@@ -102,111 +219,6 @@ def chart_latency_vs_rps(scenario):
     fig.tight_layout()
     fig.savefig(os.path.join(CHARTS_DIR, f"latency-{scenario}.png"), dpi=150)
     plt.close(fig)
-
-
-def chart_overhead_bars():
-    """Grouped bar chart: gateway overhead at a fixed RPS across scenarios."""
-    # Pick the highest common RPS level
-    common_levels = None
-    for gw in gateways:
-        for scenario in all_scenarios:
-            levels = set(data[gw].get(scenario, {}).keys())
-            if levels:
-                common_levels = levels if common_levels is None else common_levels & levels
-    if not common_levels:
-        return
-
-    rps_level = max(common_levels)
-    scenarios_with_data = [
-        s for s in all_scenarios
-        if all(rps_level in data[gw].get(s, {}) for gw in gateways)
-    ]
-    if not scenarios_with_data:
-        return
-
-    fig, ax = plt.subplots(figsize=(12, 5))
-    x = range(len(scenarios_with_data))
-    width = 0.8 / len(gateways)
-
-    for i, gw in enumerate(gateways):
-        p50s = [data[gw][s][rps_level]["p50"] for s in scenarios_with_data]
-        offset = (i - len(gateways) / 2 + 0.5) * width
-        bars = ax.bar([xi + offset for xi in x], p50s, width, label=gw, color=gw_color(gw))
-        for bar, val in zip(bars, p50s):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                    f"{val:.2f}", ha="center", va="bottom", fontsize=7)
-
-    ax.set_xlabel("Scenario")
-    ax.set_ylabel("P50 Latency (ms)")
-    ax.set_title(f"Gateway Overhead Comparison — {rps_level} RPS")
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(scenarios_with_data, rotation=30, ha="right", fontsize=8)
-    ax.legend()
-    ax.grid(True, axis="y", alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(os.path.join(CHARTS_DIR, "overhead-comparison.png"), dpi=150)
-    plt.close(fig)
-
-
-def chart_success_rates():
-    """Heatmap-style chart showing success rates across gateways and scenarios."""
-    # Collect all (scenario, rps) pairs
-    pairs = sorted({
-        (s, l)
-        for gw in data.values()
-        for s, levels in gw.items()
-        for l in levels
-    })
-    if not pairs:
-        return
-
-    fig, ax = plt.subplots(figsize=(12, max(3, len(gateways) * 0.8)))
-    labels = [f"{s}@{l}" for s, l in pairs]
-
-    for gi, gw in enumerate(gateways):
-        rates = []
-        for s, l in pairs:
-            entry = data[gw].get(s, {}).get(l)
-            rates.append(entry["success"] if entry else 0)
-        color = gw_color(gw)
-        ax.barh(
-            [gi + j * (len(gateways) + 1) for j in range(len(pairs))],
-            rates, color=color, label=gw if gi == 0 or True else None,
-        )
-
-    # Simpler approach: grouped bars
-    fig2, ax2 = plt.subplots(figsize=(14, 5))
-    x = range(len(pairs))
-    width = 0.8 / len(gateways)
-
-    for i, gw in enumerate(gateways):
-        rates = []
-        for s, l in pairs:
-            entry = data[gw].get(s, {}).get(l)
-            rates.append(entry["success"] if entry else 0)
-        offset = (i - len(gateways) / 2 + 0.5) * width
-        ax2.bar([xi + offset for xi in x], rates, width, label=gw, color=gw_color(gw))
-
-    ax2.set_xlabel("Scenario @ RPS")
-    ax2.set_ylabel("Success Rate")
-    ax2.set_title("Success Rates")
-    ax2.set_xticks(list(x))
-    ax2.set_xticklabels(labels, rotation=45, ha="right", fontsize=6)
-    ax2.set_ylim(0, 1.05)
-    ax2.legend()
-    ax2.grid(True, axis="y", alpha=0.3)
-    fig2.tight_layout()
-    fig2.savefig(os.path.join(CHARTS_DIR, "success-rates.png"), dpi=150)
-    plt.close(fig)
-    plt.close(fig2)
-
-
-# Generate all charts
-for scenario in all_scenarios:
-    chart_latency_vs_rps(scenario)
-
-chart_overhead_bars()
-chart_success_rates()
 
 print(f"Charts saved to {CHARTS_DIR}/")
 for f in sorted(os.listdir(CHARTS_DIR)):
