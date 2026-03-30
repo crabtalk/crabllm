@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use crabllm_core::{Extension, GatewayConfig, Storage};
-use crabllm_provider::{ManagedServers, ProviderRegistry};
+use crabllm_provider::ProviderRegistry;
 use crabllm_proxy::{
     AppState,
     ext::{
@@ -123,6 +123,69 @@ fn run_llamacpp(action: LlamaCppAction) {
     }
 }
 
+/// Spawn llama-server processes for all LlamaCpp providers in config.
+///
+/// For each LlamaCpp provider, this finds the llama-server binary, spawns a
+/// child process, waits for it to become healthy, then rewrites the config
+/// entry to OpenaiCompat pointing at the local server. The caller must hold
+/// the returned handles alive — dropping them kills the child processes.
+#[cfg(feature = "llamacpp")]
+fn spawn_llamacpp_servers(
+    config: &mut GatewayConfig,
+) -> Result<Vec<crabllm_llamacpp::LlamaCppServer>, crabllm_core::Error> {
+    use crabllm_core::ProviderKind;
+    use crabllm_llamacpp::{LlamaCppConfig, LlamaCppServer};
+
+    let has_llamacpp = config
+        .providers
+        .values()
+        .any(|c| c.kind == ProviderKind::LlamaCpp);
+    if !has_llamacpp {
+        return Ok(Vec::new());
+    }
+
+    let bin = crabllm_llamacpp::find_server_binary()?;
+    let mut servers = Vec::new();
+
+    for (name, pc) in &mut config.providers {
+        if pc.kind != ProviderKind::LlamaCpp {
+            continue;
+        }
+
+        let model_path = pc.model_path.as_ref().ok_or_else(|| {
+            crabllm_core::Error::Config(format!("provider '{name}' (llamacpp) requires model_path"))
+        })?;
+
+        eprintln!("starting llama-server for provider '{name}' (model: {model_path})");
+
+        let llama_config = LlamaCppConfig {
+            model_path: PathBuf::from(model_path),
+            n_gpu_layers: pc.n_gpu_layers.unwrap_or(0),
+            n_ctx: pc.n_ctx.unwrap_or(2048),
+            n_threads: pc.n_threads,
+        };
+
+        let server = LlamaCppServer::spawn(&bin, &llama_config).map_err(|e| {
+            crabllm_core::Error::Config(format!(
+                "provider '{name}': failed to start llama-server: {e}"
+            ))
+        })?;
+
+        eprintln!(
+            "llama-server for provider '{name}' ready on port {}",
+            server.port()
+        );
+
+        // Rewrite config entry so the provider crate sees OpenaiCompat.
+        pc.kind = ProviderKind::OpenaiCompat;
+        pc.base_url = Some(server.base_url());
+
+        servers.push(server);
+    }
+
+    Ok(servers)
+}
+
 async fn serve(config_path: PathBuf, bind: Option<String>) {
     let mut config = match GatewayConfig::from_file(&config_path) {
         Ok(c) => c,
@@ -136,7 +199,19 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
         config.listen = bind;
     }
 
-    let (registry, managed_servers) = match ProviderRegistry::from_config(&config) {
+    // Spawn llama-server processes and rewrite their config entries to
+    // OpenaiCompat before building the registry. Held on this stack frame
+    // for lifetime — Drop kills the child processes after run() returns.
+    #[cfg(feature = "llamacpp")]
+    let _llama_servers = match spawn_llamacpp_servers(&mut config) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to start llama-server: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let registry = match ProviderRegistry::from_config(&config) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("error: failed to build provider registry: {e}");
@@ -165,7 +240,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
                     std::process::exit(1);
                 }
             };
-            run(config, registry, storage, managed_servers).await;
+            run(config, registry, storage).await;
         }
         #[cfg(not(feature = "storage-redis"))]
         "redis" => {
@@ -187,7 +262,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
                     std::process::exit(1);
                 }
             };
-            run(config, registry, storage, managed_servers).await;
+            run(config, registry, storage).await;
         }
         #[cfg(not(feature = "storage-sqlite"))]
         "sqlite" => {
@@ -196,7 +271,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
         }
         _ => {
             let storage = Arc::new(MemoryStorage::new());
-            run(config, registry, storage, managed_servers).await;
+            run(config, registry, storage).await;
         }
     }
 }
@@ -205,7 +280,6 @@ async fn run<S: Storage + 'static>(
     config: GatewayConfig,
     registry: ProviderRegistry,
     storage: Arc<S>,
-    _managed_servers: ManagedServers,
 ) {
     let (extensions, mut admin_routes) =
         match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
@@ -284,13 +358,6 @@ async fn run<S: Storage + 'static>(
     if let Err(e) = server.await {
         eprintln!("error: server failed: {e}");
     }
-
-    // Stop managed llama-server children (if any) before exit.
-    // NOTE: process::exit in the drain timeout handler can still
-    // skip destructors — this only helps when shutdown completes
-    // before the timeout fires.
-    #[cfg(feature = "llamacpp")]
-    drop(_managed_servers);
 }
 
 async fn shutdown_signal(drain_timeout: Duration) {

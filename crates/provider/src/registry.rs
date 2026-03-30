@@ -1,21 +1,7 @@
 use crate::Provider;
-use crabllm_core::{Error, GatewayConfig, ProviderKind};
-#[cfg(feature = "llamacpp")]
-use crabllm_llamacpp::{self as llamacpp, LlamaCppConfig, LlamaCppServer};
+use crabllm_core::{Error, GatewayConfig};
 use rand::Rng;
-#[cfg(feature = "llamacpp")]
-use std::path::PathBuf;
 use std::{collections::HashMap, time::Duration};
-
-/// Managed server processes spawned by the registry.
-///
-/// When the `llamacpp` feature is enabled this holds the live
-/// `LlamaCppServer` handles — dropping it stops all child processes.
-/// Without the feature it is `()` (zero-cost).
-#[cfg(feature = "llamacpp")]
-pub type ManagedServers = Vec<LlamaCppServer>;
-#[cfg(not(feature = "llamacpp"))]
-pub type ManagedServers = ();
 
 /// A provider entry with its routing weight and retry config.
 #[derive(Debug, Clone)]
@@ -50,76 +36,16 @@ impl ProviderRegistry {
     }
 
     /// Build the registry from gateway config.
-    ///
-    /// Returns the registry and managed server handles. The caller must
-    /// hold the returned [`ManagedServers`] alive for the lifetime of the
-    /// gateway — dropping it kills any child processes.
-    pub fn from_config(config: &GatewayConfig) -> Result<(Self, ManagedServers), Error> {
-        // Reject LlamaCpp providers when the feature is disabled.
-        #[cfg(not(feature = "llamacpp"))]
-        for (name, pc) in &config.providers {
-            if pc.kind == ProviderKind::LlamaCpp {
-                return Err(Error::Config(format!(
-                    "provider '{name}': llamacpp support requires the 'llamacpp' feature"
-                )));
-            }
-        }
-
-        // Validate all providers before spawning any llama-server processes.
-        // This avoids starting (and then killing) servers when a later
-        // config entry has an obvious error like a missing api_key.
-        //
-        // For LlamaCpp providers, we also resolve the binary path once here
-        // so we don't do redundant PATH lookups during spawn.
-        #[cfg(feature = "llamacpp")]
-        let llamacpp_bin = {
-            let has_llamacpp = config
-                .providers
-                .values()
-                .any(|c| c.kind == ProviderKind::LlamaCpp);
-            if has_llamacpp {
-                Some(llamacpp::find_server_binary()?)
-            } else {
-                None
-            }
-        };
-
+    pub fn from_config(config: &GatewayConfig) -> Result<Self, Error> {
         for (provider_name, provider_config) in &config.providers {
-            #[cfg(feature = "llamacpp")]
-            if provider_config.kind == ProviderKind::LlamaCpp {
-                validate_llamacpp_config(provider_name, provider_config)?;
-                continue;
-            }
-
             let p = Provider::from(provider_config);
             validate_provider(provider_name, provider_config, &p)?;
         }
 
         let mut providers: HashMap<String, Vec<Deployment>> = HashMap::new();
-        #[cfg(feature = "llamacpp")]
-        let mut servers: Vec<LlamaCppServer> = Vec::new();
 
-        for (provider_name, provider_config) in &config.providers {
-            let provider = if provider_config.kind == ProviderKind::LlamaCpp {
-                #[cfg(feature = "llamacpp")]
-                {
-                    let bin = llamacpp_bin.as_ref().expect("validated above");
-                    let server = spawn_llamacpp_server(provider_name, provider_config, bin)?;
-                    let base_url = server.base_url();
-                    servers.push(server);
-                    Provider::OpenAiCompat {
-                        base_url,
-                        api_key: String::new(),
-                    }
-                }
-                #[cfg(not(feature = "llamacpp"))]
-                {
-                    let _ = &provider_name;
-                    unreachable!("llamacpp providers rejected above")
-                }
-            } else {
-                Provider::from(provider_config)
-            };
+        for provider_config in config.providers.values() {
+            let provider = Provider::from(provider_config);
 
             let deployment = Deployment {
                 provider,
@@ -142,12 +68,11 @@ impl ProviderRegistry {
             }
         }
 
-        let registry = Self::new(providers, config.aliases.clone(), model_providers);
-
-        #[cfg(feature = "llamacpp")]
-        return Ok((registry, servers));
-        #[cfg(not(feature = "llamacpp"))]
-        Ok((registry, ()))
+        Ok(Self::new(
+            providers,
+            config.aliases.clone(),
+            model_providers,
+        ))
     }
 
     /// Look up the provider name for a model. O(1) HashMap lookup.
@@ -245,6 +170,9 @@ fn validate_provider(
     provider: &Provider,
 ) -> Result<(), Error> {
     match provider {
+        Provider::OpenAiCompat { base_url, .. } if base_url.is_empty() => Err(Error::Config(
+            format!("provider '{name}' ({:?}) requires a base_url", config.kind,),
+        )),
         Provider::Anthropic { api_key } | Provider::Google { api_key } if api_key.is_empty() => {
             Err(Error::Config(format!(
                 "provider '{name}' ({:?}) requires an api_key",
@@ -278,52 +206,4 @@ fn validate_provider(
         }
         _ => Ok(()),
     }
-}
-
-/// Validate LlamaCpp config without spawning anything.
-#[cfg(feature = "llamacpp")]
-fn validate_llamacpp_config(
-    name: &str,
-    config: &crabllm_core::ProviderConfig,
-) -> Result<(), Error> {
-    if config.model_path.is_none() {
-        return Err(Error::Config(format!(
-            "provider '{name}' (llamacpp) requires model_path"
-        )));
-    }
-    Ok(())
-}
-
-/// Spawn a llama-server for a LlamaCpp provider config.
-#[cfg(feature = "llamacpp")]
-fn spawn_llamacpp_server(
-    name: &str,
-    config: &crabllm_core::ProviderConfig,
-    bin: &std::path::Path,
-) -> Result<LlamaCppServer, Error> {
-    let model_path = config.model_path.as_ref().ok_or_else(|| {
-        Error::Config(format!("provider '{name}' (llamacpp) requires model_path"))
-    })?;
-
-    eprintln!("starting llama-server for provider '{name}' (model: {model_path})");
-
-    let llama_config = LlamaCppConfig {
-        model_path: PathBuf::from(model_path),
-        n_gpu_layers: config.n_gpu_layers.unwrap_or(0),
-        n_ctx: config.n_ctx.unwrap_or(2048),
-        n_threads: config.n_threads,
-    };
-
-    let server = LlamaCppServer::spawn(bin, &llama_config).map_err(|e| {
-        Error::Config(format!(
-            "provider '{name}': failed to start llama-server: {e}"
-        ))
-    })?;
-
-    eprintln!(
-        "llama-server for provider '{name}' ready on port {}",
-        server.port()
-    );
-
-    Ok(server)
 }

@@ -16,7 +16,7 @@ rustls = ["crabllm-proxy/rustls"]
 storage-redis = ["crabllm-proxy/storage-redis"]
 storage-sqlite = ["crabllm-proxy/storage-sqlite"]
 provider-bedrock = ["crabllm-provider/provider-bedrock"]
-llamacpp = ["dep:crabllm-llamacpp", "crabllm-provider/llamacpp"]
+llamacpp = ["dep:crabllm-llamacpp"]
 
 [[bin]]
 name = "crabllm"
