@@ -37,7 +37,7 @@ declare -A GW_URLS=(
 declare -A GW_HEALTH=(
     [direct]="http://mock:9999/v1/models"
     [crabllm]="http://crabllm:8080/health"
-    [bifrost]="http://bifrost:8080/v1/models"
+    [bifrost]="http://bifrost:8080/"
     [litellm]="http://litellm:4000/health/liveliness"
 )
 
@@ -49,7 +49,7 @@ wait_for() {
     local url="$1" timeout="${2:-60}"
     local attempts=$((timeout * 10))
     for _ in $(seq 1 "$attempts"); do
-        if curl -sf "$url" >/dev/null 2>&1; then return 0; fi
+        if curl -sf --connect-timeout 2 --max-time 5 "$url" >/dev/null 2>&1; then return 0; fi
         sleep 0.1
     done
     echo "WARNING: timed out waiting for $url"

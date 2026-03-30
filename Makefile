@@ -13,5 +13,5 @@ bench-image: bench-runner
 # Run the full competitive benchmark
 bench: bench-image
 	cd crates/bench && mkdir -p results && \
-	BENCH_ARGS="$(ARGS)" docker compose up --abort-on-container-exit --attach runner ; \
+	BENCH_ARGS="$(ARGS)" docker compose up --abort-on-container-exit ; \
 	docker compose down

@@ -27,10 +27,6 @@ services:
       - ./config/bifrost.json:/app/config.json:ro
     environment:
       OPENAI_API_KEY: "mock-key"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/v1/models || exit 1"]
-      interval: 2s
-      retries: 15
     depends_on:
       mock:
         condition: service_healthy
@@ -43,10 +39,6 @@ services:
     environment:
       LITELLM_LOG: "ERROR"
       LITELLM_TELEMETRY: "False"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health/liveliness || exit 1"]
-      interval: 2s
-      retries: 30
     depends_on:
       mock:
         condition: service_healthy
@@ -62,6 +54,6 @@ services:
       crabllm:
         condition: service_healthy
       bifrost:
-        condition: service_healthy
+        condition: service_started
       litellm:
-        condition: service_healthy
+        condition: service_started
