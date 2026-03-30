@@ -1,0 +1,79 @@
+x-gateway-resources: &gw-resources
+  cpus: 2
+  mem_limit: 512m
+
+services:
+  mock:
+    image: crabllm-bench:local
+    build:
+      context: .
+      target: runner
+    network_mode: host
+    command: crabllm-bench --port 9999
+    cpus: 1
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9999/v1/models"]
+      interval: 1s
+      retries: 10
+
+  crabllm:
+    image: crabllm-bench:local
+    network_mode: host
+    command: crabllm serve --config /app/config/bench-docker.toml
+    <<: *gw-resources
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6666/health"]
+      interval: 1s
+      retries: 10
+    depends_on:
+      mock:
+        condition: service_healthy
+
+  bifrost:
+    image: maximhq/bifrost
+    network_mode: host
+    command: -port 6668 -log-level error
+    <<: *gw-resources
+    volumes:
+      - ./config/bifrost.json:/app/config.json:ro
+    environment:
+      OPENAI_API_KEY: "mock-key"
+    depends_on:
+      mock:
+        condition: service_healthy
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    network_mode: host
+    command: --config /app/config.yaml --port 4000 --log_config /app/log_config.yaml
+    <<: *gw-resources
+    volumes:
+      - ./config/litellm.yaml:/app/config.yaml:ro
+      - ./config/litellm-log.yaml:/app/log_config.yaml:ro
+    environment:
+      LITELLM_LOG: "ERROR"
+      LITELLM_TELEMETRY: "False"
+      UVICORN_LOG_LEVEL: "error"
+    depends_on:
+      mock:
+        condition: service_healthy
+
+  runner:
+    image: crabllm-bench:local
+    network_mode: host
+    pid: host
+    cpus: 2
+    mem_limit: 1g
+    command: python3 bench.py ${BENCH_ARGS:-}
+    volumes:
+      - ./results:/results
+    depends_on:
+      mock:
+        condition: service_healthy
+      crabllm:
+        condition: service_healthy
+      bifrost:
+        condition: service_started
+      litellm:
+        condition: service_started

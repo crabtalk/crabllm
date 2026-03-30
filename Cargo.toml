@@ -47,3 +47,14 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 dirs = "6"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
+
+[profile.prod]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false
+debug-assertions = false
+overflow-checks = false
+strip = true

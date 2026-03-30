@@ -72,7 +72,7 @@ async fn main() {
         .route("/v1/models", get(models))
         .with_state(canned);
 
-    let addr = format!("127.0.0.1:{}", cli.port);
+    let addr = format!("0.0.0.0:{}", cli.port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     eprintln!(
         "mock backend listening on {addr} (chunks={}, delay={}ms, error_rate={})",

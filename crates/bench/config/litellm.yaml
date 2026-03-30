@@ -1,0 +1,11 @@
+model_list:
+  - model_name: bench-chat
+    litellm_params:
+      model: openai/bench-chat
+      api_base: http://localhost:9999/v1
+      api_key: mock-key
+  - model_name: bench-embed
+    litellm_params:
+      model: openai/bench-embed
+      api_base: http://localhost:9999/v1
+      api_key: mock-key
