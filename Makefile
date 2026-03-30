@@ -14,5 +14,5 @@ bench-image: bench-runner
 bench: bench-image
 	cd crates/bench && mkdir -p results && \
 	docker compose up -d mock crabllm bifrost litellm && \
-	docker compose run --rm runner ./compare.sh $(ARGS) ; \
+	docker compose run --rm -T runner ./compare.sh $(ARGS) ; \
 	docker compose down

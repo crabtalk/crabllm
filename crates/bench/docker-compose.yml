@@ -37,7 +37,7 @@ services:
 
   litellm:
     image: ghcr.io/berriai/litellm
-    command: --config /app/config.yaml --port 4000
+    command: litellm --config /app/config.yaml --port 4000
     volumes:
       - ./config/litellm.yaml:/app/config.yaml:ro
     environment:
@@ -53,7 +53,7 @@ services:
 
   runner:
     image: crabllm-bench:local
-    command: ./compare.sh
+    command: stdbuf -oL ./compare.sh
     volumes:
       - ./results:/results
     depends_on:
