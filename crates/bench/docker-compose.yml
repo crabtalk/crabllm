@@ -53,7 +53,7 @@ services:
 
   runner:
     image: crabllm-bench:local
-    command: stdbuf -oL ./compare.sh
+    command: ./compare.sh ${BENCH_ARGS:-}
     volumes:
       - ./results:/results
     depends_on:
