@@ -64,6 +64,31 @@ curl http://localhost:8080/v1/chat/completions \
   streaming connections.
 - **Deployment**: Single static binary. No interpreter, no virtualenv.
 
+## Benchmarks
+
+Gateway overhead measured against a mock LLM server with instant responses.
+See [full results][benchmarks] for streaming, embeddings, and memory.
+
+**Chat completions P50 (ms) — lower is better:**
+
+| RPS | direct | crabllm | [bifrost] | [litellm] |
+|----:|-------:|--------:|----------:|----------:|
+| 500 | 0.28 | 0.66 | 0.36 | 168.79 |
+| 1000 | 0.15 | 0.44 | 0.27 | 172.00 |
+| 5000 | 0.13 | 0.26 | 0.26 | 159.86 |
+
+```bash
+# requires linux + docker
+make bench                         # full competitive benchmark
+make bench-debug                   # quick bifrost-only debug run
+make bench-chart                   # render terminal charts from results
+make bench-json                    # dump summary JSON to stdout
+make summary                       # generate docs/src/benchmarks.md
+```
+
+[bifrost]: https://github.com/maximhq/bifrost
+[benchmarks]: https://clearloop.github.io/crabllm/benchmarks.html
+
 ## Crates
 
 | Crate               | Description                                                  |
