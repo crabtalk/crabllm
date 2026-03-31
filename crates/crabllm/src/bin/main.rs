@@ -127,7 +127,7 @@ fn run_llamacpp(action: LlamaCppAction) {
 ///
 /// For each LlamaCpp provider, this finds the llama-server binary, spawns a
 /// child process, waits for it to become healthy, then rewrites the config
-/// entry to OpenaiCompat pointing at the local server. The caller must hold
+/// entry to Openai pointing at the local server. The caller must hold
 /// the returned handles alive — dropping them kills the child processes.
 #[cfg(feature = "llamacpp")]
 fn spawn_llamacpp_servers(
@@ -176,8 +176,8 @@ fn spawn_llamacpp_servers(
             server.port()
         );
 
-        // Rewrite config entry so the provider crate sees OpenaiCompat.
-        pc.kind = ProviderKind::OpenaiCompat;
+        // Rewrite config entry so the provider crate sees Openai.
+        pc.kind = ProviderKind::Openai;
         pc.base_url = Some(server.base_url());
 
         servers.push(server);
@@ -200,7 +200,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
     }
 
     // Spawn llama-server processes and rewrite their config entries to
-    // OpenaiCompat before building the registry. Held on this stack frame
+    // Openai before building the registry. Held on this stack frame
     // for lifetime — Drop kills the child processes after run() returns.
     #[cfg(feature = "llamacpp")]
     let _llama_servers = match spawn_llamacpp_servers(&mut config) {

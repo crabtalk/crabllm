@@ -8,7 +8,7 @@ OpenAI-compatible format your application uses and the provider's native format.
 
 | Kind | Provider | Translation |
 |------|----------|------------|
-| `openai_compat` | OpenAI, Groq, Together, vLLM, any OpenAI-compatible API | Pass-through |
+| `openai` | OpenAI, Groq, Together, vLLM, any OpenAI-compatible API | Pass-through |
 | `anthropic` | Anthropic Messages API | Full translation |
 | `google` | Google Gemini | Full translation |
 | `azure` | Azure OpenAI | URL + auth rewrite |
@@ -38,13 +38,13 @@ next provider by weight. See [Routing](../features/routing.md).
 
 ```toml
 [providers.openai_primary]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_KEY_1}"
 models = ["gpt-4o"]
 weight = 3
 
 [providers.openai_backup]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_KEY_2}"
 models = ["gpt-4o"]
 weight = 1

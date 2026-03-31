@@ -30,7 +30,7 @@ Each provider is a named entry under `[providers]`:
 
 ```toml
 [providers.my_openai]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_API_KEY}"
 models = ["gpt-4o", "gpt-4o-mini"]
 ```
@@ -137,7 +137,7 @@ listen = "0.0.0.0:8080"
 shutdown_timeout = 30
 
 [providers.openai]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_API_KEY}"
 models = ["gpt-4o", "gpt-4o-mini"]
 weight = 2

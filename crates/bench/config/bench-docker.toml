@@ -1,7 +1,7 @@
 listen = "0.0.0.0:6666"
 
 [providers.mock]
-kind = "openai_compat"
+kind = "openai"
 base_url = "http://localhost:9999/v1"
 api_key = "mock-key"
 models = ["bench-chat", "bench-embed"]

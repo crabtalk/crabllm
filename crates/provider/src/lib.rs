@@ -14,7 +14,7 @@ mod registry;
 pub enum Provider {
     /// OpenAI-compatible providers (OpenAI, Ollama, vLLM, Groq, etc.).
     /// Request body is forwarded as-is with URL + auth rewrite.
-    OpenAiCompat { base_url: String, api_key: String },
+    Openai { base_url: String, api_key: String },
     /// Anthropic Messages API. Requires request/response translation.
     Anthropic { api_key: String },
     /// Google Gemini API. Requires request/response translation.
@@ -36,7 +36,7 @@ pub enum Provider {
 impl From<&ProviderConfig> for Provider {
     fn from(config: &ProviderConfig) -> Self {
         match config.kind {
-            ProviderKind::OpenaiCompat => Provider::OpenAiCompat {
+            ProviderKind::Openai => Provider::Openai {
                 base_url: config
                     .base_url
                     .clone()
@@ -49,7 +49,7 @@ impl From<&ProviderConfig> for Provider {
             ProviderKind::Google => Provider::Google {
                 api_key: config.api_key.clone().unwrap_or_default(),
             },
-            ProviderKind::Ollama => Provider::OpenAiCompat {
+            ProviderKind::Ollama => Provider::Openai {
                 base_url: config
                     .base_url
                     .clone()
@@ -74,7 +74,7 @@ impl From<&ProviderConfig> for Provider {
                 // llama-server process starts and a port is known.
                 // Use base_url if explicitly set (external llama-server),
                 // otherwise this will be overwritten by the process manager.
-                Provider::OpenAiCompat {
+                Provider::Openai {
                     base_url: config.base_url.clone().unwrap_or_default(),
                     api_key: String::new(),
                 }
@@ -91,7 +91,7 @@ impl Provider {
         request: &ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse, Error> {
         match self {
-            Provider::OpenAiCompat { base_url, api_key } => {
+            Provider::Openai { base_url, api_key } => {
                 provider::openai::chat_completion(client, base_url, api_key, request).await
             }
             Provider::Anthropic { api_key } => {
@@ -129,7 +129,7 @@ impl Provider {
         request: &EmbeddingRequest,
     ) -> Result<EmbeddingResponse, Error> {
         match self {
-            Provider::OpenAiCompat { base_url, api_key } => {
+            Provider::Openai { base_url, api_key } => {
                 provider::openai::embedding(client, base_url, api_key, request).await
             }
             Provider::Anthropic { .. } => Err(provider::anthropic::not_implemented("embedding")),
@@ -150,7 +150,7 @@ impl Provider {
         request: &ImageRequest,
     ) -> Result<(Bytes, String), Error> {
         match self {
-            Provider::OpenAiCompat { base_url, api_key } => {
+            Provider::Openai { base_url, api_key } => {
                 provider::openai::image_generation(client, base_url, api_key, request).await
             }
             Provider::Anthropic { .. } => {
@@ -176,7 +176,7 @@ impl Provider {
         request: &AudioSpeechRequest,
     ) -> Result<(Bytes, String), Error> {
         match self {
-            Provider::OpenAiCompat { base_url, api_key } => {
+            Provider::Openai { base_url, api_key } => {
                 provider::openai::audio_speech(client, base_url, api_key, request).await
             }
             Provider::Anthropic { .. } => Err(provider::anthropic::not_implemented("audio_speech")),
@@ -201,7 +201,7 @@ impl Provider {
         form: reqwest::multipart::Form,
     ) -> Result<(Bytes, String), Error> {
         match self {
-            Provider::OpenAiCompat { base_url, api_key } => {
+            Provider::Openai { base_url, api_key } => {
                 provider::openai::audio_transcription(client, base_url, api_key, form).await
             }
             Provider::Anthropic { .. } => {
@@ -239,7 +239,7 @@ impl Provider {
         request: &ChatCompletionRequest,
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
         match self {
-            Provider::OpenAiCompat { base_url, api_key } => {
+            Provider::Openai { base_url, api_key } => {
                 let s =
                     provider::openai::chat_completion_stream(client, base_url, api_key, request)
                         .await?;
