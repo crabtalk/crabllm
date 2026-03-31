@@ -4,7 +4,7 @@ ifneq ($(shell uname -s)-$(shell uname -m),Linux-x86_64)
 CROSS_ENV := CC=x86_64-linux-gnu-gcc AR=x86_64-linux-gnu-ar
 endif
 
-.PHONY: prod image bench-runner bench-image bench bench-chart
+.PHONY: prod image bench-runner bench-image bench bench-chart summary
 
 # Build crabllm prod binary for linux-amd64
 prod:
@@ -32,8 +32,13 @@ bench: bench-image
 	cd crates/bench && mkdir -p results && \
 	docker compose up -d mock crabllm bifrost litellm && \
 	BENCH_ARGS="$(ARGS)" docker compose up runner ; \
+	cp results/summary.json summary.json 2>/dev/null ; \
 	docker compose down
 
 # Generate charts from results
 bench-chart:
 	cd crates/bench && python3 bench.py --chart-only --output results
+
+# Generate benchmark page for docs
+summary:
+	cd crates/bench && python3 bench.py --markdown ../../docs/src/benchmarks.md --output results
