@@ -70,6 +70,7 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
     volumes:
+      - ./bench.py:/app/bench.py:ro
       - ./results:/results
     depends_on:
       mock:
