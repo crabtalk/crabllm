@@ -170,9 +170,10 @@ fn validate_provider(
     provider: &Provider,
 ) -> Result<(), Error> {
     match provider {
-        Provider::OpenAiCompat { base_url, .. } if base_url.is_empty() => Err(Error::Config(
-            format!("provider '{name}' ({:?}) requires a base_url", config.kind,),
-        )),
+        Provider::Openai { base_url, .. } if base_url.is_empty() => Err(Error::Config(format!(
+            "provider '{name}' ({:?}) requires a base_url",
+            config.kind,
+        ))),
         Provider::Anthropic { api_key } | Provider::Google { api_key } if api_key.is_empty() => {
             Err(Error::Config(format!(
                 "provider '{name}' ({:?}) requires an api_key",

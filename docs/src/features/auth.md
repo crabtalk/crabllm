@@ -52,7 +52,7 @@ pass through without checking the `Authorization` header.
 listen = "0.0.0.0:8080"
 
 [providers.openai]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_API_KEY}"
 models = ["gpt-4o"]
 ```

@@ -25,10 +25,17 @@ struct GeminiRequest {
     tools: Option<Vec<GeminiToolDef>>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum GeminiRole {
+    User,
+    Model,
+}
+
 #[derive(Serialize, Deserialize)]
 struct GeminiContent {
     #[serde(skip_serializing_if = "Option::is_none")]
-    role: Option<String>,
+    role: Option<GeminiRole>,
     parts: Vec<GeminiPart>,
 }
 
@@ -96,12 +103,27 @@ struct GeminiResponse {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum GeminiFinishReason {
+    Stop,
+    MaxTokens,
+    Safety,
+    Recitation,
+    Blocklist,
+    ProhibitedContent,
+    Spii,
+    MalformedFunctionCall,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GeminiCandidate {
     #[serde(default)]
     content: Option<GeminiContent>,
     #[serde(default)]
-    finish_reason: Option<String>,
+    finish_reason: Option<GeminiFinishReason>,
 }
 
 #[derive(Deserialize)]
@@ -118,6 +140,17 @@ struct GeminiUsage {
 // ── Translation ──
 
 fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
+    // Build tool_call_id → function_name index so Tool-role messages can
+    // resolve the function name even when msg.name is None.
+    let mut tc_names = std::collections::HashMap::<&str, &str>::new();
+    for msg in &request.messages {
+        if let Some(tool_calls) = &msg.tool_calls {
+            for tc in tool_calls {
+                tc_names.insert(&tc.id, &tc.function.name);
+            }
+        }
+    }
+
     let mut system_parts = Vec::new();
     let mut contents = Vec::new();
 
@@ -134,7 +167,16 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
             }
         } else if msg.role == Role::Tool {
             // Tool result → user message with functionResponse part.
-            let name = msg.name.clone().unwrap_or_default();
+            // Prefer msg.name, fall back to looking up by tool_call_id.
+            let name = msg
+                .name
+                .clone()
+                .or_else(|| {
+                    msg.tool_call_id
+                        .as_deref()
+                        .and_then(|id| tc_names.get(id).map(|n| n.to_string()))
+                })
+                .unwrap_or_default();
             let response_val = msg
                 .content
                 .as_ref()
@@ -149,7 +191,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                 })
                 .unwrap_or(serde_json::json!({"result": msg.content.as_ref().and_then(|c| c.as_str()).unwrap_or("")}));
             contents.push(GeminiContent {
-                role: Some("user".to_string()),
+                role: Some(GeminiRole::User),
                 parts: vec![GeminiPart {
                     text: None,
                     function_call: None,
@@ -187,13 +229,13 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                 });
             }
             contents.push(GeminiContent {
-                role: Some("model".to_string()),
+                role: Some(GeminiRole::Model),
                 parts,
             });
         } else {
-            let role = match &msg.role {
-                Role::Assistant => "model",
-                other => other.as_str(),
+            let role = match msg.role {
+                Role::Assistant => GeminiRole::Model,
+                _ => GeminiRole::User,
             };
             let text = msg
                 .content
@@ -202,7 +244,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                 .unwrap_or("")
                 .to_string();
             contents.push(GeminiContent {
-                role: Some(role.to_string()),
+                role: Some(role),
                 parts: vec![GeminiPart {
                     text: Some(text),
                     function_call: None,
@@ -269,13 +311,35 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     }
 }
 
-fn map_finish_reason(reason: &Option<String>) -> Option<FinishReason> {
-    reason.as_ref().map(|r| match r.as_str() {
-        "STOP" => FinishReason::Stop,
-        "MAX_TOKENS" => FinishReason::Length,
-        "SAFETY" => FinishReason::ContentFilter,
-        other => FinishReason::Custom(other.to_lowercase()),
-    })
+impl From<&GeminiFinishReason> for FinishReason {
+    fn from(r: &GeminiFinishReason) -> Self {
+        match r {
+            GeminiFinishReason::Stop => FinishReason::Stop,
+            GeminiFinishReason::MaxTokens => FinishReason::Length,
+            GeminiFinishReason::Safety
+            | GeminiFinishReason::Blocklist
+            | GeminiFinishReason::ProhibitedContent
+            | GeminiFinishReason::Spii => FinishReason::ContentFilter,
+            GeminiFinishReason::Recitation => FinishReason::Custom("recitation".into()),
+            GeminiFinishReason::MalformedFunctionCall => {
+                FinishReason::Custom("malformed_function_call".into())
+            }
+            GeminiFinishReason::Other => FinishReason::Custom("other".into()),
+        }
+    }
+}
+
+impl From<GeminiUsage> for Usage {
+    fn from(u: GeminiUsage) -> Self {
+        Usage {
+            prompt_tokens: u.prompt_token_count,
+            completion_tokens: u.candidates_token_count,
+            total_tokens: u.total_token_count,
+            completion_tokens_details: None,
+            prompt_cache_hit_tokens: None,
+            prompt_cache_miss_tokens: None,
+        }
+    }
 }
 
 /// Extract text and tool calls from response candidate parts.
@@ -311,7 +375,7 @@ fn translate_response(resp: GeminiResponse, model: &str) -> ChatCompletionRespon
         .first()
         .map(|c| {
             let (text, tcs) = extract_parts(c);
-            (text, tcs, map_finish_reason(&c.finish_reason))
+            (text, tcs, c.finish_reason.as_ref().map(Into::into))
         })
         .unwrap_or_default();
 
@@ -346,14 +410,7 @@ fn translate_response(resp: GeminiResponse, model: &str) -> ChatCompletionRespon
             finish_reason,
             logprobs: None,
         }],
-        usage: resp.usage_metadata.map(|u| Usage {
-            prompt_tokens: u.prompt_token_count,
-            completion_tokens: u.candidates_token_count,
-            total_tokens: u.total_token_count,
-            completion_tokens_details: None,
-            prompt_cache_hit_tokens: None,
-            prompt_cache_miss_tokens: None,
-        }),
+        usage: resp.usage_metadata.map(Usage::from),
         system_fingerprint: None,
     }
 }
@@ -479,7 +536,7 @@ fn gemini_sse_stream(
                     };
 
                     let (text, tool_calls) = extract_parts(candidate);
-                    let finish_reason = map_finish_reason(&candidate.finish_reason);
+                    let finish_reason = candidate.finish_reason.as_ref().map(Into::into);
 
                     let has_text = !text.is_empty();
                     let has_tools = !tool_calls.is_empty();
@@ -532,14 +589,7 @@ fn gemini_sse_stream(
                             finish_reason,
                             logprobs: None,
                         }],
-                        usage: gemini_resp.usage_metadata.map(|u| Usage {
-                            prompt_tokens: u.prompt_token_count,
-                            completion_tokens: u.candidates_token_count,
-                            total_tokens: u.total_token_count,
-                            completion_tokens_details: None,
-                            prompt_cache_hit_tokens: None,
-                            prompt_cache_miss_tokens: None,
-                        }),
+                        usage: gemini_resp.usage_metadata.map(Usage::from),
                         system_fingerprint: None,
                     };
                     return Some((Ok(chunk), (byte_stream, buffer, model, chunk_idx)));

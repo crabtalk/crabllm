@@ -16,13 +16,13 @@ selection. Higher `weight` values mean more traffic:
 
 ```toml
 [providers.primary]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_KEY_1}"
 models = ["gpt-4o"]
 weight = 3                    # 75% of traffic
 
 [providers.secondary]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_KEY_2}"
 models = ["gpt-4o"]
 weight = 1                    # 25% of traffic
@@ -42,7 +42,7 @@ crabllm retries the same provider with exponential backoff:
 
 ```toml
 [providers.openai]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_API_KEY}"
 models = ["gpt-4o"]
 max_retries = 3               # retry up to 3 times
@@ -59,7 +59,7 @@ have been tried.
 ```toml
 # Primary provider (tried first)
 [providers.openai]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_API_KEY}"
 models = ["gpt-4o"]
 weight = 2
@@ -81,7 +81,7 @@ is treated as a transient error (triggers retry/fallback):
 
 ```toml
 [providers.openai]
-kind = "openai_compat"
+kind = "openai"
 api_key = "${OPENAI_API_KEY}"
 models = ["gpt-4o"]
 timeout = 60                  # seconds (default: 30)
