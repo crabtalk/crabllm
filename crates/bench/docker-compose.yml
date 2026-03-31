@@ -33,12 +33,13 @@ services:
   bifrost:
     image: maximhq/bifrost
     network_mode: host
-    command: -port 6668 -log-level error
+    command: -port 6668
     <<: *gw-resources
     volumes:
-      - ./config/bifrost.json:/app/config.json:ro
+      - ./config/bifrost.json:/app/data/config.json:ro
     environment:
       OPENAI_API_KEY: "mock-key"
+      LOG_LEVEL: "error"
     depends_on:
       mock:
         condition: service_healthy
@@ -66,7 +67,10 @@ services:
     cpus: 2
     mem_limit: 1g
     command: python3 bench.py ${BENCH_ARGS:-}
+    environment:
+      PYTHONUNBUFFERED: "1"
     volumes:
+      - ./bench.py:/app/bench.py:ro
       - ./results:/results
     depends_on:
       mock:

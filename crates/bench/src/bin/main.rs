@@ -89,10 +89,10 @@ async fn chat_completions(
         return (StatusCode::INTERNAL_SERVER_ERROR, canned.error_json.clone()).into_response();
     }
 
-    // Check if streaming is requested by looking for "stream":true in the body.
-    let is_stream = body
-        .windows(13)
-        .any(|w| w == b"\"stream\":true" || w == b"\"stream\": true");
+    let is_stream = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("stream")?.as_bool())
+        .unwrap_or(false);
 
     if is_stream {
         let n = canned.chunks;

@@ -1,4 +1,11 @@
 {
+  "$schema": "https://www.getbifrost.ai/schema",
+  "config_store": {
+    "enabled": false
+  },
+  "logs_store": {
+    "enabled": false
+  },
   "providers": {
     "openai": {
       "keys": [
@@ -10,13 +17,12 @@
         }
       ],
       "network_config": {
-        "base_url": "http://127.0.0.1:9999/v1"
+        "base_url": "http://127.0.0.1:9999"
+      },
+      "concurrency_and_buffer_size": {
+        "concurrency": 5000,
+        "buffer_size": 7500
       }
     }
-  },
-  "plugins": [
-    { "name": "telemetry", "enabled": false },
-    { "name": "logging", "enabled": false },
-    { "name": "governance", "enabled": false }
-  ]
+  }
 }

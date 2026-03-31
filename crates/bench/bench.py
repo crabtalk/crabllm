@@ -27,10 +27,10 @@ from urllib.request import Request, urlopen
 # ── Gateway definitions ──────────────────────────────────────────────────────
 
 GATEWAYS = [
-    {"name": "direct",  "url": "http://localhost:9999", "health": "http://localhost:9999/v1/models",           "proc": "crabllm-bench"},
-    {"name": "crabllm", "url": "http://localhost:6666", "health": "http://localhost:6666/health",              "proc": "crabllm"},
-    {"name": "bifrost", "url": "http://localhost:6668", "health": "http://localhost:6668/",                     "proc": "bifrost"},
-    {"name": "litellm", "url": "http://localhost:4000", "health": "http://localhost:4000/health/liveliness",   "proc": "litellm"},
+    {"name": "direct",  "url": "http://127.0.0.1:9999", "health": "http://127.0.0.1:9999/v1/models",           "proc": "crabllm-bench"},
+    {"name": "crabllm", "url": "http://127.0.0.1:6666", "health": "http://127.0.0.1:6666/health",              "proc": "crabllm serve"},
+    {"name": "bifrost", "url": "http://127.0.0.1:6668", "health": "http://127.0.0.1:6668/",                     "proc": "/app/main"},
+    {"name": "litellm", "url": "http://127.0.0.1:4000", "health": "http://127.0.0.1:4000/health/liveliness",   "proc": "litellm"},
 ]
 
 # ── Request bodies ───────────────────────────────────────────────────────────
@@ -61,7 +61,9 @@ DEVNULL = subprocess.DEVNULL
 
 def adapt_body(gw_name, body):
     if gw_name == "bifrost":
-        return body.replace('"model":"', '"model":"openai/')
+        obj = json.loads(body)
+        obj["model"] = f"openai/{obj['model']}"
+        return json.dumps(obj, **_J)
     return body
 
 
@@ -70,13 +72,15 @@ def sample_memory_kb(proc_name):
         return 0
     try:
         out = subprocess.run(
-            ["ps", "-eo", "comm,rss", "--no-headers"],
+            ["ps", "-eo", "rss,args", "--no-headers"],
             capture_output=True, text=True, timeout=5,
         ).stdout
+        total = 0
         for line in out.splitlines():
-            parts = line.split()
-            if len(parts) >= 2 and proc_name in parts[0]:
-                return int(parts[1])
+            parts = line.split(None, 1)
+            if len(parts) >= 2 and proc_name in parts[1]:
+                total += int(parts[0])
+        return total
     except (subprocess.TimeoutExpired, ValueError, OSError):
         pass
     return 0
@@ -128,12 +132,25 @@ def _check_health(url, timeout=5):
         return False
 
 
+def _readiness_check(gw, timeout=5):
+    """Send a test request through the gateway to verify upstream connectivity."""
+    url = f"{gw['url']}/v1/chat/completions"
+    body = adapt_body(gw["name"], CHAT_BODY).encode()
+    try:
+        req = Request(url, data=body, method="POST",
+                      headers={"Content-Type": "application/json"})
+        with urlopen(req, timeout=timeout):
+            return True
+    except (URLError, OSError, TimeoutError):
+        return False
+
+
 def _poll_gateway(gw, timeout):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if _check_health(gw["health"]):
+        if _check_health(gw["health"]) and _readiness_check(gw):
             return gw
-        time.sleep(0.1)
+        time.sleep(1)
     return None
 
 
@@ -160,7 +177,9 @@ def wait_for_gateways(gateways, timeout=60):
 
 def run_scenario(name, endpoint, body, rps_levels, active_gws, duration, outdir):
     print(f"== Scenario: {name} ==")
-    for gw in active_gws:
+    for i, gw in enumerate(active_gws):
+        if i > 0:
+            time.sleep(5)  # drain TIME_WAIT sockets between gateways
         gw_body = adapt_body(gw["name"], body)
         mem = fmt_mb(sample_memory_kb(gw["proc"]))
         print(f"  [{gw['name']}] warming up... (mem: {mem})")
@@ -199,7 +218,9 @@ def run_concurrent(active_gws, duration, outdir):
     print()
     for conc in [100, 500, 1000]:
         print(f"== concurrent-streams-{conc} ==")
-        for gw in active_gws:
+        for i, gw in enumerate(active_gws):
+            if i > 0:
+                time.sleep(5)
             gw_body = adapt_body(gw["name"], STREAM_BODY)
             warmup(gw["url"], "/v1/chat/completions", gw_body)
             outfile = os.path.join(outdir, f"{gw['name']}-concurrent-{conc}.json")
@@ -234,6 +255,26 @@ def validate_results(outdir):
     print("  OK")
     print()
     return True
+
+
+def write_summary(outdir):
+    """Write condensed benchmark results to summary.json."""
+    data = load_results(outdir)
+    if not data:
+        return
+    summary = {}
+    gw_order = [gw["name"] for gw in GATEWAYS if gw["name"] in data]
+    for gw in gw_order:
+        summary[gw] = {}
+        for scenario in sorted(data[gw]):
+            summary[gw][scenario] = {
+                level: data[gw][scenario][level]
+                for level in sorted(data[gw][scenario])
+            }
+    path = os.path.join(outdir, "summary.json")
+    with open(path, "w") as f:
+        json.dump(summary, f, indent=2)
+    print(f"  Summary: {path}")
 
 
 def print_summary(outdir):
@@ -349,6 +390,15 @@ def load_results(outdir):
         if not p.get("p50"):
             continue
 
+        # oha's successRate counts any HTTP response as success (including 5xx).
+        # Compute real success from status code distribution.
+        dist = j.get("statusCodeDistribution", {})
+        total = sum(dist.values()) if dist else 0
+        ok = sum(v for k, v in dist.items() if k.startswith("2")) if dist else 0
+        success = ok / total if total > 0 else 0
+        if success == 0:
+            continue  # all requests failed — latency is just error response time
+
         mem_kb = 0
         mem_path = path.replace(".json", ".mem.json")
         try:
@@ -362,7 +412,7 @@ def load_results(outdir):
             "p90": p["p90"] * 1000,
             "p99": p["p99"] * 1000,
             "rps": s.get("requestsPerSec", 0),
-            "success": s.get("successRate", 0),
+            "success": success,
             "memory_mb": mem_kb / 1024,
         }
     return data
@@ -448,7 +498,7 @@ def render_terminal_charts(outdir):
     if not data:
         print(f"No results found in {outdir}/", file=sys.stderr)
         return
-    gateways = sorted(data.keys())
+    gateways = [gw["name"] for gw in GATEWAYS if gw["name"] in data]
     scenarios = sorted({s for gw in data.values() for s in gw})
     for sc in scenarios:
         chart_latency(data, gateways, sc)
@@ -469,7 +519,7 @@ def render_png_charts(outdir):
     data = load_results(outdir)
     if not data:
         return
-    gateways = sorted(data.keys())
+    gateways = [gw["name"] for gw in GATEWAYS if gw["name"] in data]
     scenarios = sorted({s for gw in data.values() for s in gw})
 
     charts_dir = os.path.join(outdir, "..", "charts")
@@ -500,6 +550,85 @@ def render_png_charts(outdir):
     print(f"Charts saved to {charts_dir}/")
 
 
+# ── Markdown rendering ──────────────────────────────────────────────────────
+
+SCENARIO_TITLES = {
+    "chat-minimal": "Chat Completions",
+    "chat-stream": "Streaming",
+    "embeddings": "Embeddings",
+    "chat-large-context": "Large Context",
+    "chat-long-stream": "Long Stream",
+    "chat-tools": "Tool Calling",
+}
+
+
+def _all_tested(outdir):
+    """Return set of (gw, scenario, level) tuples that have result files."""
+    known_gws = {gw["name"] for gw in GATEWAYS}
+    tested = set()
+    for fname in os.listdir(outdir):
+        parsed = _parse_result_filename(fname, known_gws)
+        if parsed:
+            tested.add(parsed)
+    return tested
+
+
+def render_markdown(outdir, path):
+    data = load_results(outdir)
+    if not data:
+        print("No results to render.", file=sys.stderr)
+        return
+
+    tested = _all_tested(outdir)
+    gateways = [gw["name"] for gw in GATEWAYS if gw["name"] in data]
+    scenarios = sorted({s for gw in data.values() for s in gw})
+
+    lines = [
+        "# Benchmarks",
+        "",
+        "Gateway overhead measured against a mock LLM server with instant",
+        "responses — numbers reflect pure proxy cost.",
+        "",
+        "*Latency: P50 / P99 in milliseconds. Lower is better.*",
+        "",
+    ]
+
+    for scenario in scenarios:
+        title = SCENARIO_TITLES.get(scenario, scenario.replace("-", " ").title())
+        lines.append(f"## {title}")
+        lines.append("")
+        lines.append("| RPS | " + " | ".join(gateways) + " |")
+        lines.append("| ---:| " + " | ".join("---:" for _ in gateways) + " |")
+
+        all_levels = sorted({int(l) for gw in gateways for l in data.get(gw, {}).get(scenario, {})})
+        for level in all_levels:
+            cells = []
+            for gw in gateways:
+                e = data.get(gw, {}).get(scenario, {}).get(level)
+                if e:
+                    cells.append(f"{e['p50']:.2f} / {e['p99']:.2f}")
+                elif (gw, scenario, level) in tested:
+                    cells.append("down")
+                else:
+                    cells.append("—")
+            lines.append(f"| {level} | " + " | ".join(cells) + " |")
+        lines.append("")
+
+    # Peak memory
+    lines.append("## Memory (Peak RSS)")
+    lines.append("")
+    lines.append("| Gateway | Peak RSS |")
+    lines.append("| ------- | -------: |")
+    for gw in gateways:
+        peak = max((e.get("memory_mb", 0) for sc in data[gw].values() for e in sc.values()), default=0)
+        lines.append(f"| {gw} | {peak:.1f} MB |" if peak > 0 else f"| {gw} | — |")
+    lines.append("")
+
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"  Markdown: {path}")
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -511,16 +640,29 @@ def main():
     parser.add_argument("--chart", action="store_true", help="render terminal charts after run")
     parser.add_argument("--chart-only", action="store_true", help="render charts from existing results (no benchmark)")
     parser.add_argument("--png", action="store_true", help="export PNG charts (requires matplotlib)")
+    parser.add_argument("--markdown", metavar="PATH", help="render markdown summary to file")
+    parser.add_argument("--json", action="store_true", help="dump summary JSON to stdout")
 
     args = parser.parse_args()
     outdir = args.output
     rps_levels = [int(x) for x in args.rps.split()]
 
-    # Chart-only mode: just render from existing results
-    if args.chart_only:
-        render_terminal_charts(outdir)
+    # Render-only modes: no benchmark run
+    if args.chart_only or args.json or (args.markdown and not args.chart):
+        if args.chart_only:
+            render_terminal_charts(outdir)
         if args.png:
             render_png_charts(outdir)
+        if args.markdown:
+            render_markdown(outdir, args.markdown)
+        if args.json:
+            data = load_results(outdir)
+            if data:
+                out = {}
+                for gw in [g["name"] for g in GATEWAYS if g["name"] in data]:
+                    out[gw] = {sc: {l: data[gw][sc][l] for l in sorted(data[gw][sc])} for sc in sorted(data[gw])}
+                json.dump(out, sys.stdout, indent=2)
+                print()
         return
 
     # Full benchmark run
@@ -545,12 +687,15 @@ def main():
         run_concurrent(active, args.duration, outdir)
 
     validate_results(outdir)
+    write_summary(outdir)
     print_summary(outdir)
 
     if args.chart:
         render_terminal_charts(outdir)
     if args.png:
         render_png_charts(outdir)
+    if args.markdown:
+        render_markdown(outdir, args.markdown)
 
 
 if __name__ == "__main__":
