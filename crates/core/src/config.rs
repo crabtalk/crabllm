@@ -48,7 +48,7 @@ pub struct GatewayConfig {
 }
 
 /// Configuration for a single LLM provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     /// Provider kind determines the dispatch path.
     #[serde(
