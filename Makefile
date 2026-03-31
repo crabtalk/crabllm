@@ -22,8 +22,9 @@ bench-runner:
 
 # Stage prod binaries and build the bench image
 bench-image: bench-runner
+	$(CROSS_ENV) cargo build --profile prod -p crabllm -p crabllm-bench --target $(TARGET)
 	mkdir -p crates/bench/bin
-	cp target/prod/crabllm target/prod/crabllm-bench crates/bench/bin/
+	cp target/$(TARGET)/prod/crabllm target/$(TARGET)/prod/crabllm-bench crates/bench/bin/
 	cd crates/bench && docker compose build
 
 # Run the full competitive benchmark
