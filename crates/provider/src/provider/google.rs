@@ -118,6 +118,17 @@ struct GeminiUsage {
 // ── Translation ──
 
 fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
+    // Build tool_call_id → function_name index so Tool-role messages can
+    // resolve the function name even when msg.name is None.
+    let mut tc_names = std::collections::HashMap::<&str, &str>::new();
+    for msg in &request.messages {
+        if let Some(tool_calls) = &msg.tool_calls {
+            for tc in tool_calls {
+                tc_names.insert(&tc.id, &tc.function.name);
+            }
+        }
+    }
+
     let mut system_parts = Vec::new();
     let mut contents = Vec::new();
 
@@ -134,7 +145,16 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
             }
         } else if msg.role == Role::Tool {
             // Tool result → user message with functionResponse part.
-            let name = msg.name.clone().unwrap_or_default();
+            // Prefer msg.name, fall back to looking up by tool_call_id.
+            let name = msg
+                .name
+                .clone()
+                .or_else(|| {
+                    msg.tool_call_id
+                        .as_deref()
+                        .and_then(|id| tc_names.get(id).map(|n| n.to_string()))
+                })
+                .unwrap_or_default();
             let response_val = msg
                 .content
                 .as_ref()
