@@ -51,7 +51,11 @@ pub struct GatewayConfig {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     /// Provider kind determines the dispatch path.
-    #[serde(default, skip_serializing_if = "ProviderKind::is_default")]
+    #[serde(
+        default,
+        alias = "standard",
+        skip_serializing_if = "ProviderKind::is_default"
+    )]
     pub kind: ProviderKind,
     /// API key (supports `${ENV_VAR}` interpolation).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,7 +110,6 @@ fn default_shutdown_timeout() -> u64 {
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     #[default]
-    #[serde(alias = "openai_compat")]
     Openai,
     Anthropic,
     Google,

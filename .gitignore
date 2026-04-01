@@ -3,3 +3,7 @@
 spec
 docs/book
 results
+
+# local files
+*.local.md
+*.local.json

@@ -6,13 +6,15 @@ use crabllm_core::{
     ToolCallDelta, ToolChoice, ToolType, Usage,
 };
 use futures::{
-    TryStreamExt,
+    TryStreamExt, pin_mut,
     stream::{self, Stream},
 };
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_MAX_TOKENS: u32 = 4096;
 const BASE_URL: &str = "https://api.anthropic.com/v1";
+const OAUTH_TOKEN_PREFIX: &str = "sk-ant-oat";
+const OAUTH_BETA: &str = "oauth-2025-04-20";
 
 // ── Anthropic-native request types ──
 
@@ -482,6 +484,21 @@ pub fn not_implemented(name: &str) -> Error {
     Error::Internal(format!("anthropic {name} not supported"))
 }
 
+// ── Auth ──
+
+fn is_oauth_token(api_key: &str) -> bool {
+    api_key.starts_with(OAUTH_TOKEN_PREFIX)
+}
+
+fn apply_auth(req: reqwest::RequestBuilder, api_key: &str) -> reqwest::RequestBuilder {
+    if is_oauth_token(api_key) {
+        req.bearer_auth(api_key)
+            .header("anthropic-beta", OAUTH_BETA)
+    } else {
+        req.header("x-api-key", api_key)
+    }
+}
+
 // ── Public API ──
 
 pub async fn chat_completion(
@@ -489,14 +506,22 @@ pub async fn chat_completion(
     api_key: &str,
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
+    // OAuth tokens must use the streaming endpoint.
+    if is_oauth_token(api_key) {
+        let stream = chat_completion_stream(client, api_key, request, &request.model).await?;
+        return accumulate_stream(stream).await;
+    }
+
     let anthropic_req = translate_request(request);
     let url = format!("{BASE_URL}/messages");
 
-    let mut req = client
-        .post(&url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json");
+    let mut req = apply_auth(
+        client
+            .post(&url)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json"),
+        api_key,
+    );
     if anthropic_req.thinking.is_some() {
         req = req.header("anthropic-beta", "interleaved-thinking-2025-05-14");
     }
@@ -530,11 +555,13 @@ pub async fn chat_completion_stream(
     anthropic_req.stream = Some(true);
     let url = format!("{BASE_URL}/messages");
 
-    let mut req = client
-        .post(&url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json");
+    let mut req = apply_auth(
+        client
+            .post(&url)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json"),
+        api_key,
+    );
     if anthropic_req.thinking.is_some() {
         req = req.header("anthropic-beta", "interleaved-thinking-2025-05-14");
     }
@@ -844,4 +871,111 @@ fn anthropic_sse_stream(
             }
         },
     )
+}
+
+/// Collect a streaming response into a single [`ChatCompletionResponse`].
+///
+/// Assumes at least one chunk (Anthropic always sends `message_start`).
+async fn accumulate_stream(
+    stream: impl Stream<Item = Result<ChatCompletionChunk, Error>>,
+) -> Result<ChatCompletionResponse, Error> {
+    pin_mut!(stream);
+
+    let mut id = String::new();
+    let mut model = String::new();
+    let mut created = 0u64;
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    let mut tool_calls: Vec<ToolCall> = Vec::new();
+    let mut finish_reason = None;
+    let mut usage = None;
+
+    while let Some(chunk) = stream.try_next().await? {
+        if id.is_empty() {
+            id = chunk.id;
+            model = chunk.model;
+            created = chunk.created;
+        }
+        if chunk.usage.is_some() {
+            usage = chunk.usage;
+        }
+        for choice in &chunk.choices {
+            if choice.finish_reason.is_some() {
+                finish_reason.clone_from(&choice.finish_reason);
+            }
+            if let Some(ref text) = choice.delta.content {
+                content.push_str(text);
+            }
+            if let Some(ref text) = choice.delta.reasoning_content {
+                reasoning.push_str(text);
+            }
+            if let Some(ref deltas) = choice.delta.tool_calls {
+                for delta in deltas {
+                    let idx = delta.index as usize;
+                    if idx >= tool_calls.len() {
+                        tool_calls.push(ToolCall {
+                            index: None,
+                            id: delta.id.clone().unwrap_or_default(),
+                            kind: delta.kind.unwrap_or_default(),
+                            function: FunctionCall {
+                                name: delta
+                                    .function
+                                    .as_ref()
+                                    .and_then(|f| f.name.clone())
+                                    .unwrap_or_default(),
+                                arguments: delta
+                                    .function
+                                    .as_ref()
+                                    .and_then(|f| f.arguments.clone())
+                                    .unwrap_or_default(),
+                            },
+                        });
+                    } else if let Some(ref f) = delta.function
+                        && let Some(ref args) = f.arguments
+                    {
+                        tool_calls[idx].function.arguments.push_str(args);
+                    }
+                }
+            }
+        }
+    }
+
+    let tool_calls_opt = if tool_calls.is_empty() {
+        None
+    } else {
+        Some(tool_calls)
+    };
+    let msg_content = if content.is_empty() && tool_calls_opt.is_some() {
+        None
+    } else {
+        Some(serde_json::Value::String(content))
+    };
+    let reasoning_content = if reasoning.is_empty() {
+        None
+    } else {
+        Some(reasoning)
+    };
+
+    Ok(ChatCompletionResponse {
+        id,
+        object: "chat.completion".to_string(),
+        created,
+        model,
+        choices: vec![Choice {
+            index: 0,
+            message: Message {
+                role: Role::Assistant,
+                content: msg_content,
+                tool_calls: tool_calls_opt,
+                tool_call_id: None,
+                name: None,
+                reasoning_content,
+                extra: Default::default(),
+            },
+            finish_reason,
+            logprobs: None,
+        }],
+        usage,
+        system_fingerprint: None,
+    })
 }
