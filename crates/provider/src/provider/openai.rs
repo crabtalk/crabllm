@@ -33,35 +33,6 @@ pub async fn chat_completion(
         .map_err(|e| Error::Internal(e.to_string()))
 }
 
-/// Forward a raw JSON request body and return raw response bytes.
-/// Skips deserialization/re-serialization for OpenAI-compatible endpoints.
-pub async fn chat_completion_raw(
-    client: &reqwest::Client,
-    base_url: &str,
-    api_key: &str,
-    body: Bytes,
-) -> Result<Bytes, Error> {
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let resp = client
-        .post(&url)
-        .bearer_auth(api_key)
-        .header("content-type", "application/json")
-        .body(body)
-        .send()
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
-
-    let status = resp.status().as_u16();
-    if status >= 400 {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(Error::Provider { status, body });
-    }
-
-    resp.bytes()
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))
-}
-
 /// Send an embedding request to an OpenAI-compatible endpoint.
 pub async fn embedding(
     client: &reqwest::Client,
@@ -250,10 +221,7 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
                             return None;
                         }
                         let result = match serde_json::from_str::<ChatCompletionChunk>(data) {
-                            Ok(mut chunk) => {
-                                chunk.raw_json = Some(data.to_string());
-                                Ok(chunk)
-                            }
+                            Ok(chunk) => Ok(chunk),
                             Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
                         };
                         buffer.advance(newline_pos + 1);

@@ -307,9 +307,6 @@ pub struct ChatCompletionChunk {
     pub usage: Option<Usage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_fingerprint: Option<String>,
-    /// Raw upstream JSON for zero-cost forwarding (OpenAI/Azure only).
-    #[serde(skip)]
-    pub raw_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

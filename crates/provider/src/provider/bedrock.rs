@@ -596,7 +596,6 @@ fn bedrock_event_stream(
                             }],
                             usage: None,
                             system_fingerprint: None,
-                            raw_json: None,
                         };
                         return Some((Ok(chunk), (byte_stream, buf, model, state)));
                     }
@@ -726,7 +725,6 @@ fn bedrock_event_stream(
                             }],
                             usage: None,
                             system_fingerprint: None,
-                            raw_json: None,
                         };
                         return Some((Ok(chunk), (byte_stream, buf, model, state)));
                     }

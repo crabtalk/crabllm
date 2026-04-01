@@ -42,42 +42,6 @@ fn error_status(e: &crabllm_core::Error) -> &'static str {
     }
 }
 
-/// Lightweight metrics for the fast path (no RequestContext allocation).
-fn record_duration_raw(
-    provider: &str,
-    model: &str,
-    status: &'static str,
-    is_stream: bool,
-    started_at: &Instant,
-) {
-    metrics::histogram!("crabllm_request_duration_seconds",
-        "provider" => provider.to_string(),
-        "model" => model.to_string(),
-        "status" => status,
-        "stream" => if is_stream { "true" } else { "false" },
-    )
-    .record(started_at.elapsed().as_secs_f64());
-}
-
-fn record_tokens_raw(provider: &str, model: &str, usage: &crabllm_core::Usage) {
-    if usage.prompt_tokens > 0 {
-        metrics::counter!("crabllm_tokens_total",
-            "provider" => provider.to_string(),
-            "model" => model.to_string(),
-            "direction" => "prompt",
-        )
-        .increment(usage.prompt_tokens as u64);
-    }
-    if usage.completion_tokens > 0 {
-        metrics::counter!("crabllm_tokens_total",
-            "provider" => provider.to_string(),
-            "model" => model.to_string(),
-            "direction" => "completion",
-        )
-        .increment(usage.completion_tokens as u64);
-    }
-}
-
 fn record_tokens(ctx: &RequestContext, prompt: u32, completion: u32) {
     if prompt > 0 {
         metrics::counter!("crabllm_tokens_total",
@@ -97,32 +61,13 @@ fn record_tokens(ctx: &RequestContext, prompt: u32, completion: u32) {
     }
 }
 
-/// Lightweight struct for peeking at model/stream without full deserialization.
-#[derive(serde::Deserialize)]
-struct RequestPeek {
-    model: String,
-    #[serde(default)]
-    stream: Option<bool>,
-}
-
 /// POST /v1/chat/completions
 pub async fn chat_completions<S: Storage + 'static>(
     State(state): State<AppState<S>>,
     Extension(key_name): Extension<KeyName>,
-    raw_body: axum::body::Bytes,
+    Json(mut request): Json<ChatCompletionRequest>,
 ) -> Response {
-    let peek: RequestPeek = match serde_json::from_slice(&raw_body) {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError::new(e.to_string(), "invalid_request_error")),
-            )
-                .into_response();
-        }
-    };
-    let is_stream = peek.stream == Some(true);
-    let model = state.registry.resolve(&peek.model).to_string();
+    let model = state.registry.resolve(&request.model).to_string();
     let deployments = match state.registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
@@ -132,64 +77,6 @@ pub async fn chat_completions<S: Storage + 'static>(
                     format!("model '{model}' not found"),
                     "invalid_request_error",
                 )),
-            )
-                .into_response();
-        }
-    };
-
-    // Fast path: non-streaming with no extensions — skip full deserialization.
-    if !is_stream && state.extensions.is_empty() {
-        let started_at = Instant::now();
-        let provider_name = state
-            .registry
-            .provider_name(&model)
-            .unwrap_or_default()
-            .to_string();
-        let mut last_err = None;
-        for deployment in &deployments {
-            match with_timeout(
-                deployment.timeout,
-                deployment
-                    .provider
-                    .chat_completion_raw(&state.client, &model, raw_body.clone()),
-            )
-            .await
-            {
-                Ok(resp_bytes) => {
-                    if let Ok(peek) = serde_json::from_slice::<UsagePeek>(&resp_bytes)
-                        && let Some(usage) = peek.usage
-                    {
-                        record_tokens_raw(&provider_name, &model, &usage);
-                    }
-                    record_duration_raw(&provider_name, &model, "2xx", false, &started_at);
-                    return (
-                        [(axum::http::header::CONTENT_TYPE, "application/json")],
-                        resp_bytes,
-                    )
-                        .into_response();
-                }
-                Err(e) => {
-                    if !e.is_transient() || deployment.max_retries == 0 {
-                        last_err = Some(e);
-                        continue;
-                    }
-                    last_err = Some(e);
-                }
-            }
-        }
-        let e = last_err
-            .unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".into()));
-        record_duration_raw(&provider_name, &model, error_status(&e), false, &started_at);
-        return error_response(e);
-    }
-
-    // Full deserialization needed for streaming or extensions.
-    let mut request: ChatCompletionRequest = match serde_json::from_slice(&raw_body) {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError::new(e.to_string(), "invalid_request_error")),
             )
                 .into_response();
         }
@@ -206,7 +93,7 @@ pub async fn chat_completions<S: Storage + 'static>(
         model: model.clone(),
         provider: provider_name,
         key_name: key_name.0,
-        is_stream,
+        is_stream: request.stream == Some(true),
         started_at: Instant::now(),
     };
 
@@ -221,7 +108,7 @@ pub async fn chat_completions<S: Storage + 'static>(
         }
     }
 
-    if is_stream {
+    if ctx.is_stream {
         // Ensure OpenAI-compatible providers include token usage in the final
         // streaming chunk. Harmlessly ignored by Anthropic/Google/Bedrock which
         // build their own request format and don't read `extra`.
@@ -274,10 +161,8 @@ pub async fn chat_completions<S: Storage + 'static>(
                     });
 
                     let sse_stream = observed.map(|result| match result {
-                        Ok(mut chunk) => {
-                            let json = chunk.raw_json.take().unwrap_or_else(|| {
-                                serde_json::to_string(&chunk).unwrap_or_default()
-                            });
+                        Ok(chunk) => {
+                            let json = serde_json::to_string(&chunk).unwrap_or_default();
                             Ok(Event::default().data(json))
                         }
                         Err(e) => {
@@ -318,7 +203,9 @@ pub async fn chat_completions<S: Storage + 'static>(
         record_duration(&ctx, "5xx");
         error_response(e)
     } else {
-        // Non-streaming with extensions: need typed request/response.
+        // Non-streaming: check cache first.
+        // Cache hits skip duration recording — sub-millisecond responses
+        // would skew the histogram, which should reflect provider latency.
         for ext in state.extensions.iter() {
             if let Some(cached) = ext.on_cache_lookup(&request).await {
                 return Json(cached).into_response();
@@ -753,12 +640,6 @@ where
 fn jittered(backoff: Duration) -> Duration {
     let lo = backoff / 2;
     rand::rng().random_range(lo..=backoff)
-}
-
-/// Lightweight struct to extract usage from raw response bytes.
-#[derive(serde::Deserialize)]
-struct UsagePeek {
-    usage: Option<crabllm_core::Usage>,
 }
 
 /// Retry a non-streaming chat completion on a single deployment.

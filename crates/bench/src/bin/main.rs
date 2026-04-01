@@ -127,7 +127,6 @@ async fn chat_completions(
                 }],
                 usage: None,
                 system_fingerprint: None,
-                raw_json: None,
             };
             let json = serde_json::to_string(&chunk).unwrap();
             let event = Ok::<_, std::convert::Infallible>(Event::default().data(json));

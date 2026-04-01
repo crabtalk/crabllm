@@ -591,7 +591,6 @@ fn gemini_sse_stream(
                         }],
                         usage: gemini_resp.usage_metadata.map(Usage::from),
                         system_fingerprint: None,
-                        raw_json: None,
                     };
                     return Some((Ok(chunk), (byte_stream, buffer, model, chunk_idx)));
                 }

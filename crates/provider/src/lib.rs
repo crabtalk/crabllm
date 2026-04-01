@@ -122,46 +122,6 @@ impl Provider {
         }
     }
 
-    /// Forward raw JSON body and return raw response bytes.
-    /// OpenAI/Azure skip deser/reser entirely. Other providers fall back to
-    /// typed chat_completion + re-serialization.
-    pub async fn chat_completion_raw(
-        &self,
-        client: &reqwest::Client,
-        model: &str,
-        raw_body: Bytes,
-    ) -> Result<Bytes, Error> {
-        match self {
-            Provider::Openai { base_url, api_key } => {
-                provider::openai::chat_completion_raw(client, base_url, api_key, raw_body).await
-            }
-            Provider::Azure {
-                base_url,
-                api_key,
-                api_version,
-            } => {
-                provider::azure::chat_completion_raw(
-                    client,
-                    base_url,
-                    api_key,
-                    api_version,
-                    model,
-                    raw_body,
-                )
-                .await
-            }
-            // Non-OpenAI providers translate formats — must deser/reser.
-            other => {
-                let request: ChatCompletionRequest = serde_json::from_slice(&raw_body)
-                    .map_err(|e| Error::Internal(e.to_string()))?;
-                let resp = other.chat_completion(client, &request).await?;
-                serde_json::to_vec(&resp)
-                    .map(Bytes::from)
-                    .map_err(|e| Error::Internal(e.to_string()))
-            }
-        }
-    }
-
     /// Send an embedding request.
     pub async fn embedding(
         &self,
