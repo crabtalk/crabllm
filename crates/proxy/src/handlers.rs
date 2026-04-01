@@ -161,8 +161,10 @@ pub async fn chat_completions<S: Storage + 'static>(
                     });
 
                     let sse_stream = observed.map(|result| match result {
-                        Ok(chunk) => {
-                            let json = serde_json::to_string(&chunk).unwrap_or_default();
+                        Ok(mut chunk) => {
+                            let json = chunk.raw_json.take().unwrap_or_else(|| {
+                                serde_json::to_string(&chunk).unwrap_or_default()
+                            });
                             Ok(Event::default().data(json))
                         }
                         Err(e) => {

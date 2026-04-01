@@ -706,6 +706,7 @@ fn anthropic_sse_stream(
                                         }],
                                         usage: None,
                                         system_fingerprint: None,
+                                        raw_json: None,
                                     };
                                     return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                                 }
@@ -748,6 +749,7 @@ fn anthropic_sse_stream(
                                         }],
                                         usage: None,
                                         system_fingerprint: None,
+                                        raw_json: None,
                                     };
                                     return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                                 }
@@ -775,6 +777,7 @@ fn anthropic_sse_stream(
                                         }],
                                         usage: None,
                                         system_fingerprint: None,
+                                        raw_json: None,
                                     };
                                     return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                                 }
@@ -810,6 +813,7 @@ fn anthropic_sse_stream(
                                         }],
                                         usage: None,
                                         system_fingerprint: None,
+                                        raw_json: None,
                                     };
                                     return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                                 }
@@ -847,6 +851,7 @@ fn anthropic_sse_stream(
                                     prompt_cache_miss_tokens: state.cache_creation_input_tokens,
                                 }),
                                 system_fingerprint: None,
+                                raw_json: None,
                             };
                             return Some((Ok(chunk), (byte_stream, buffer, model, state)));
                         }

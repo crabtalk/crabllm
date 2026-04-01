@@ -221,7 +221,10 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
                             return None;
                         }
                         let result = match serde_json::from_str::<ChatCompletionChunk>(data) {
-                            Ok(chunk) => Ok(chunk),
+                            Ok(mut chunk) => {
+                                chunk.raw_json = Some(data.to_string());
+                                Ok(chunk)
+                            }
                             Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
                         };
                         buffer.advance(newline_pos + 1);
