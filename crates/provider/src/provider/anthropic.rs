@@ -482,6 +482,21 @@ pub fn not_implemented(name: &str) -> Error {
     Error::Internal(format!("anthropic {name} not supported"))
 }
 
+// ── Auth ──
+
+fn is_oauth_token(api_key: &str) -> bool {
+    api_key.starts_with("sk-ant-oat")
+}
+
+fn apply_auth(req: reqwest::RequestBuilder, api_key: &str) -> reqwest::RequestBuilder {
+    if is_oauth_token(api_key) {
+        req.bearer_auth(api_key)
+            .header("anthropic-beta", "oauth-2025-04-20")
+    } else {
+        req.header("x-api-key", api_key)
+    }
+}
+
 // ── Public API ──
 
 pub async fn chat_completion(
@@ -492,11 +507,13 @@ pub async fn chat_completion(
     let anthropic_req = translate_request(request);
     let url = format!("{BASE_URL}/messages");
 
-    let mut req = client
-        .post(&url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json");
+    let mut req = apply_auth(
+        client
+            .post(&url)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json"),
+        api_key,
+    );
     if anthropic_req.thinking.is_some() {
         req = req.header("anthropic-beta", "interleaved-thinking-2025-05-14");
     }
@@ -530,11 +547,13 @@ pub async fn chat_completion_stream(
     anthropic_req.stream = Some(true);
     let url = format!("{BASE_URL}/messages");
 
-    let mut req = client
-        .post(&url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json");
+    let mut req = apply_auth(
+        client
+            .post(&url)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json"),
+        api_key,
+    );
     if anthropic_req.thinking.is_some() {
         req = req.header("anthropic-beta", "interleaved-thinking-2025-05-14");
     }
