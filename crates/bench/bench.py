@@ -437,7 +437,7 @@ def chart_latency(data, gateways, scenario):
 
 def chart_overhead(data, gateways, scenarios):
     for pctl in ("p50", "p99"):
-        _header(f"Gateway Overhead Summary ({pctl.upper()})")
+        _header(f"Gateway Overhead vs Direct ({pctl.upper()})")
         for scenario in scenarios:
             common = None
             for gw in gateways:
@@ -447,14 +447,18 @@ def chart_overhead(data, gateways, scenarios):
             if not common:
                 continue
             level = max(common)
-            entries = [(gw, data[gw][scenario][level]) for gw in gateways if level in data[gw].get(scenario, {})]
+            direct = data.get("direct", {}).get(scenario, {}).get(level, {}).get(pctl, 0)
+            entries = [(gw, data[gw][scenario][level]) for gw in gateways
+                       if gw != "direct" and level in data[gw].get(scenario, {})]
             if not entries:
                 continue
-            max_val = max(e[pctl] for _, e in entries)
-            print(f"\n  {DIM}{scenario} @ {level} RPS{RESET}")
-            for gw, e in entries:
+            deltas = [(gw, e[pctl] - direct) for gw, e in entries]
+            max_val = max(d for _, d in deltas) if deltas else 0
+            print(f"\n  {DIM}{scenario} @ {level} RPS (direct={direct:.2f}ms){RESET}")
+            for gw, delta in deltas:
                 c = _ansi(gw)
-                print(f"    {c}{gw:>8}{RESET} {c}{_bar(e[pctl], max_val)}{RESET} {e[pctl]:.2f}ms")
+                sign = "+" if delta >= 0 else ""
+                print(f"    {c}{gw:>8}{RESET} {c}{_bar(max(delta, 0), max_val)}{RESET} {sign}{delta:.2f}ms")
 
 
 def chart_memory(data, gateways, scenarios):
