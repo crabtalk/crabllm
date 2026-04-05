@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use llamars::registry;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(
@@ -13,10 +14,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start a llama-server for a model
+    /// Start an OpenAI-compatible server for one or more models
     Serve {
-        /// Model name (e.g. llama3.2:3b) or path to a GGUF file
-        model: String,
+        /// Model names (e.g. llama3.2:3b qwen2.5:7b) or paths to GGUF files
+        models: Vec<String>,
 
         /// Port to listen on (default: 8080)
         #[arg(short, long, default_value = "8080")]
@@ -44,11 +45,12 @@ enum Commands {
     Which,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Serve { model, port } => serve(&model, port),
+        Commands::Serve { models, port } => serve(models, port).await,
         Commands::Pull { model } => pull(&model),
         Commands::Tags { model } => tags(&model),
         Commands::Download { tag } => download(tag.as_deref()),
@@ -57,7 +59,12 @@ fn main() {
     }
 }
 
-fn serve(model: &str, port: u16) {
+async fn serve(models: Vec<String>, port: u16) {
+    if models.is_empty() {
+        eprintln!("error: at least one model is required");
+        std::process::exit(1);
+    }
+
     let bin = match llamars::find_server_binary() {
         Ok(p) => p,
         Err(e) => {
@@ -66,79 +73,53 @@ fn serve(model: &str, port: u16) {
         }
     };
 
-    // Resolve model: Ollama name → cached GGUF, or direct file path.
-    let model_path = if std::path::Path::new(model).exists() {
-        std::path::PathBuf::from(model)
-    } else {
-        // Ensure model is pulled.
-        let cache_dir = match registry::default_cache_dir() {
-            Ok(d) => d,
-            Err(e) => {
-                eprintln!("error: {e}");
-                std::process::exit(1);
-            }
-        };
-        match registry::cached_model_path(model, &cache_dir) {
-            Some(p) => p,
-            None => {
-                eprintln!("model not cached, pulling...");
-                match registry::pull_model(model, &cache_dir, &|_, _| {}) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        eprintln!("error: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            }
-        }
-    };
-
-    let config = llamars::LlamaCppConfig {
-        model_path,
-        n_gpu_layers: 999,
-        n_ctx: 4096,
-        n_threads: None,
-    };
-
-    let (name, tag) = registry::parse_model_name(model);
-    eprintln!("starting llama-server for {name}:{tag} on port {port}...");
-
-    // Spawn llama-server with the requested port.
-    let mut cmd = std::process::Command::new(&bin);
-    cmd.arg("--model")
-        .arg(&config.model_path)
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--ctx-size")
-        .arg(config.n_ctx.to_string())
-        .arg("--n-gpu-layers")
-        .arg(config.n_gpu_layers.to_string());
-
-    if let Some(threads) = config.n_threads {
-        cmd.arg("--threads").arg(threads.to_string());
-    }
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("error: failed to start llama-server: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    eprintln!("llama-server running on http://127.0.0.1:{port}/v1");
-
-    // Wait for the process — Ctrl+C will kill it.
-    match child.wait() {
-        Ok(status) => {
-            if !status.success() {
-                std::process::exit(status.code().unwrap_or(1));
-            }
-        }
+    let cache_dir = match registry::default_cache_dir() {
+        Ok(d) => d,
         Err(e) => {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
+    };
+
+    // Ensure all models are pulled.
+    for model in &models {
+        if std::path::Path::new(model).exists() {
+            continue;
+        }
+        if registry::cached_model_path(model, &cache_dir).is_some() {
+            continue;
+        }
+        let (name, tag) = registry::parse_model_name(model);
+        eprintln!("pulling {name}:{tag}...");
+        if let Err(e) = registry::pull_model(model, &cache_dir, &|_, _| {}) {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    }
+
+    let pool = Arc::new(llamars::ServerPool::new(bin, cache_dir));
+    pool.start_idle_monitor();
+
+    let state = llamars::proxy::ProxyState {
+        pool,
+        client: reqwest::Client::new(),
+        models,
+    };
+
+    let app = llamars::proxy::router(state);
+    let addr = format!("0.0.0.0:{port}");
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("error: failed to bind to {addr}: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    eprintln!("llamars listening on {addr}");
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("error: {e}");
+        std::process::exit(1);
     }
 }
 

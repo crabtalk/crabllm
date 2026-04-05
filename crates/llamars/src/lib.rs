@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 mod download;
 pub mod pool;
+pub mod proxy;
 pub mod registry;
 mod server;
 

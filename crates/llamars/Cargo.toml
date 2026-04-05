@@ -14,7 +14,9 @@ path = "src/bin/main.rs"
 
 [dependencies]
 crabllm-core.workspace = true
+axum.workspace = true
 clap.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

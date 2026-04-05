@@ -1458,10 +1458,12 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 name = "llamars"
 version = "0.0.12"
 dependencies = [
+ "axum",
  "clap",
  "crabllm-core",
  "dirs",
  "flate2",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
