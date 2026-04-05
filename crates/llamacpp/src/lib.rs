@@ -6,10 +6,12 @@
 
 use crabllm_core::Error;
 pub use download::{download, install_dir};
+pub use pool::ServerPool;
 pub use server::{LlamaCppConfig, LlamaCppServer};
 use std::path::PathBuf;
 
 mod download;
+pub mod pool;
 pub mod registry;
 mod server;
 
