@@ -99,6 +99,9 @@ pub struct ProviderConfig {
     /// Number of threads for inference (LlamaCpp). Default: system-chosen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub n_threads: Option<u32>,
+    /// Idle timeout in seconds before stopping a LlamaCpp server. Default: 1800 (30 min).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout: Option<u64>,
 }
 
 fn default_shutdown_timeout() -> u64 {
@@ -171,20 +174,16 @@ impl ProviderConfig {
             ProviderKind::Ollama => {
                 // Ollama doesn't require api_key or base_url.
             }
-            ProviderKind::LlamaCpp => match &self.model_path {
-                None => {
+            ProviderKind::LlamaCpp => {
+                // model_path is optional — models can be fetched from Ollama registry.
+                if let Some(path) = &self.model_path
+                    && !std::path::Path::new(path).exists()
+                {
                     return Err(format!(
-                        "provider '{provider_name}' (llamacpp) requires model_path"
+                        "provider '{provider_name}' (llamacpp): model_path '{path}' does not exist"
                     ));
                 }
-                Some(path) => {
-                    if !std::path::Path::new(path).exists() {
-                        return Err(format!(
-                            "provider '{provider_name}' (llamacpp): model_path '{path}' does not exist"
-                        ));
-                    }
-                }
-            },
+            }
             _ => {
                 if self.api_key.is_none() && self.base_url.is_none() {
                     return Err(format!(

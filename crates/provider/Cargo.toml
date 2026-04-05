@@ -13,9 +13,11 @@ categories = ["web-programming::http-client", "network-programming"]
 native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls"]
 provider-bedrock = ["hmac", "sha2"]
+llamacpp = ["dep:crabllm-llamacpp"]
 
 [dependencies]
 crabllm-core.workspace = true
+crabllm-llamacpp = { workspace = true, optional = true }
 
 # crates-io
 bytes.workspace = true

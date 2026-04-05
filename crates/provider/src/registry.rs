@@ -36,8 +36,15 @@ impl ProviderRegistry {
     }
 
     /// Build the registry from gateway config.
+    ///
+    /// When the `llamacpp` feature is enabled, LlamaCpp providers are skipped
+    /// here — they must be registered via [`add_llamacpp`] after pool creation.
     pub fn from_config(config: &GatewayConfig) -> Result<Self, Error> {
         for (provider_name, provider_config) in &config.providers {
+            #[cfg(feature = "llamacpp")]
+            if provider_config.kind == crabllm_core::ProviderKind::LlamaCpp {
+                continue;
+            }
             let p = Provider::from(provider_config);
             validate_provider(provider_name, provider_config, &p)?;
         }
@@ -45,6 +52,10 @@ impl ProviderRegistry {
         let mut providers: HashMap<String, Vec<Deployment>> = HashMap::new();
 
         for provider_config in config.providers.values() {
+            #[cfg(feature = "llamacpp")]
+            if provider_config.kind == crabllm_core::ProviderKind::LlamaCpp {
+                continue;
+            }
             let provider = Provider::from(provider_config);
 
             let deployment = Deployment {
@@ -63,6 +74,10 @@ impl ProviderRegistry {
 
         let mut model_providers = HashMap::new();
         for (provider_name, provider_config) in &config.providers {
+            #[cfg(feature = "llamacpp")]
+            if provider_config.kind == crabllm_core::ProviderKind::LlamaCpp {
+                continue;
+            }
             for model in &provider_config.models {
                 model_providers.insert(model.clone(), provider_name.clone());
             }
@@ -160,6 +175,33 @@ impl ProviderRegistry {
     /// Check if a model is registered (after alias resolution).
     pub fn has_model(&self, model: &str) -> bool {
         self.providers.contains_key(model)
+    }
+
+    /// Register models backed by an on-demand llama.cpp server pool.
+    #[cfg(feature = "llamacpp")]
+    pub fn add_llamacpp(
+        &mut self,
+        provider_name: &str,
+        models: Vec<String>,
+        pool: std::sync::Arc<crabllm_llamacpp::ServerPool>,
+        weight: u16,
+        max_retries: u32,
+        timeout: Duration,
+    ) {
+        let deployment = Deployment {
+            provider: Provider::LlamaCpp { pool },
+            weight,
+            max_retries,
+            timeout,
+        };
+        for model in models {
+            self.providers
+                .entry(model.clone())
+                .or_default()
+                .push(deployment.clone());
+            self.model_providers
+                .insert(model, provider_name.to_string());
+        }
     }
 }
 

@@ -50,6 +50,15 @@ pub struct ServerPool {
     n_threads: Option<u32>,
 }
 
+impl std::fmt::Debug for ServerPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerPool")
+            .field("cache_dir", &self.cache_dir)
+            .field("idle_timeout", &self.idle_timeout)
+            .finish_non_exhaustive()
+    }
+}
+
 impl ServerPool {
     /// Create a new server pool.
     ///

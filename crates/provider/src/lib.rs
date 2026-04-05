@@ -31,6 +31,12 @@ pub enum Provider {
         api_key: String,
         api_version: String,
     },
+    /// On-demand llama.cpp server pool. Starts servers as needed,
+    /// routes by model name in the request.
+    #[cfg(feature = "llamacpp")]
+    LlamaCpp {
+        pool: std::sync::Arc<crabllm_llamacpp::ServerPool>,
+    },
 }
 
 impl From<&ProviderConfig> for Provider {
@@ -70,10 +76,9 @@ impl From<&ProviderConfig> for Provider {
                 secret_key: config.secret_key.clone().unwrap_or_default(),
             },
             ProviderKind::LlamaCpp => {
-                // LlamaCpp providers are constructed after the managed
-                // llama-server process starts and a port is known.
-                // Use base_url if explicitly set (external llama-server),
-                // otherwise this will be overwritten by the process manager.
+                // LlamaCpp providers are registered via ProviderRegistry::add_llamacpp,
+                // not through From<&ProviderConfig>. If we reach here (e.g., external
+                // llama-server), fall back to OpenAI-compatible with the configured base_url.
                 Provider::Openai {
                     base_url: config.base_url.clone().unwrap_or_default(),
                     api_key: String::new(),
@@ -119,6 +124,11 @@ impl Provider {
                 provider::azure::chat_completion(client, base_url, api_key, api_version, request)
                     .await
             }
+            #[cfg(feature = "llamacpp")]
+            Provider::LlamaCpp { pool } => {
+                let base_url = pool.ensure_running(&request.model).await?;
+                provider::openai::chat_completion(client, &base_url, "", request).await
+            }
         }
     }
 
@@ -140,6 +150,11 @@ impl Provider {
                 api_key,
                 api_version,
             } => provider::azure::embedding(client, base_url, api_key, api_version, request).await,
+            #[cfg(feature = "llamacpp")]
+            Provider::LlamaCpp { pool } => {
+                let base_url = pool.ensure_running(&request.model).await?;
+                provider::openai::embedding(client, &base_url, "", request).await
+            }
         }
     }
 
@@ -166,6 +181,10 @@ impl Provider {
                 provider::azure::image_generation(client, base_url, api_key, api_version, request)
                     .await
             }
+            #[cfg(feature = "llamacpp")]
+            Provider::LlamaCpp { .. } => Err(Error::Internal(
+                "llamacpp does not support image generation".to_string(),
+            )),
         }
     }
 
@@ -189,6 +208,10 @@ impl Provider {
             } => {
                 provider::azure::audio_speech(client, base_url, api_key, api_version, request).await
             }
+            #[cfg(feature = "llamacpp")]
+            Provider::LlamaCpp { .. } => Err(Error::Internal(
+                "llamacpp does not support audio speech".to_string(),
+            )),
         }
     }
 
@@ -228,6 +251,10 @@ impl Provider {
                 )
                 .await
             }
+            #[cfg(feature = "llamacpp")]
+            Provider::LlamaCpp { .. } => Err(Error::Internal(
+                "llamacpp does not support audio transcription".to_string(),
+            )),
         }
     }
 
@@ -297,6 +324,13 @@ impl Provider {
                     request,
                 )
                 .await?;
+                Ok(s.boxed())
+            }
+            #[cfg(feature = "llamacpp")]
+            Provider::LlamaCpp { pool } => {
+                let base_url = pool.ensure_running(&request.model).await?;
+                let s = provider::openai::chat_completion_stream(client, &base_url, "", request)
+                    .await?;
                 Ok(s.boxed())
             }
         }
