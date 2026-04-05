@@ -23,16 +23,13 @@ pub const BINARY_NAME: &str = if cfg!(windows) {
     "llama-server"
 };
 
-/// Find the `llama-server` binary.
+/// Find the `llama-server` binary, auto-downloading if not found.
 ///
 /// Search order:
 /// 1. `$LLAMA_SERVER` environment variable
 /// 2. `llama-server` on `$PATH`
-/// 3. crabllm's default install directory
-///    - `$CRABLLM_HOME/bin`
-///    - or platform default: Linux `~/.local/share/crabllm/bin`,
-///      macOS `~/Library/Application Support/crabllm/bin`,
-///      Windows `%LOCALAPPDATA%\crabllm\bin`
+/// 3. Default install directory
+/// 4. Auto-download from GitHub releases (detects GPU backend)
 pub fn find_server_binary() -> Result<PathBuf, Error> {
     if let Ok(path) = std::env::var("LLAMA_SERVER") {
         let p = PathBuf::from(&path);
@@ -53,7 +50,7 @@ pub fn find_server_binary() -> Result<PathBuf, Error> {
         return Ok(installed);
     }
 
-    Err(Error::Internal(
-        "llama-server not found. Run `llamars download` to install it".to_string(),
-    ))
+    // Not found anywhere — auto-download the correct build.
+    eprintln!("llama-server not found, downloading...");
+    download(None)
 }
