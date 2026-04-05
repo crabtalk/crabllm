@@ -42,6 +42,18 @@ enum Commands {
         #[command(subcommand)]
         action: LlamaCppAction,
     },
+    /// Pull a model from the Ollama registry
+    #[cfg(feature = "llamacpp")]
+    Pull {
+        /// Model name (e.g. llama3.2:3b)
+        model: String,
+    },
+    /// List available tags for a model on the Ollama registry
+    #[cfg(feature = "llamacpp")]
+    Tags {
+        /// Model name (e.g. llama3.2)
+        model: String,
+    },
 }
 
 #[cfg(feature = "llamacpp")]
@@ -66,6 +78,10 @@ async fn main() {
     match cli.command {
         #[cfg(feature = "llamacpp")]
         Some(Commands::LlamaCpp { action }) => run_llamacpp(action),
+        #[cfg(feature = "llamacpp")]
+        Some(Commands::Pull { model }) => run_pull(&model),
+        #[cfg(feature = "llamacpp")]
+        Some(Commands::Tags { model }) => run_tags(&model),
         Some(Commands::Serve { config, bind }) => serve(config, bind).await,
         // Default: serve with default config path.
         None => serve(PathBuf::from("crabllm.toml"), None).await,
@@ -120,6 +136,62 @@ fn run_llamacpp(action: LlamaCppAction) {
                 std::process::exit(1);
             }
         },
+    }
+}
+
+#[cfg(feature = "llamacpp")]
+fn run_pull(model: &str) {
+    use crabllm_llamacpp::registry;
+
+    let cache_dir = match registry::default_cache_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let (name, tag) = registry::parse_model_name(model);
+    eprintln!("pulling {name}:{tag}...");
+
+    let last_pct = std::cell::Cell::new(0u8);
+    match registry::pull_model(model, &cache_dir, &|downloaded, total| {
+        if total == 0 {
+            return;
+        }
+        let pct = (downloaded * 100 / total) as u8;
+        if pct != last_pct.get() {
+            last_pct.set(pct);
+            let downloaded_mb = downloaded / (1024 * 1024);
+            let total_mb = total / (1024 * 1024);
+            eprint!("\r  {downloaded_mb} MB / {total_mb} MB ({pct}%)    ");
+        }
+    }) {
+        Ok(path) => {
+            eprintln!("\r  done: {}", path.display());
+        }
+        Err(e) => {
+            eprintln!("\nerror: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(feature = "llamacpp")]
+fn run_tags(model: &str) {
+    use crabllm_llamacpp::registry;
+
+    let (name, _) = registry::parse_model_name(model);
+    match registry::fetch_tags(name) {
+        Ok(tags) => {
+            for tag in &tags {
+                println!("{name}:{tag}");
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
