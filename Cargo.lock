@@ -441,6 +441,7 @@ name = "crabllm-core"
 version = "0.0.12"
 dependencies = [
  "bytes",
+ "futures-core",
  "serde",
  "serde_json",
  "toml",

@@ -41,6 +41,14 @@ impl Error {
             _ => false,
         }
     }
+
+    /// Build an "operation not supported" error for a provider trait method
+    /// that has no implementation. Used by `Provider` trait default impls.
+    /// Distinct from per-provider rejection messages so log lines can be
+    /// disambiguated by grep.
+    pub fn not_implemented(method: &str) -> Self {
+        Error::Internal(format!("provider method '{method}' not implemented"))
+    }
 }
 
 impl std::error::Error for Error {

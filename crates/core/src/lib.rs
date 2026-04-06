@@ -3,6 +3,7 @@ pub use config::{
 };
 pub use error::{ApiError, ApiErrorBody, Error};
 pub use extension::{Extension, ExtensionError, RequestContext};
+pub use provider::{BoxStream, Provider};
 pub use storage::{BoxFuture, KvPairs, PREFIX_LEN, Prefix, Storage, storage_key};
 pub use types::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
@@ -15,5 +16,6 @@ pub use types::{
 mod config;
 mod error;
 mod extension;
+mod provider;
 mod storage;
 mod types;
