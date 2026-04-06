@@ -51,18 +51,24 @@ pub enum RemoteProvider {
 }
 
 /// Build the shared `reqwest::Client` used by every `RemoteProvider`
-/// variant. `tcp_nodelay(true)` matches the gateway's inbound listener and
-/// avoids Nagle-buffering small SSE writes on the proxy → upstream hop.
-fn make_client() -> reqwest::Client {
+/// instance. `tcp_nodelay(true)` matches the gateway's inbound listener
+/// and avoids Nagle-buffering small SSE writes on the proxy → upstream
+/// hop. Called once at registry construction and the result is cloned
+/// into every `RemoteProvider`, so all providers share a single
+/// connection pool, DNS resolver, and TLS state.
+pub(crate) fn make_client() -> reqwest::Client {
     reqwest::Client::builder()
         .tcp_nodelay(true)
         .build()
         .expect("crabllm: failed to build reqwest client")
 }
 
-impl From<&ProviderConfig> for RemoteProvider {
-    fn from(config: &ProviderConfig) -> Self {
-        let client = make_client();
+impl RemoteProvider {
+    /// Build a `RemoteProvider` from a `ProviderConfig`, reusing a shared
+    /// `reqwest::Client`. Cloning the client is cheap — internally it's
+    /// `Arc<ClientRef>` — so every provider returned by this constructor
+    /// dispatches through the same connection pool.
+    pub fn new(config: &ProviderConfig, client: reqwest::Client) -> Self {
         match config.kind {
             ProviderKind::Openai => RemoteProvider::Openai {
                 client,

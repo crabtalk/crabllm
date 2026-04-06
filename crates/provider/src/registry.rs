@@ -1,4 +1,4 @@
-use crate::RemoteProvider;
+use crate::{RemoteProvider, make_client};
 use crabllm_core::{Error, GatewayConfig, ProviderConfig, ProviderKind};
 use rand::Rng;
 use std::{collections::HashMap, time::Duration};
@@ -142,10 +142,14 @@ impl<P: Clone> ProviderRegistry<P> {
             validate_provider(provider_name, provider_config)?;
         }
 
+        // One shared `reqwest::Client` — cheap to clone, so every provider
+        // dispatches through the same connection pool.
+        let client = make_client();
+
         let mut providers: HashMap<String, Vec<Deployment<P>>> = HashMap::new();
 
         for provider_config in config.providers.values() {
-            let provider = wrap(RemoteProvider::from(provider_config));
+            let provider = wrap(RemoteProvider::new(provider_config, client.clone()));
 
             let deployment = Deployment {
                 provider,
