@@ -1,15 +1,20 @@
-//! Managed llama.cpp server for crabllm.
+//! llamars — managed llama.cpp server with Ollama registry support.
 //!
 //! This crate handles the full lifecycle of a `llama-server` binary:
 //! finding it on disk, downloading it from GitHub releases, spawning
-//! the process, health-checking, and tearing it down on drop.
+//! the process, health-checking, tearing it down on drop, and fetching
+//! models from the Ollama registry.
 
 use crabllm_core::Error;
 pub use download::{download, install_dir};
+pub use pool::ServerPool;
 pub use server::{LlamaCppConfig, LlamaCppServer};
 use std::path::PathBuf;
 
 mod download;
+pub mod pool;
+pub mod proxy;
+pub mod registry;
 mod server;
 
 /// The platform-specific binary name for llama-server.
@@ -19,16 +24,13 @@ pub const BINARY_NAME: &str = if cfg!(windows) {
     "llama-server"
 };
 
-/// Find the `llama-server` binary.
+/// Find the `llama-server` binary, auto-downloading if not found.
 ///
 /// Search order:
 /// 1. `$LLAMA_SERVER` environment variable
 /// 2. `llama-server` on `$PATH`
-/// 3. crabllm's default install directory
-///    - `$CRABLLM_HOME/bin`
-///    - or platform default: Linux `~/.local/share/crabllm/bin`,
-///      macOS `~/Library/Application Support/crabllm/bin`,
-///      Windows `%LOCALAPPDATA%\crabllm\bin`
+/// 3. Default install directory
+/// 4. Auto-download from GitHub releases (detects GPU backend)
 pub fn find_server_binary() -> Result<PathBuf, Error> {
     if let Ok(path) = std::env::var("LLAMA_SERVER") {
         let p = PathBuf::from(&path);
@@ -49,7 +51,7 @@ pub fn find_server_binary() -> Result<PathBuf, Error> {
         return Ok(installed);
     }
 
-    Err(Error::Internal(
-        "llama-server not found. Run `crabllm llamacpp download` to install it".to_string(),
-    ))
+    // Not found anywhere — auto-download the correct build.
+    tracing::info!("llama-server not found, downloading...");
+    download(None)
 }

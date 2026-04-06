@@ -70,7 +70,7 @@ impl LlamaCppServer {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines() {
                     match line {
-                        Ok(line) => eprintln!("[llama-server] {line}"),
+                        Ok(line) => tracing::debug!(target: "llama_server", "{line}"),
                         Err(_) => break,
                     }
                 }

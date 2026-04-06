@@ -1,16 +1,28 @@
 [package]
-name = "crabllm-llamacpp"
+name = "llamars"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Managed llama.cpp server for the crabllm LLM API gateway"
-keywords = ["llm", "llamacpp", "gguf", "local", "inference"]
+description = "Managed llama.cpp server with Ollama registry support"
+keywords = ["llm", "llamacpp", "gguf", "local", "inference", "ollama"]
 categories = ["command-line-utilities"]
+
+[[bin]]
+name = "llamars"
+path = "src/bin/main.rs"
 
 [dependencies]
 crabllm-core.workspace = true
+axum.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 # llamacpp process management
 ureq = { workspace = true }
