@@ -148,16 +148,37 @@ impl<P> ProviderRegistry<P> {
 }
 
 impl<P> ProviderRegistry<P> {
-    /// Build the registry from gateway config, wrapping each constructed
-    /// `RemoteProvider` with `wrap` so the binary can lift it into a
-    /// workspace-level union type.
+    /// Build the registry from a full `GatewayConfig`. Thin wrapper around
+    /// [`from_provider_configs`](Self::from_provider_configs) that pulls the
+    /// two fields the registry actually cares about.
     pub fn from_config<F>(config: &GatewayConfig, wrap: F) -> Result<Self, Error>
+    where
+        F: Fn(RemoteProvider) -> P,
+    {
+        Self::from_provider_configs(&config.providers, &config.aliases, wrap)
+    }
+
+    /// Build the registry directly from a provider map and an alias map,
+    /// without requiring a full `GatewayConfig`. Intended for library
+    /// consumers that construct a handful of providers programmatically and
+    /// don't carry the rest of the gateway's runtime config
+    /// (listen address, storage, extensions, …).
+    ///
+    /// `wrap` lifts each constructed `RemoteProvider` into the workspace-
+    /// level concrete type the caller uses as `P` — e.g., a union enum
+    /// with one variant per provider source, or the identity closure when
+    /// `P = RemoteProvider`.
+    pub fn from_provider_configs<F>(
+        providers_config: &HashMap<String, ProviderConfig>,
+        aliases: &HashMap<String, String>,
+        wrap: F,
+    ) -> Result<Self, Error>
     where
         F: Fn(RemoteProvider) -> P,
     {
         // Validate against the raw config so we don't waste a `reqwest::Client`
         // construction (TLS init) on inputs we'd reject.
-        for (provider_name, provider_config) in &config.providers {
+        for (provider_name, provider_config) in providers_config {
             validate_provider(provider_name, provider_config)?;
         }
 
@@ -167,7 +188,7 @@ impl<P> ProviderRegistry<P> {
 
         let mut providers: HashMap<String, Vec<Arc<Deployment<P>>>> = HashMap::new();
 
-        for provider_config in config.providers.values() {
+        for provider_config in providers_config.values() {
             let provider = wrap(RemoteProvider::new(provider_config, client.clone()));
 
             let deployment = Arc::new(Deployment {
@@ -185,17 +206,13 @@ impl<P> ProviderRegistry<P> {
         }
 
         let mut model_providers = HashMap::new();
-        for (provider_name, provider_config) in &config.providers {
+        for (provider_name, provider_config) in providers_config {
             for model in &provider_config.models {
                 model_providers.insert(model.clone(), provider_name.clone());
             }
         }
 
-        Ok(Self::new(
-            providers,
-            config.aliases.clone(),
-            model_providers,
-        ))
+        Ok(Self::new(providers, aliases.clone(), model_providers))
     }
 }
 
