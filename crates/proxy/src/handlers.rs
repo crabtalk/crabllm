@@ -732,12 +732,7 @@ async fn try_embedding_with_retries<P: Provider>(
     request: &EmbeddingRequest,
 ) -> Result<crabllm_core::EmbeddingResponse, crabllm_core::Error> {
     let mut last_err;
-    match with_timeout(
-        deployment.timeout,
-        deployment.provider.embedding(request),
-    )
-    .await
-    {
+    match with_timeout(deployment.timeout, deployment.provider.embedding(request)).await {
         Ok(resp) => return Ok(resp),
         Err(e) => {
             if !e.is_transient() || deployment.max_retries == 0 {
@@ -751,12 +746,7 @@ async fn try_embedding_with_retries<P: Provider>(
     for _ in 0..deployment.max_retries {
         tokio::time::sleep(jittered(backoff)).await;
         backoff *= 2;
-        match with_timeout(
-            deployment.timeout,
-            deployment.provider.embedding(request),
-        )
-        .await
-        {
+        match with_timeout(deployment.timeout, deployment.provider.embedding(request)).await {
             Ok(resp) => return Ok(resp),
             Err(e) => {
                 if !e.is_transient() {

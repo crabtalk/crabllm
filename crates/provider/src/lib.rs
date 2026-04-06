@@ -262,17 +262,16 @@ impl Provider for RemoteProvider {
         }
     }
 
-    async fn embedding(
-        &self,
-        request: &EmbeddingRequest,
-    ) -> Result<EmbeddingResponse, Error> {
+    async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         match self {
             RemoteProvider::Openai {
                 client,
                 base_url,
                 api_key,
             } => provider::openai::embedding(client, base_url, api_key, request).await,
-            RemoteProvider::Anthropic { .. } => Err(provider::anthropic::not_implemented("embedding")),
+            RemoteProvider::Anthropic { .. } => {
+                Err(provider::anthropic::not_implemented("embedding"))
+            }
             RemoteProvider::Google { .. } => Err(provider::google::not_implemented("embedding")),
             RemoteProvider::Bedrock { .. } => Err(provider::bedrock::not_implemented("embedding")),
             RemoteProvider::Azure {
@@ -284,10 +283,7 @@ impl Provider for RemoteProvider {
         }
     }
 
-    async fn image_generation(
-        &self,
-        request: &ImageRequest,
-    ) -> Result<(Bytes, String), Error> {
+    async fn image_generation(&self, request: &ImageRequest) -> Result<(Bytes, String), Error> {
         match self {
             RemoteProvider::Openai {
                 client,
@@ -315,10 +311,7 @@ impl Provider for RemoteProvider {
         }
     }
 
-    async fn audio_speech(
-        &self,
-        request: &AudioSpeechRequest,
-    ) -> Result<(Bytes, String), Error> {
+    async fn audio_speech(&self, request: &AudioSpeechRequest) -> Result<(Bytes, String), Error> {
         match self {
             RemoteProvider::Openai {
                 client,

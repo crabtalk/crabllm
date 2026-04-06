@@ -41,9 +41,7 @@ pub trait Provider: Send + Sync {
     fn chat_completion_stream(
         &self,
         request: &ChatCompletionRequest,
-    ) -> impl Future<
-        Output = Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error>,
-    > + Send;
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error>> + Send;
 
     fn embedding(
         &self,
