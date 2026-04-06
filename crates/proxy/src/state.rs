@@ -11,7 +11,7 @@ use std::{
 /// binary picks `P` by defining a workspace-level union enum that wraps
 /// every provider source it links — that enum implements `Provider` via
 /// match-and-delegate, so dispatch through `P` is fully monomorphized.
-pub struct AppState<S: Storage, P: Provider + Clone> {
+pub struct AppState<S: Storage, P: Provider> {
     pub registry: ProviderRegistry<P>,
     pub config: GatewayConfig,
     pub extensions: Arc<Vec<Box<dyn Extension>>>,
@@ -21,7 +21,7 @@ pub struct AppState<S: Storage, P: Provider + Clone> {
     pub key_map: Arc<RwLock<HashMap<String, String>>>,
 }
 
-impl<S: Storage, P: Provider + Clone> Clone for AppState<S, P> {
+impl<S: Storage, P: Provider> Clone for AppState<S, P> {
     fn clone(&self) -> Self {
         Self {
             registry: self.registry.clone(),

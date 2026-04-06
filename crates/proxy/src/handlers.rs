@@ -70,7 +70,7 @@ pub async fn chat_completions<S, P>(
 ) -> Response
 where
     S: Storage + 'static,
-    P: Provider + Clone + 'static,
+    P: Provider + 'static,
 {
     let model = state.registry.resolve(&request.model).to_string();
     let deployments = match state.registry.dispatch_list(&model) {
@@ -252,7 +252,7 @@ pub async fn embeddings<S, P>(
 ) -> Response
 where
     S: Storage + 'static,
-    P: Provider + Clone + 'static,
+    P: Provider + 'static,
 {
     let model = state.registry.resolve(&request.model).to_string();
     let deployments = match state.registry.dispatch_list(&model) {
@@ -319,7 +319,7 @@ where
 pub async fn models<S, P>(State(state): State<AppState<S, P>>) -> Json<ModelList>
 where
     S: Storage + 'static,
-    P: Provider + Clone + 'static,
+    P: Provider + 'static,
 {
     let data: Vec<Model> = state
         .registry
@@ -346,7 +346,7 @@ pub async fn image_generations<S, P>(
 ) -> Response
 where
     S: Storage + 'static,
-    P: Provider + Clone + 'static,
+    P: Provider + 'static,
 {
     let model = state.registry.resolve(&request.model).to_string();
     let deployments = match state.registry.dispatch_list(&model) {
@@ -422,7 +422,7 @@ pub async fn audio_speech<S, P>(
 ) -> Response
 where
     S: Storage + 'static,
-    P: Provider + Clone + 'static,
+    P: Provider + 'static,
 {
     let model = state.registry.resolve(&request.model).to_string();
     let deployments = match state.registry.dispatch_list(&model) {
@@ -498,7 +498,7 @@ pub async fn audio_transcriptions<S, P>(
 ) -> Response
 where
     S: Storage + 'static,
-    P: Provider + Clone + 'static,
+    P: Provider + 'static,
 {
     // Buffer all multipart fields and extract the model name.
     let mut fields = Vec::with_capacity(8);

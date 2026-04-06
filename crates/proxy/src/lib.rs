@@ -31,7 +31,7 @@ async fn track_active_connections(request: Request, next: middleware::Next) -> R
 pub fn router<S, P>(state: AppState<S, P>, admin_routes: Vec<Router>) -> Router
 where
     S: Storage + 'static,
-    P: Provider + Clone + 'static,
+    P: Provider + 'static,
 {
     let mut app = Router::<AppState<S, P>>::new()
         .route(

@@ -1,7 +1,7 @@
 use crate::{RemoteProvider, make_client};
 use crabllm_core::{Error, GatewayConfig, ProviderConfig, ProviderKind};
 use rand::Rng;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 /// A provider entry with its routing weight and retry config.
 ///
@@ -9,7 +9,12 @@ use std::{collections::HashMap, time::Duration};
 /// implementing `crabllm_core::Provider` — typically a workspace-level
 /// union enum that delegates to multiple sources (built-in remote APIs,
 /// local backends, etc.).
-#[derive(Debug, Clone)]
+///
+/// Note: `Deployment` does not derive `Clone`. The registry stores
+/// `Arc<Deployment<P>>` internally so multiple model → deployment bindings
+/// share a single allocation, and so `P` is free to hold non-`Clone` state
+/// (e.g. model mmaps, CUDA contexts, task handles).
+#[derive(Debug)]
 pub struct Deployment<P> {
     pub provider: P,
     pub weight: u16,
@@ -18,18 +23,32 @@ pub struct Deployment<P> {
 }
 
 /// Maps model names to weighted provider lists for routing.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProviderRegistry<P> {
-    providers: HashMap<String, Vec<Deployment<P>>>,
+    providers: HashMap<String, Vec<Arc<Deployment<P>>>>,
     aliases: HashMap<String, String>,
     /// Precomputed model name → provider name lookup (avoids per-request HashMap rebuild).
     model_providers: HashMap<String, String>,
 }
 
+/// Manual `Clone` impl so the bound is not `P: Clone` — only the outer
+/// `HashMap`/`Vec`/`Arc` layers clone, and `Arc::clone` is infallible for
+/// any `T`. Cloning the registry is a shallow structural copy; every
+/// clone shares the same underlying `Deployment` allocations.
+impl<P> Clone for ProviderRegistry<P> {
+    fn clone(&self) -> Self {
+        Self {
+            providers: self.providers.clone(),
+            aliases: self.aliases.clone(),
+            model_providers: self.model_providers.clone(),
+        }
+    }
+}
+
 impl<P> ProviderRegistry<P> {
     /// Create a registry directly from pre-built provider lists and aliases.
     pub fn new(
-        providers: HashMap<String, Vec<Deployment<P>>>,
+        providers: HashMap<String, Vec<Arc<Deployment<P>>>>,
         aliases: HashMap<String, String>,
         model_providers: HashMap<String, String>,
     ) -> Self {
@@ -108,16 +127,16 @@ impl<P> ProviderRegistry<P> {
         };
 
         // Build result: selected first, then remaining sorted by descending weight.
-        let mut result = Vec::with_capacity(list.len());
+        let mut result: Vec<&Deployment<P>> = Vec::with_capacity(list.len());
         result.push(&list[selected_idx]);
 
-        let mut remaining: Vec<(usize, &Deployment<P>)> = list
+        let mut remaining: Vec<(usize, &Arc<Deployment<P>>)> = list
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != selected_idx)
             .collect();
         remaining.sort_by(|a, b| b.1.weight.cmp(&a.1.weight));
-        result.extend(remaining.into_iter().map(|(_, d)| d));
+        result.extend(remaining.into_iter().map(|(_, d)| d.as_ref()));
 
         Some(result)
     }
@@ -128,10 +147,10 @@ impl<P> ProviderRegistry<P> {
     }
 }
 
-impl<P: Clone> ProviderRegistry<P> {
+impl<P> ProviderRegistry<P> {
     /// Build the registry from gateway config, wrapping each constructed
     /// `RemoteProvider` with `wrap` so the binary can lift it into a
-    /// workspace-level union type (e.g., a `Dispatch` enum).
+    /// workspace-level union type.
     pub fn from_config<F>(config: &GatewayConfig, wrap: F) -> Result<Self, Error>
     where
         F: Fn(RemoteProvider) -> P,
@@ -146,22 +165,22 @@ impl<P: Clone> ProviderRegistry<P> {
         // dispatches through the same connection pool.
         let client = make_client();
 
-        let mut providers: HashMap<String, Vec<Deployment<P>>> = HashMap::new();
+        let mut providers: HashMap<String, Vec<Arc<Deployment<P>>>> = HashMap::new();
 
         for provider_config in config.providers.values() {
             let provider = wrap(RemoteProvider::new(provider_config, client.clone()));
 
-            let deployment = Deployment {
+            let deployment = Arc::new(Deployment {
                 provider,
                 weight: provider_config.weight.unwrap_or(1),
                 max_retries: provider_config.max_retries.unwrap_or(2),
                 timeout: Duration::from_secs(provider_config.timeout.unwrap_or(30)),
-            };
+            });
             for model_name in &provider_config.models {
                 providers
                     .entry(model_name.clone())
                     .or_default()
-                    .push(deployment.clone());
+                    .push(Arc::clone(&deployment));
             }
         }
 
