@@ -244,22 +244,32 @@ fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
             Ok(())
         }
         ProviderKind::Bedrock => {
-            if is_blank(&config.region) {
+            #[cfg(not(feature = "provider-bedrock"))]
+            {
                 return Err(Error::Config(format!(
-                    "provider '{name}' (bedrock) requires a region"
+                    "provider '{name}' uses kind = 'bedrock', which requires the \
+                     'provider-bedrock' feature to be enabled in the crabllm binary"
                 )));
             }
-            if is_blank(&config.access_key) {
-                return Err(Error::Config(format!(
-                    "provider '{name}' (bedrock) requires an access_key"
-                )));
+            #[cfg(feature = "provider-bedrock")]
+            {
+                if is_blank(&config.region) {
+                    return Err(Error::Config(format!(
+                        "provider '{name}' (bedrock) requires a region"
+                    )));
+                }
+                if is_blank(&config.access_key) {
+                    return Err(Error::Config(format!(
+                        "provider '{name}' (bedrock) requires an access_key"
+                    )));
+                }
+                if is_blank(&config.secret_key) {
+                    return Err(Error::Config(format!(
+                        "provider '{name}' (bedrock) requires a secret_key"
+                    )));
+                }
+                Ok(())
             }
-            if is_blank(&config.secret_key) {
-                return Err(Error::Config(format!(
-                    "provider '{name}' (bedrock) requires a secret_key"
-                )));
-            }
-            Ok(())
         }
         ProviderKind::LlamaCpp => {
             // When the `llamacpp` feature is enabled, `spawn_llamacpp_servers`
