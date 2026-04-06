@@ -411,7 +411,6 @@ name = "crabllm"
 version = "0.0.12"
 dependencies = [
  "axum",
- "bytes",
  "clap",
  "crabllm-core",
  "crabllm-provider",
