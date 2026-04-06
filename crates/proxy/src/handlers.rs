@@ -10,7 +10,7 @@ use axum::{
 };
 use crabllm_core::{
     ApiError, AudioSpeechRequest, ChatCompletionRequest, EmbeddingRequest, ImageRequest, Model,
-    ModelList, RequestContext, Storage,
+    ModelList, MultipartField, RequestContext, Storage,
 };
 use crabllm_provider::Deployment;
 use futures::StreamExt;
@@ -471,16 +471,8 @@ pub async fn audio_speech<S: Storage + 'static>(
     error_response(e)
 }
 
-/// A buffered multipart field for reconstructing forms across fallback attempts.
-struct BufferedField {
-    name: String,
-    filename: Option<String>,
-    content_type: Option<String>,
-    bytes: bytes::Bytes,
-}
-
 /// Rebuild a `reqwest::multipart::Form` from buffered fields.
-fn rebuild_form(fields: &[BufferedField]) -> reqwest::multipart::Form {
+fn rebuild_form(fields: &[MultipartField]) -> reqwest::multipart::Form {
     let mut form = reqwest::multipart::Form::new();
     for field in fields {
         let mut part = reqwest::multipart::Part::stream(field.bytes.clone());
@@ -531,7 +523,7 @@ pub async fn audio_transcriptions<S: Storage + 'static>(
         if name == "model" {
             model_value = Some(String::from_utf8_lossy(&bytes).into_owned());
         }
-        fields.push(BufferedField {
+        fields.push(MultipartField {
             name,
             filename,
             content_type,

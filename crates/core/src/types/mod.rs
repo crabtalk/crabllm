@@ -9,9 +9,11 @@ pub use embedding::{
 };
 pub use image::ImageRequest;
 pub use model::{Model, ModelList};
+pub use multipart::MultipartField;
 
 mod audio;
 mod chat;
 mod embedding;
 mod image;
 mod model;
+mod multipart;

@@ -440,6 +440,7 @@ dependencies = [
 name = "crabllm-core"
 version = "0.0.12"
 dependencies = [
+ "bytes",
  "serde",
  "serde_json",
  "toml",
