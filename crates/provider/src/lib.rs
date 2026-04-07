@@ -68,8 +68,12 @@ impl RemoteProvider {
     /// `reqwest::Client`. Cloning the client is cheap — internally it's
     /// `Arc<ClientRef>` — so every provider returned by this constructor
     /// dispatches through the same connection pool.
+    ///
+    /// Routes via [`ProviderConfig::effective_kind`] so a config with
+    /// `kind = "openai"` and a `base_url` containing "anthropic" auto-upgrades
+    /// to the Anthropic dispatch path.
     pub fn new(config: &ProviderConfig, client: reqwest::Client) -> Self {
-        match config.kind {
+        match config.effective_kind() {
             ProviderKind::Openai => RemoteProvider::Openai {
                 client,
                 base_url: config
