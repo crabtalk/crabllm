@@ -321,10 +321,7 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
         deployment.provider.chat_completion_stream(request).await
     }
 
-    async fn embedding(
-        &self,
-        request: &EmbeddingRequest,
-    ) -> Result<EmbeddingResponse, Error> {
+    async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         let model = self.resolve(&request.model);
         let deployment = self
             .dispatch(model)
@@ -332,10 +329,7 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
         deployment.provider.embedding(request).await
     }
 
-    async fn image_generation(
-        &self,
-        request: &ImageRequest,
-    ) -> Result<(Bytes, String), Error> {
+    async fn image_generation(&self, request: &ImageRequest) -> Result<(Bytes, String), Error> {
         let model = self.resolve(&request.model);
         let deployment = self
             .dispatch(model)
@@ -343,10 +337,7 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
         deployment.provider.image_generation(request).await
     }
 
-    async fn audio_speech(
-        &self,
-        request: &AudioSpeechRequest,
-    ) -> Result<(Bytes, String), Error> {
+    async fn audio_speech(&self, request: &AudioSpeechRequest) -> Result<(Bytes, String), Error> {
         let model = self.resolve(&request.model);
         let deployment = self
             .dispatch(model)
