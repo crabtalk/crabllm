@@ -116,7 +116,7 @@ async fn list_models(State(state): State<ProxyState>) -> Json<serde_json::Value>
                 "id": name,
                 "object": "model",
                 "created": 0,
-                "owned_by": "llamars",
+                "owned_by": "crabllm-llamacpp",
             })
         })
         .collect();

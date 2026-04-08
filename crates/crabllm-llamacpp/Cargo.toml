@@ -1,5 +1,5 @@
 [package]
-name = "llamars"
+name = "crabllm-llamacpp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ keywords = ["llm", "llamacpp", "gguf", "local", "inference", "ollama"]
 categories = ["command-line-utilities"]
 
 [[bin]]
-name = "llamars"
+name = "crabllm-llamacpp"
 path = "src/bin/main.rs"
 
 [dependencies]

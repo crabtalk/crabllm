@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand};
-use llamars::registry;
+use crabllm_llamacpp::registry;
 use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(
-    name = "llamars",
+    name = "crabllm-llamacpp",
     about = "Managed llama.cpp server with Ollama registry"
 )]
 struct Cli {
@@ -66,7 +66,7 @@ async fn serve(models: Vec<String>, port: u16) {
         std::process::exit(1);
     }
 
-    let bin = match llamars::find_server_binary() {
+    let bin = match crabllm_llamacpp::find_server_binary() {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
@@ -98,16 +98,16 @@ async fn serve(models: Vec<String>, port: u16) {
         }
     }
 
-    let pool = Arc::new(llamars::ServerPool::new(bin, cache_dir));
+    let pool = Arc::new(crabllm_llamacpp::ServerPool::new(bin, cache_dir));
     pool.start_idle_monitor();
 
-    let state = llamars::proxy::ProxyState {
+    let state = crabllm_llamacpp::proxy::ProxyState {
         pool,
         client: reqwest::Client::new(),
         models,
     };
 
-    let app = llamars::proxy::router(state);
+    let app = crabllm_llamacpp::proxy::router(state);
     let addr = format!("0.0.0.0:{port}");
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -117,7 +117,7 @@ async fn serve(models: Vec<String>, port: u16) {
         }
     };
 
-    tracing::info!(addr = %addr, "llamars listening");
+    tracing::info!(addr = %addr, "crabllm-llamacpp listening");
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("error: {e}");
         std::process::exit(1);
@@ -175,7 +175,7 @@ fn tags(model: &str) {
 }
 
 fn download(tag: Option<&str>) {
-    match llamars::download(tag) {
+    match crabllm_llamacpp::download(tag) {
         Ok(path) => {
             eprintln!("llama-server ready at {}", path.display());
         }
@@ -187,7 +187,7 @@ fn download(tag: Option<&str>) {
 }
 
 fn check() {
-    match llamars::find_server_binary() {
+    match crabllm_llamacpp::find_server_binary() {
         Ok(path) => {
             eprintln!("llama-server found: {}", path.display());
             let output = std::process::Command::new(&path).arg("--version").output();
@@ -216,7 +216,7 @@ fn check() {
 }
 
 fn which() {
-    match llamars::find_server_binary() {
+    match crabllm_llamacpp::find_server_binary() {
         Ok(path) => println!("{}", path.display()),
         Err(e) => {
             eprintln!("error: {e}");

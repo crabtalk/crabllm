@@ -17,8 +17,7 @@ crabllm-provider = { version = "0.0.14", path = "crates/provider" }
 crabllm-proxy = { version = "0.0.14", path = "crates/proxy" }
 crabllm-bench = { version = "0.0.14", path = "crates/bench" }
 crabllm = { version = "0.0.14", path = "crates/crabllm" }
-llamars = { version = "0.0.14", path = "crates/llamars" }
-crabllm-llamacpp = { version = "0.0.14", path = "crates/llamars", package = "llamars" }
+crabllm-llamacpp = { version = "0.0.14", path = "crates/crabllm-llamacpp" }
 
 # crates-io
 axum = { version = "0.8", features = ["multipart"] }

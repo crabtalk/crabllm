@@ -1,4 +1,4 @@
-//! llamars — managed llama.cpp server with Ollama registry support.
+//! crabllm-llamacpp — managed llama.cpp server with Ollama registry support.
 //!
 //! This crate handles the full lifecycle of a `llama-server` binary:
 //! finding it on disk, downloading it from GitHub releases, spawning

@@ -153,7 +153,7 @@ fn fetch_release(tag: Option<&str>) -> Result<(String, Vec<String>), Error> {
     };
 
     let resp = ureq::get(&url)
-        .header("User-Agent", "llamars")
+        .header("User-Agent", "crabllm-llamacpp")
         .call()
         .map_err(|e| Error::Internal(format!("failed to fetch release: {e}")))?;
 

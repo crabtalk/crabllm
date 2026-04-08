@@ -413,9 +413,9 @@ dependencies = [
  "axum",
  "clap",
  "crabllm-core",
+ "crabllm-llamacpp",
  "crabllm-provider",
  "crabllm-proxy",
- "llamars",
  "metrics-exporter-prometheus",
  "serde_json",
  "tokio",
@@ -444,6 +444,28 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "crabllm-llamacpp"
+version = "0.0.14"
+dependencies = [
+ "axum",
+ "clap",
+ "crabllm-core",
+ "dirs",
+ "flate2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "which",
+ "zip",
 ]
 
 [[package]]
@@ -1454,28 +1476,6 @@ name = "litemap"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
-
-[[package]]
-name = "llamars"
-version = "0.0.14"
-dependencies = [
- "axum",
- "clap",
- "crabllm-core",
- "dirs",
- "flate2",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tar",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "ureq",
- "which",
- "zip",
-]
 
 [[package]]
 name = "lock_api"
