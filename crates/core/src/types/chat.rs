@@ -328,6 +328,11 @@ pub struct Choice {
 }
 
 impl ChatCompletionResponse {
+    /// First choice's message, if present.
+    pub fn message(&self) -> Option<&Message> {
+        self.choices.first().map(|c| &c.message)
+    }
+
     /// Text content from the first choice's message, if non-empty.
     ///
     /// Empty strings collapse to `None` (via `Message::content_str`).
