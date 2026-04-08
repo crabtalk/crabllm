@@ -256,11 +256,15 @@ impl Message {
         msg
     }
 
-    /// Return the text view of `content` when it is a JSON string.
+    /// Return the text view of `content` when it is a non-empty JSON string.
     ///
-    /// Returns `None` for `null` and non-string variants (e.g. multimodal arrays).
+    /// Returns `None` for `null`, empty strings, and non-string variants
+    /// (e.g. multimodal arrays).
     pub fn content_str(&self) -> Option<&str> {
-        self.content.as_ref().and_then(serde_json::Value::as_str)
+        self.content
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .filter(|s| !s.is_empty())
     }
 }
 
@@ -324,14 +328,23 @@ pub struct Choice {
 }
 
 impl ChatCompletionResponse {
-    /// Text content from the first choice's message, if present.
+    /// Text content from the first choice's message, if non-empty.
+    ///
+    /// Empty strings collapse to `None` (via `Message::content_str`).
     pub fn content(&self) -> Option<&str> {
         self.choices.first()?.message.content_str()
     }
 
-    /// Reasoning content from the first choice's message, if present.
+    /// Reasoning content from the first choice's message, if non-empty.
+    ///
+    /// Empty strings collapse to `None`.
     pub fn reasoning_content(&self) -> Option<&str> {
-        self.choices.first()?.message.reasoning_content.as_deref()
+        self.choices
+            .first()?
+            .message
+            .reasoning_content
+            .as_deref()
+            .filter(|s| !s.is_empty())
     }
 
     /// Tool calls from the first choice's message. Empty slice if none.
@@ -383,14 +396,28 @@ pub struct ChatCompletionChunk {
 }
 
 impl ChatCompletionChunk {
-    /// Text delta from the first choice, if present.
+    /// Text delta from the first choice, if non-empty.
+    ///
+    /// Empty-string deltas (keepalives, boundary markers) collapse to `None`.
     pub fn content(&self) -> Option<&str> {
-        self.choices.first()?.delta.content.as_deref()
+        self.choices
+            .first()?
+            .delta
+            .content
+            .as_deref()
+            .filter(|s| !s.is_empty())
     }
 
-    /// Reasoning-content delta from the first choice, if present.
+    /// Reasoning-content delta from the first choice, if non-empty.
+    ///
+    /// Empty-string deltas collapse to `None`.
     pub fn reasoning_content(&self) -> Option<&str> {
-        self.choices.first()?.delta.reasoning_content.as_deref()
+        self.choices
+            .first()?
+            .delta
+            .reasoning_content
+            .as_deref()
+            .filter(|s| !s.is_empty())
     }
 
     /// Tool-call deltas from the first choice. Empty slice if none.
