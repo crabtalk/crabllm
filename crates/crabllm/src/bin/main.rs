@@ -1,5 +1,12 @@
+use bytes::Bytes;
 use clap::{Parser, Subcommand};
-use crabllm_core::{Extension, GatewayConfig, Storage};
+use crabllm_core::{
+    AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, Extension, GatewayConfig,
+    ImageRequest, MultipartField, Provider, Storage,
+};
+#[cfg(feature = "llamacpp")]
+use crabllm_llamacpp::LlamaCppProvider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use crabllm_proxy::{
     AppState,
@@ -123,67 +130,158 @@ fn run_llamacpp(action: LlamaCppAction) {
     }
 }
 
-/// Spawn llama-server processes for all LlamaCpp providers in config.
+/// Concrete provider type the gateway binary composes.
 ///
-/// For each LlamaCpp provider, this finds the llama-server binary, spawns a
-/// child process, waits for it to become healthy, then rewrites the config
-/// entry to Openai pointing at the local server. The caller must hold
-/// the returned handles alive — dropping them kills the child processes.
-#[cfg(feature = "llamacpp")]
-fn spawn_llamacpp_servers(
-    config: &mut GatewayConfig,
-) -> Result<Vec<crabllm_llamacpp::LlamaCppServer>, crabllm_core::Error> {
-    use crabllm_core::ProviderKind;
-    use crabllm_llamacpp::{LlamaCppConfig, LlamaCppServer};
+/// Union of every provider source the binary links — remote HTTP APIs
+/// via [`RemoteProvider`] and (behind `--features llamacpp`) a local
+/// llama.cpp backend via [`LlamaCppProvider`]. The proxy crate is
+/// generic over `P: Provider`; the binary picks this enum as `P` so
+/// dispatch monomorphizes through a match/delegate with no dyn or
+/// per-call boxing.
+///
+/// `LlamaCpp` is feature-gated so a no-llamacpp build collapses to a
+/// single-variant enum with zero runtime cost. The trait methods live
+/// inline in this file because extracting them into their own file
+/// would require a sibling module under `src/bin/`, which is overkill
+/// for ~70 lines of match-delegate.
+enum Dispatch {
+    Remote(RemoteProvider),
+    #[cfg(feature = "llamacpp")]
+    LlamaCpp(LlamaCppProvider),
+}
 
-    let has_llamacpp = config
-        .providers
-        .values()
-        .any(|c| c.kind == ProviderKind::LlamaCpp);
-    if !has_llamacpp {
-        return Ok(Vec::new());
+impl Provider for Dispatch {
+    async fn chat_completion(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> Result<ChatCompletionResponse, Error> {
+        match self {
+            Self::Remote(p) => p.chat_completion(request).await,
+            #[cfg(feature = "llamacpp")]
+            Self::LlamaCpp(p) => p.chat_completion(request).await,
+        }
     }
+
+    async fn chat_completion_stream(
+        &self,
+        request: &ChatCompletionRequest,
+    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+        match self {
+            Self::Remote(p) => p.chat_completion_stream(request).await,
+            #[cfg(feature = "llamacpp")]
+            Self::LlamaCpp(p) => p.chat_completion_stream(request).await,
+        }
+    }
+
+    async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
+        match self {
+            Self::Remote(p) => p.embedding(request).await,
+            #[cfg(feature = "llamacpp")]
+            Self::LlamaCpp(p) => p.embedding(request).await,
+        }
+    }
+
+    async fn image_generation(&self, request: &ImageRequest) -> Result<(Bytes, String), Error> {
+        match self {
+            Self::Remote(p) => p.image_generation(request).await,
+            #[cfg(feature = "llamacpp")]
+            Self::LlamaCpp(p) => p.image_generation(request).await,
+        }
+    }
+
+    async fn audio_speech(&self, request: &AudioSpeechRequest) -> Result<(Bytes, String), Error> {
+        match self {
+            Self::Remote(p) => p.audio_speech(request).await,
+            #[cfg(feature = "llamacpp")]
+            Self::LlamaCpp(p) => p.audio_speech(request).await,
+        }
+    }
+
+    async fn audio_transcription(
+        &self,
+        model: &str,
+        fields: &[MultipartField],
+    ) -> Result<(Bytes, String), Error> {
+        match self {
+            Self::Remote(p) => p.audio_transcription(model, fields).await,
+            #[cfg(feature = "llamacpp")]
+            Self::LlamaCpp(p) => p.audio_transcription(model, fields).await,
+        }
+    }
+}
+
+/// Attach the llama.cpp local backend to the registry and return the
+/// pool so `serve()` can hold it alive and drive a clean shutdown.
+///
+/// The pool is constructed with the configured knobs, starts its idle
+/// monitor, and is wrapped in a single `LlamaCppProvider` that's
+/// cloned into one `Deployment` per configured model — all sharing the
+/// same pool. A startup resolution check walks every model and fails
+/// fast if its GGUF is neither cached nor a valid path, so missing
+/// models produce a clear error at boot instead of on the first chat
+/// completion.
+#[cfg(feature = "llamacpp")]
+fn wire_llamacpp(
+    registry: &mut ProviderRegistry<Dispatch>,
+    cfg: &crabllm_core::LlamaCppGatewayConfig,
+) -> Result<Arc<crabllm_llamacpp::ServerPool>, crabllm_core::Error> {
+    use crabllm_llamacpp::{ServerPool, registry as reg};
+    use crabllm_provider::Deployment;
+    use std::path::Path;
 
     let bin = crabllm_llamacpp::find_server_binary()?;
-    let mut servers = Vec::new();
 
-    for (name, pc) in &mut config.providers {
-        if pc.kind != ProviderKind::LlamaCpp {
+    let cache_dir = match &cfg.cache_dir {
+        Some(s) => PathBuf::from(s),
+        None => reg::default_cache_dir()?,
+    };
+
+    // Resolution check — fail fast on missing models without spawning.
+    for model in &cfg.models {
+        if reg::cached_model_path(model, &cache_dir).is_some() {
             continue;
         }
-
-        let model_path = pc.model_path.as_ref().ok_or_else(|| {
-            crabllm_core::Error::Config(format!("provider '{name}' (llamacpp) requires model_path"))
-        })?;
-
-        eprintln!("starting llama-server for provider '{name}' (model: {model_path})");
-
-        let llama_config = LlamaCppConfig {
-            model_path: PathBuf::from(model_path),
-            n_gpu_layers: pc.n_gpu_layers.unwrap_or(0),
-            n_ctx: pc.n_ctx.unwrap_or(2048),
-            n_threads: pc.n_threads,
-        };
-
-        let server = LlamaCppServer::spawn(&bin, &llama_config).map_err(|e| {
-            crabllm_core::Error::Config(format!(
-                "provider '{name}': failed to start llama-server: {e}"
-            ))
-        })?;
-
-        eprintln!(
-            "llama-server for provider '{name}' ready on port {}",
-            server.port()
-        );
-
-        // Rewrite config entry so the provider crate sees Openai.
-        pc.kind = ProviderKind::Openai;
-        pc.base_url = Some(server.base_url());
-
-        servers.push(server);
+        if Path::new(model).exists() {
+            continue;
+        }
+        let (name, tag) = reg::parse_model_name(model);
+        return Err(crabllm_core::Error::Config(format!(
+            "llamacpp model '{name}:{tag}' not cached. Run: crabllm-llamacpp pull {model}"
+        )));
     }
 
-    Ok(servers)
+    let mut pool = ServerPool::new(bin, cache_dir);
+    if let Some(secs) = cfg.idle_timeout_secs {
+        pool = pool.with_idle_timeout(Duration::from_secs(secs));
+    }
+    if let Some(n) = cfg.n_gpu_layers {
+        pool = pool.with_gpu_layers(n);
+    }
+    if let Some(n) = cfg.n_ctx {
+        pool = pool.with_ctx_size(n);
+    }
+    if let Some(n) = cfg.n_threads {
+        pool = pool.with_threads(n);
+    }
+    let pool = Arc::new(pool);
+    pool.start_idle_monitor();
+
+    let provider = LlamaCppProvider::new(pool.clone(), crabllm_provider::make_client());
+
+    for model in &cfg.models {
+        let deployment = Deployment {
+            provider: Dispatch::LlamaCpp(provider.clone()),
+            weight: 1,
+            // Retry against a local child is pointless; the pool already
+            // serializes starts and the child is process-local.
+            max_retries: 0,
+            // Generation can legitimately run long on CPU.
+            timeout: Duration::from_secs(600),
+        };
+        registry.insert_deployment(model.clone(), "llamacpp".to_string(), deployment);
+    }
+
+    Ok(pool)
 }
 
 async fn serve(config_path: PathBuf, bind: Option<String>) {
@@ -199,26 +297,31 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
         config.listen = bind;
     }
 
-    // Spawn llama-server processes and rewrite their config entries to
-    // Openai before building the registry. Held on this stack frame
-    // for lifetime — Drop kills the child processes after run() returns.
-    #[cfg(feature = "llamacpp")]
-    let _llama_servers = match spawn_llamacpp_servers(&mut config) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: failed to start llama-server: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    let registry: ProviderRegistry<RemoteProvider> =
-        match ProviderRegistry::from_config(&config, |r| r) {
+    #[cfg_attr(not(feature = "llamacpp"), expect(unused_mut))]
+    let mut registry: ProviderRegistry<Dispatch> =
+        match ProviderRegistry::from_config(&config, Dispatch::Remote) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("error: failed to build provider registry: {e}");
                 std::process::exit(1);
             }
         };
+
+    // Wire the llama.cpp local backend if [llamacpp] is present. The
+    // returned pool is held on this stack frame so the child processes
+    // stay alive for the server's lifetime, then explicitly stopped
+    // after `run(...)` returns.
+    #[cfg(feature = "llamacpp")]
+    let llama_pool = match config.llamacpp.clone() {
+        Some(cfg) => match wire_llamacpp(&mut registry, &cfg) {
+            Ok(pool) => Some(pool),
+            Err(e) => {
+                eprintln!("error: failed to wire llamacpp: {e}");
+                std::process::exit(1);
+            }
+        },
+        None => None,
+    };
 
     let storage_kind = config
         .storage
@@ -275,11 +378,20 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
             run(config, registry, storage).await;
         }
     }
+
+    // Stop llama-server child processes cleanly after the gateway has
+    // drained. `LlamaCppServer::Drop` also kills the process, but
+    // calling `stop_all` here gives the idle monitor a chance to see
+    // the shutdown flag and exit without another tick.
+    #[cfg(feature = "llamacpp")]
+    if let Some(pool) = llama_pool {
+        pool.stop_all().await;
+    }
 }
 
 async fn run<S: Storage + 'static>(
     config: GatewayConfig,
-    registry: ProviderRegistry<RemoteProvider>,
+    registry: ProviderRegistry<Dispatch>,
     storage: Arc<S>,
 ) {
     let (extensions, mut admin_routes) =
@@ -303,7 +415,7 @@ async fn run<S: Storage + 'static>(
     let ext_count = extensions.len();
     let addr = config.listen.clone();
     let model_count = registry.model_names().count();
-    let provider_count = config.providers.len();
+    let provider_count = registry.provider_count();
     let shutdown_timeout = Duration::from_secs(config.shutdown_timeout);
 
     // Build key_map from TOML config keys.
@@ -332,7 +444,7 @@ async fn run<S: Storage + 'static>(
         ));
     }
 
-    let state: AppState<S, RemoteProvider> = AppState {
+    let state: AppState<S, Dispatch> = AppState {
         registry,
         config,
         extensions: Arc::new(extensions),

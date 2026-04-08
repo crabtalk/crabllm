@@ -64,7 +64,11 @@ pub enum RemoteProvider {
 /// hop. Called once at registry construction and the result is cloned
 /// into every `RemoteProvider`, so all providers share a single
 /// connection pool, DNS resolver, and TLS state.
-pub(crate) fn make_client() -> reqwest::Client {
+///
+/// Exposed so the binary can build the same client for a locally-wired
+/// provider (e.g. the llama.cpp backend) instead of rolling its own
+/// with divergent TCP settings.
+pub fn make_client() -> reqwest::Client {
     reqwest::Client::builder()
         .tcp_nodelay(true)
         .build()
@@ -151,19 +155,6 @@ impl RemoteProvider {
                 access_key: config.access_key.clone().unwrap_or_default(),
                 secret_key: config.secret_key.clone().unwrap_or_default(),
             },
-            ProviderKind::LlamaCpp => {
-                // Unreachable at runtime: when the `llamacpp` feature is on,
-                // `spawn_llamacpp_servers` rewrites the config kind to `Openai`
-                // before `from_config` runs. When the feature is off,
-                // `validate_provider` rejects this kind before construction.
-                // This arm exists only so the match stays exhaustive over
-                // `ProviderKind`.
-                RemoteProvider::Openai {
-                    client,
-                    base_url: config.base_url.clone().unwrap_or_default(),
-                    api_key: String::new(),
-                }
-            }
         }
     }
 }

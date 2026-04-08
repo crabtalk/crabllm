@@ -64,6 +64,24 @@ impl<P> ProviderRegistry<P> {
         }
     }
 
+    /// Insert a pre-built deployment for a single model. Maintains the
+    /// invariant that every key in `model_providers` has a matching entry
+    /// in `providers`.
+    ///
+    /// Used by the binary to attach a locally-built provider (e.g. the
+    /// llama.cpp backend) to a registry that was first populated from
+    /// remote-provider configs via [`from_provider_configs`](Self::from_provider_configs).
+    pub fn insert_deployment(
+        &mut self,
+        model: String,
+        provider_name: String,
+        deployment: Deployment<P>,
+    ) {
+        let arc = Arc::new(deployment);
+        self.providers.entry(model.clone()).or_default().push(arc);
+        self.model_providers.insert(model, provider_name);
+    }
+
     /// Look up the provider name for a model. O(1) HashMap lookup.
     pub fn provider_name(&self, model: &str) -> Option<&str> {
         self.model_providers.get(model).map(|s| s.as_str())
@@ -72,6 +90,14 @@ impl<P> ProviderRegistry<P> {
     /// Return all registered model names.
     pub fn model_names(&self) -> impl Iterator<Item = &str> {
         self.model_providers.keys().map(|s| s.as_str())
+    }
+
+    /// Count distinct registered provider names (remote + local combined).
+    pub fn provider_count(&self) -> usize {
+        self.model_providers
+            .values()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
     }
 
     /// Resolve a model name through aliases. Returns the canonical name.
@@ -271,17 +297,6 @@ fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
                 )));
             }
             Ok(())
-        }
-        ProviderKind::LlamaCpp => {
-            // When the `llamacpp` feature is enabled, `spawn_llamacpp_servers`
-            // rewrites the config kind to `Openai` before this runs — so
-            // seeing `LlamaCpp` here means the feature is off (or the spawn
-            // step didn't run). Reject explicitly rather than constructing a
-            // broken `Openai` stub with an empty base_url.
-            Err(Error::Config(format!(
-                "provider '{name}' uses kind = 'llamacpp', which requires the \
-                 'llamacpp' feature to be enabled in the crabllm binary"
-            )))
         }
     }
 }
