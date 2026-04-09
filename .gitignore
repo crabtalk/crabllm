@@ -4,6 +4,11 @@ spec
 docs/book
 results
 
+# swift package manager
+mlx/.build
+mlx/Package.resolved
+mlx/.swiftpm
+
 # local files
 *.local.md
 *.local.json
