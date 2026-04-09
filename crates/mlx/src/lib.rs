@@ -10,6 +10,8 @@
 //! Linux CI passes) but every entry point returns
 //! `Error::not_implemented`.
 
+pub mod download;
+
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod ffi;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -22,3 +24,5 @@ pub use session::{GenerateOptions, GenerateOutput, GenerateRequest, Session, Str
 mod stub;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub use stub::{GenerateOptions, GenerateOutput, GenerateRequest, Session, StreamOutput};
+
+pub use download::{cached_model_path, default_cache_dir, download_model};

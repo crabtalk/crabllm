@@ -476,6 +476,11 @@ name = "crabllm-mlx"
 version = "0.0.15"
 dependencies = [
  "crabllm-core",
+ "dirs",
+ "serde",
+ "serde_json",
+ "tracing",
+ "ureq",
 ]
 
 [[package]]
