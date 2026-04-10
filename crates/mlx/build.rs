@@ -23,6 +23,13 @@ fn main() {
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os != "macos" && target_os != "ios" {
+        // Generate an empty registry so the include! in registry.rs compiles.
+        let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+        fs::write(
+            out_dir.join("model_registry.rs"),
+            "pub const MODEL_REGISTRY: &[(&str, &str, &str)] = &[];\n",
+        )
+        .expect("write empty model_registry.rs");
         return;
     }
 
