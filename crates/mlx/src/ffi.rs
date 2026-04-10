@@ -54,6 +54,7 @@ pub struct CrabllmMlxGenerateResult {
 
 pub type CrabllmMlxTokenFn = unsafe extern "C" fn(*const c_char, *mut c_void) -> c_int;
 
+#[allow(dead_code)] // Session-level FFI is used by tests and as an escape hatch
 unsafe extern "C" {
     pub fn crabllm_mlx_session_new(
         model_dir_path: *const c_char,

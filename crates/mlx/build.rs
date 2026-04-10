@@ -60,8 +60,22 @@ fn main() {
         panic!("swift build -c release failed in {}", mlx_dir.display());
     }
 
+    // Compile Metal shaders into a metallib and write it to OUT_DIR
+    // so Rust can embed it via include_bytes!. MLX's C++ runtime
+    // searches for `mlx.metallib` colocated with the binary — our
+    // metallib.rs writes the embedded bytes there on first use.
+    compile_metallib(&mlx_dir);
+
     println!("cargo:rustc-link-search=native={}", build_dir.display());
-    println!("cargo:rustc-link-lib=static=CrabllmMlx");
+    // -force_load pulls every object file from the archive, including
+    // ObjC class metadata that NSClassFromString needs to discover
+    // MLXLLM's TrampolineModelFactory at runtime. Without this, the
+    // linker dead-strips the unreferenced ObjC classes and
+    // ModelFactoryRegistry returns noModelFactoryAvailable.
+    println!(
+        "cargo:rustc-link-arg=-Wl,-force_load,{}/libCrabllmMlx.a",
+        build_dir.display()
+    );
 
     // Swift runtime: the dylibs live under the platform SDK's
     // usr/lib/swift. Pick the right SDK for the target OS — macOS uses
@@ -154,6 +168,75 @@ fn main() {
     if target_os == "macos" {
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     }
+}
+
+/// Compile MLX's `.metal` shaders into `default.metallib` in OUT_DIR.
+/// Rust embeds this via `include_bytes!` and writes it next to the
+/// binary at runtime so MLX's C++ `load_colocated_library` finds it.
+fn compile_metallib(mlx_dir: &Path) {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    let cmlx = mlx_dir.join(".build/checkouts/mlx-swift/Source/Cmlx");
+    let metal_dir = cmlx.join("mlx-generated/metal");
+
+    let metal_files: Vec<PathBuf> = walk_dir(&metal_dir)
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "metal"))
+        .collect();
+
+    for f in &metal_files {
+        println!("cargo:rerun-if-changed={}", f.display());
+    }
+
+    if metal_files.is_empty() {
+        panic!(
+            "no .metal files found in {}. Was swift build run first?",
+            metal_dir.display()
+        );
+    }
+
+    let includes = [
+        cmlx.join("include"),
+        cmlx.join("mlx"),
+        cmlx.join("mlx-c"),
+        cmlx.join("metal-cpp"),
+        cmlx.join("mlx/mlx"),
+    ];
+
+    let air_dir = out_dir.join("metal_air");
+    fs::create_dir_all(&air_dir).expect("create air dir");
+
+    let mut air_files = Vec::new();
+    for metal in &metal_files {
+        let stem = metal.file_stem().unwrap().to_str().unwrap();
+        let air = air_dir.join(format!("{stem}.air"));
+        let mut cmd = Command::new("xcrun");
+        cmd.arg("metal").arg("-c");
+        for inc in &includes {
+            cmd.arg("-I").arg(inc);
+        }
+        cmd.arg("-o").arg(&air).arg(metal);
+        let status = cmd
+            .status()
+            .unwrap_or_else(|e| panic!("xcrun metal failed for {}: {e}", metal.display()));
+        if !status.success() {
+            panic!("xcrun metal failed for {}", metal.display());
+        }
+        air_files.push(air);
+    }
+
+    let metallib = out_dir.join("default.metallib");
+    let mut cmd = Command::new("xcrun");
+    cmd.arg("metallib");
+    for air in &air_files {
+        cmd.arg(air);
+    }
+    cmd.arg("-o").arg(&metallib);
+    let status = cmd.status().expect("xcrun metallib failed");
+    if !status.success() {
+        panic!("xcrun metallib linking failed");
+    }
+
+    println!("cargo:rustc-env=MLX_METALLIB_PATH={}", metallib.display());
 }
 
 /// True if the current target is an iOS simulator (not a device). We

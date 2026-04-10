@@ -7,9 +7,6 @@
 //!
 //! Public surface (Apple targets only):
 //!
-//!   * [`Session`] — low-level safe wrapper over the C ABI. One loaded
-//!     model. Reentrant. Used directly by callers who want to skip the
-//!     OpenAI-shape pipeline.
 //!   * [`MlxPool`] — Swift-managed multi-model cache with idle
 //!     eviction. Handles on-demand model loading internally.
 //!   * [`MlxProvider`] — `Provider`-trait front door that resolves
@@ -26,6 +23,8 @@ pub mod download;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod ffi;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
+mod metallib;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod pool;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod provider;
@@ -36,14 +35,10 @@ mod session;
 pub use pool::MlxPool;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use provider::MlxProvider;
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-pub use session::{GenerateOptions, GenerateOutput, GenerateRequest, Session, StreamOutput};
 
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 mod stub;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-pub use stub::{
-    GenerateOptions, GenerateOutput, GenerateRequest, MlxPool, MlxProvider, Session, StreamOutput,
-};
+pub use stub::{MlxPool, MlxProvider};
 
-pub use download::{cached_model_path, default_cache_dir, download_model};
+pub use download::{cached_model_path, download_model};

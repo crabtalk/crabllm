@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! `MlxPool` — Rust-side safe wrapper around the Swift pool FFI.
 //!
 //! The actual multi-model cache, idle eviction, and model loading live
@@ -6,13 +7,14 @@
 
 use crate::ffi;
 use crate::session::{
-    OwnedRequest, ResultGuard, copy_c_string_opt, take_owned_c_string, translate_status,
+    OwnedRequest, ResultGuard, TrampolineState, copy_c_string_opt, take_owned_c_string, trampoline,
+    translate_status,
 };
 use crabllm_core::Error;
 use std::{
     ffi::{CString, c_char},
-    os::raw::{c_int, c_void},
-    panic, ptr,
+    os::raw::c_void,
+    ptr,
 };
 
 /// Handle to a Swift-side multi-model pool.
@@ -27,6 +29,7 @@ impl MlxPool {
     /// Create a pool with idle eviction. `idle_timeout_secs == 0` uses
     /// the Swift default (30 min).
     pub fn new(idle_timeout_secs: u64) -> Result<Self, Error> {
+        crate::metallib::ensure_metallib();
         let mut pool_ptr: *mut ffi::CrabllmMlxPool = ptr::null_mut();
         let mut err_ptr: *mut c_char = ptr::null_mut();
         let status =
@@ -43,7 +46,7 @@ impl MlxPool {
     }
 
     /// Non-streaming generation through the pool.
-    pub fn generate(
+    pub(crate) fn generate(
         &self,
         model_dir: &str,
         req: &crate::session::GenerateRequest<'_>,
@@ -81,7 +84,7 @@ impl MlxPool {
     }
 
     /// Streaming generation through the pool.
-    pub fn generate_stream<F>(
+    pub(crate) fn generate_stream<F>(
         &self,
         model_dir: &str,
         req: &crate::session::GenerateRequest<'_>,
@@ -93,42 +96,6 @@ impl MlxPool {
         let model_c = CString::new(model_dir)
             .map_err(|_| Error::Internal("mlx: model_dir contains NUL byte".to_string()))?;
         let owned = OwnedRequest::new(req)?;
-
-        struct TrampolineState<'cb, F: FnMut(&str) -> bool> {
-            cb: &'cb mut F,
-            panicked: bool,
-        }
-
-        extern "C" fn trampoline<F: FnMut(&str) -> bool>(
-            token: *const c_char,
-            user_data: *mut c_void,
-        ) -> c_int {
-            if user_data.is_null() {
-                return 1;
-            }
-            let state = unsafe { &mut *(user_data as *mut TrampolineState<'_, F>) };
-            if state.panicked {
-                return 1;
-            }
-            if token.is_null() {
-                return 0;
-            }
-            let slice = unsafe { std::ffi::CStr::from_ptr(token) };
-            let s = match slice.to_str() {
-                Ok(s) => s,
-                Err(_) => return 1,
-            };
-            let cb = &mut state.cb;
-            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| (*cb)(s)));
-            match result {
-                Ok(true) => 1,
-                Ok(false) => 0,
-                Err(_) => {
-                    state.panicked = true;
-                    1
-                }
-            }
-        }
 
         let mut state = TrampolineState {
             cb: &mut on_token,
@@ -169,14 +136,14 @@ impl MlxPool {
     }
 
     /// Evict a single model.
-    pub fn evict(&self, model_dir: &str) {
+    pub(crate) fn evict(&self, model_dir: &str) {
         if let Ok(c) = CString::new(model_dir) {
             unsafe { ffi::crabllm_mlx_pool_evict(self.inner.as_ptr(), c.as_ptr()) };
         }
     }
 
     /// Evict all models and stop the idle monitor.
-    pub fn stop_all(&self) {
+    pub(crate) fn stop_all(&self) {
         unsafe { ffi::crabllm_mlx_pool_stop_all(self.inner.as_ptr()) };
     }
 }

@@ -42,6 +42,7 @@ sha2 = "0.11"
 redis = { version = "1", features = ["aio", "tokio-comp"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 ureq = "3"
+hf-hub = "0.5"
 which = "8"
 flate2 = "1"
 tar = "0.4"

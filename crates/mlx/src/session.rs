@@ -20,7 +20,8 @@
 //!     from the user callback. This is strictly simpler than an atomic
 //!     poll because the callback is synchronous.
 
-use crate::ffi;
+#![allow(dead_code)] // Session is pub(crate); used by pool + C smoke tests
+use crate::{ffi, metallib};
 use crabllm_core::Error;
 use std::{
     ffi::{CStr, CString},
@@ -31,18 +32,17 @@ use std::{
     sync::atomic::AtomicU32,
 };
 
-/// Sampling / generation knobs mirroring `CrabllmMlxGenerateOptions`.
-/// Zero / non-positive fields mean "Swift-side default".
+/// Sampling / generation knobs. Zero / non-positive values mean
+/// "Swift-side default".
 #[derive(Debug, Clone, Copy, Default)]
-pub struct GenerateOptions {
-    pub seed: u64,
+pub(crate) struct GenerateOptions {
     pub max_tokens: u32,
     pub temperature: f32,
     pub top_p: f32,
 }
 
 /// Per-call input to [`Session::generate`] / [`Session::generate_stream`].
-pub struct GenerateRequest<'a> {
+pub(crate) struct GenerateRequest<'a> {
     /// UTF-8 JSON array of OpenAI-shape chat messages. Must be non-empty.
     pub messages_json: &'a str,
     /// Optional UTF-8 JSON array of OpenAI-shape tool definitions.
@@ -55,7 +55,7 @@ pub struct GenerateRequest<'a> {
 
 /// Result of a non-streaming generation.
 #[derive(Debug, Clone)]
-pub struct GenerateOutput {
+pub(crate) struct GenerateOutput {
     pub text: String,
     pub tool_calls_json: Option<String>,
     pub prompt_tokens: u32,
@@ -65,7 +65,7 @@ pub struct GenerateOutput {
 /// Result of a streaming generation (text is delivered through the
 /// token callback; only metadata comes back here).
 #[derive(Debug, Clone)]
-pub struct StreamOutput {
+pub(crate) struct StreamOutput {
     pub tool_calls_json: Option<String>,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -79,7 +79,7 @@ pub struct StreamOutput {
 /// is to keep every `Session` behind an `Arc` and only drop it after
 /// every consumer of the `Arc` has returned. Users who expose a bare
 /// `Session` and then drop it mid-flight get UB; don't do that.
-pub struct Session {
+pub(crate) struct Session {
     inner: ptr::NonNull<ffi::CrabllmMlxSession>,
 }
 
@@ -95,6 +95,7 @@ impl Session {
     ///
     /// Blocking. On a tokio runtime, wrap the call in `spawn_blocking`.
     pub fn new(model_dir: impl AsRef<Path>) -> Result<Self, Error> {
+        metallib::ensure_metallib();
         let path = model_dir.as_ref();
         let path_str = path.to_str().ok_or_else(|| {
             Error::Internal(format!(
@@ -267,7 +268,7 @@ impl OwnedRequest {
             messages_json: messages.as_ptr(),
             tools_json: tools_ptr,
             options: ffi::CrabllmMlxGenerateOptions {
-                seed: req.options.seed,
+                seed: 0, // mlx-swift-lm has no seed knob; reserved in ABI
                 max_tokens: req.options.max_tokens,
                 temperature: req.options.temperature,
                 top_p: req.options.top_p,
@@ -321,12 +322,12 @@ impl Drop for ResultGuard {
 /// State threaded through the streaming callback. The caller holds
 /// `cb: &mut F` on the stack; the pointer is valid for the duration of
 /// the synchronous FFI call and invalid immediately after.
-struct TrampolineState<'cb, F: FnMut(&str) -> bool> {
-    cb: &'cb mut F,
-    panicked: bool,
+pub(crate) struct TrampolineState<'cb, F: FnMut(&str) -> bool> {
+    pub cb: &'cb mut F,
+    pub panicked: bool,
 }
 
-extern "C" fn trampoline<F: FnMut(&str) -> bool>(
+pub(crate) extern "C" fn trampoline<F: FnMut(&str) -> bool>(
     token: *const c_char,
     user_data: *mut c_void,
 ) -> c_int {

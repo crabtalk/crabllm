@@ -25,6 +25,12 @@ import MLXLLM
 import MLXLMCommon
 import Tokenizers
 
+// Force the ObjC runtime to load MLXLLM's TrampolineModelFactory.
+// Without this, NSClassFromString("MLXLLM.TrampolineModelFactory")
+// returns nil in a static library because the linker dead-strips the
+// unreferenced ObjC class. This no-op reference keeps it alive.
+private let _forceLoadLLMFactory: AnyClass? = TrampolineModelFactory.self
+
 // MARK: - Status constants (pinned by smoke.c _Static_asserts)
 
 let CRABLLM_MLX_OK: Int32 = 0
@@ -459,14 +465,6 @@ public func crabllm_mlx_session_free(_ session: UnsafeMutableRawPointer?) {
 /// `onChunk` closure is nil for non-streaming and swallows each text
 /// chunk for streaming. Returns the final accumulated text (always
 /// populated; the streaming caller discards it).
-private func runGeneration(
-    _ session: CrabllmMlxSession,
-    _ view: RequestView,
-    onChunk: ((String) -> Bool)?
-) throws -> (text: String, toolCallsJson: String?, promptTokens: UInt32, completionTokens: UInt32) {
-    return try runGenerationWithContainer(session.container, view, onChunk: onChunk)
-}
-
 /// Core generation driving a `ModelContainer`. Called by both the
 /// session FFI and the pool FFI so the logic lives in one place.
 func runGenerationWithContainer(
@@ -604,7 +602,7 @@ public func crabllm_mlx_generate(
 
     return withSession(session) { session in
         do {
-            let out = try runGeneration(session, view, onChunk: nil)
+            let out = try runGenerationWithContainer(session.container, view, onChunk: nil)
             resultSetText(result, out.text)
             resultSetToolCallsJson(result, out.toolCallsJson)
             resultSetPromptTokens(result, out.promptTokens)
@@ -646,7 +644,7 @@ public func crabllm_mlx_generate_stream(
 
     return withSession(session) { session in
         do {
-            let out = try runGeneration(session, view, onChunk: { chunk in
+            let out = try runGenerationWithContainer(session.container, view, onChunk: { chunk in
                 let stop = chunk.withCString { ptr -> Int32 in
                     tokenCb(ptr, userData)
                 }

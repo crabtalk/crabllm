@@ -43,34 +43,23 @@ impl MlxProvider {
         Self { pool }
     }
 
-    pub fn pool(&self) -> &Arc<MlxPool> {
-        &self.pool
-    }
-
     /// Resolve a model name to a local directory path. If it's already
     /// a directory, use it. Otherwise treat it as a HuggingFace repo id
-    /// and download into the cache.
+    /// and download via `hf-hub` (respects `$HF_TOKEN`, `$HF_ENDPOINT`).
     async fn resolve_model_dir(&self, model_id: &str) -> Result<PathBuf, Error> {
         let as_path = Path::new(model_id);
         if as_path.exists() && as_path.is_dir() {
             return Ok(as_path.to_path_buf());
         }
 
-        let cache_dir = download::default_cache_dir()?;
-        if let Some(cached) = download::cached_model_path(model_id, &cache_dir) {
+        if let Some(cached) = download::cached_model_path(model_id) {
             return Ok(cached);
         }
 
         let repo = model_id.to_string();
-        tokio::task::spawn_blocking(move || {
-            download::download_model(&repo, &cache_dir, &|downloaded, total| {
-                if let Some(total) = total {
-                    tracing::debug!(downloaded, total, "mlx: downloading");
-                }
-            })
-        })
-        .await
-        .map_err(|e| Error::Internal(format!("mlx: download task panicked: {e}")))?
+        tokio::task::spawn_blocking(move || download::download_model(&repo))
+            .await
+            .map_err(|e| Error::Internal(format!("mlx: download task panicked: {e}")))?
     }
 }
 
@@ -210,7 +199,6 @@ impl Provider for MlxProvider {
 
 fn request_options(request: &ChatCompletionRequest) -> GenerateOptions {
     GenerateOptions {
-        seed: request.seed.unwrap_or(0),
         max_tokens: request.max_tokens.unwrap_or(0),
         temperature: request.temperature.map(|t| t as f32).unwrap_or(0.0),
         top_p: request.top_p.map(|t| t as f32).unwrap_or(0.0),
@@ -218,25 +206,10 @@ fn request_options(request: &ChatCompletionRequest) -> GenerateOptions {
 }
 
 fn serialize_messages(messages: &[crabllm_core::Message]) -> Result<String, Error> {
-    #[derive(serde::Serialize)]
-    struct Out<'a> {
-        role: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        content: Option<String>,
-    }
-    let out: Vec<Out<'_>> = messages
-        .iter()
-        .map(|msg| Out {
-            role: msg.role.as_str(),
-            content: msg.content_str().map(|s| s.to_string()).or_else(|| {
-                msg.content
-                    .as_ref()
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-            }),
-        })
-        .collect();
-    serde_json::to_string(&out)
+    // Serialize the full Message structs — they include role, content,
+    // tool_calls, tool_call_id, name, and reasoning_content. The Swift
+    // side parses what it needs via JSONSerialization.
+    serde_json::to_string(messages)
         .map_err(|e| Error::Internal(format!("mlx: serialize messages: {e}")))
 }
 
