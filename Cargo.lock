@@ -477,10 +477,13 @@ version = "0.0.15"
 dependencies = [
  "crabllm-core",
  "dirs",
+ "futures",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "ureq",
+ "uuid",
 ]
 
 [[package]]

@@ -15,8 +15,11 @@ categories = ["api-bindings"]
 
 [dependencies]
 crabllm-core.workspace = true
+futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
 ureq.workspace = true
+uuid.workspace = true
 dirs.workspace = true
 tracing.workspace = true
