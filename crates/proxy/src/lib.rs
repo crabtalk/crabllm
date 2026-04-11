@@ -11,6 +11,7 @@ pub use auth::KeyName;
 pub use state::{AppState, UsageEvent};
 
 pub mod admin;
+pub mod anthropic;
 pub mod auth;
 pub mod ext;
 mod handlers;
