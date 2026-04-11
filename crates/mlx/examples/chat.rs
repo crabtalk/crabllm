@@ -106,7 +106,11 @@ async fn main() {
         let models = crabllm_mlx::registry::list();
         eprintln!("{} predefined models:\n", models.len());
         for m in &models {
-            println!("{:<45} {}", m.alias, m.repo_id);
+            let kind = match m.kind {
+                crabllm_mlx::registry::ModelKind::Llm => "llm",
+                crabllm_mlx::registry::ModelKind::Vlm => "vlm",
+            };
+            println!("{:<6} {:<45} {}", kind, m.alias, m.repo_id);
         }
         return;
     }

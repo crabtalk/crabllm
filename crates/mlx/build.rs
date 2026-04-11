@@ -27,7 +27,7 @@ fn main() {
         let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
         fs::write(
             out_dir.join("model_registry.rs"),
-            "pub const MODEL_REGISTRY: &[(&str, &str, &str)] = &[];\n",
+            "pub const MODEL_REGISTRY: &[(&str, &str, &str, &str)] = &[];\n",
         )
         .expect("write empty model_registry.rs");
         return;
@@ -82,7 +82,7 @@ fn main() {
         println!("cargo:warning=strip -S -x failed on {}", lib_path.display());
     }
 
-    // Generate the model registry from mlx-swift-lm's LLMModelFactory.
+    // Generate the model registry from mlx-swift-lm's LLM + VLM factories.
     generate_model_registry(&mlx_dir);
 
     // Compile Metal shaders into a metallib and write it to OUT_DIR
@@ -277,19 +277,48 @@ fn compile_metallib(mlx_dir: &Path) {
     println!("cargo:rustc-env=MLX_METALLIB_PATH={}", metallib.display());
 }
 
-/// Parse `LLMModelFactory.swift` and generate a Rust registry of
-/// supported models at `$OUT_DIR/model_registry.rs`.
+/// Parse `LLMModelFactory.swift` + `VLMModelFactory.swift` and generate
+/// a Rust registry of supported models at `$OUT_DIR/model_registry.rs`.
 fn generate_model_registry(mlx_dir: &Path) {
-    let factory_path =
+    let llm_factory =
         mlx_dir.join(".build/checkouts/mlx-swift-lm/Libraries/MLXLLM/LLMModelFactory.swift");
-    let source = match fs::read_to_string(&factory_path) {
+    let vlm_factory =
+        mlx_dir.join(".build/checkouts/mlx-swift-lm/Libraries/MLXVLM/VLMModelFactory.swift");
+
+    let mut entries = Vec::new();
+    entries.extend(scrape_factory(&llm_factory, "llm"));
+    entries.extend(scrape_factory(&vlm_factory, "vlm"));
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    let mut code = String::from(
+        "/// Auto-generated from mlx-swift-lm's LLM + VLM model factories.\n\
+         /// Each entry: (alias, hf_repo_id, default_prompt, kind).\n\
+         /// `kind` is \"llm\" or \"vlm\" — matches the factory the entry came from.\n\
+         pub const MODEL_REGISTRY: &[(&str, &str, &str, &str)] = &[\n",
+    );
+    for (alias, id, prompt, kind) in &entries {
+        let escaped_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
+        code.push_str(&format!(
+            "    (\"{alias}\", \"{id}\", \"{escaped_prompt}\", \"{kind}\"),\n"
+        ));
+    }
+    code.push_str("];\n");
+
+    let registry_path = out_dir.join("model_registry.rs");
+    fs::write(&registry_path, &code).expect("write model_registry.rs");
+}
+
+/// Scrape `ModelConfiguration(id: ..., defaultPrompt: ...)` declarations
+/// out of one `*ModelFactory.swift` file and tag each with `kind`.
+fn scrape_factory(path: &Path, kind: &'static str) -> Vec<(String, String, String, &'static str)> {
+    let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            println!("cargo:warning=cannot read LLMModelFactory.swift: {e}");
-            return;
+            println!("cargo:warning=cannot read {}: {e}", path.display());
+            return Vec::new();
         }
     };
-    println!("cargo:rerun-if-changed={}", factory_path.display());
+    println!("cargo:rerun-if-changed={}", path.display());
 
     // Parse entries like:
     //   static public let foo = ModelConfiguration(
@@ -326,28 +355,12 @@ fn generate_model_registry(mlx_dir: &Path) {
                     .strip_prefix("mlx-community/")
                     .unwrap_or(&id)
                     .to_lowercase();
-                entries.push((alias, id, prompt));
+                entries.push((alias, id, prompt, kind));
             }
         }
         i += 1;
     }
-
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
-    let mut code = String::from(
-        "/// Auto-generated from mlx-swift-lm's LLMModelFactory.swift.\n\
-         /// Each entry: (alias, hf_repo_id, default_prompt).\n\
-         pub const MODEL_REGISTRY: &[(&str, &str, &str)] = &[\n",
-    );
-    for (alias, id, prompt) in &entries {
-        let escaped_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
-        code.push_str(&format!(
-            "    (\"{alias}\", \"{id}\", \"{escaped_prompt}\"),\n"
-        ));
-    }
-    code.push_str("];\n");
-
-    let registry_path = out_dir.join("model_registry.rs");
-    fs::write(&registry_path, &code).expect("write model_registry.rs");
+    entries
 }
 
 /// True if the current target is an iOS simulator (not a device). We

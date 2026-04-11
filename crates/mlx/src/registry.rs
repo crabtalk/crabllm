@@ -1,15 +1,34 @@
 //! Predefined model registry, auto-generated from mlx-swift-lm's
-//! `LLMModelFactory.swift` at build time.
+//! `LLMModelFactory.swift` + `VLMModelFactory.swift` at build time.
 //!
-//! Each entry is a `(alias, hf_repo_id, default_prompt)` tuple. The
-//! alias is a lowercase version of the HuggingFace model name (e.g.
-//! `"qwen3.5-2b-mlx-4bit"` for `mlx-community/Qwen3.5-2B-MLX-4bit`).
+//! Each entry is a `(alias, hf_repo_id, default_prompt, kind)` tuple.
+//! The alias is a lowercase version of the HuggingFace model name
+//! (e.g. `"qwen3.5-2b-mlx-4bit"` for `mlx-community/Qwen3.5-2B-MLX-4bit`).
 //!
 //! Use [`resolve`] to map an alias or full repo id to the canonical
 //! HF repo path. Use [`list`] to get all available models for UI
 //! display.
 
 include!(concat!(env!("OUT_DIR"), "/model_registry.rs"));
+
+/// Which mlx-swift-lm factory a model belongs to. `Llm` models accept
+/// text only; `Vlm` models accept text plus image (and sometimes video)
+/// content parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelKind {
+    Llm,
+    Vlm,
+}
+
+impl ModelKind {
+    fn from_tag(tag: &str) -> Self {
+        match tag {
+            "llm" => Self::Llm,
+            "vlm" => Self::Vlm,
+            other => panic!("unknown model kind tag in generated registry: {other:?}"),
+        }
+    }
+}
 
 /// A model entry from the registry.
 #[derive(Debug, Clone)]
@@ -20,16 +39,19 @@ pub struct ModelEntry {
     pub repo_id: &'static str,
     /// Example prompt for the model.
     pub default_prompt: &'static str,
+    /// Whether the model is an LLM or a VLM.
+    pub kind: ModelKind,
 }
 
 /// List all predefined models.
 pub fn list() -> Vec<ModelEntry> {
     MODEL_REGISTRY
         .iter()
-        .map(|&(alias, repo_id, default_prompt)| ModelEntry {
+        .map(|&(alias, repo_id, default_prompt, kind)| ModelEntry {
             alias,
             repo_id,
             default_prompt,
+            kind: ModelKind::from_tag(kind),
         })
         .collect()
 }
@@ -49,8 +71,8 @@ pub fn resolve(model: &str) -> Option<&'static str> {
         return Some(
             MODEL_REGISTRY
                 .iter()
-                .find(|(_, id, _)| *id == model)
-                .map(|(_, id, _)| *id)
+                .find(|(_, id, _, _)| *id == model)
+                .map(|(_, id, _, _)| *id)
                 .unwrap_or_else(|| {
                     // Not in registry but looks like a repo id — pass through.
                     // Leak is fine: this is called once per model load.
@@ -63,6 +85,6 @@ pub fn resolve(model: &str) -> Option<&'static str> {
     let lower = model.to_lowercase();
     MODEL_REGISTRY
         .iter()
-        .find(|(alias, _, _)| *alias == lower)
-        .map(|(_, id, _)| *id)
+        .find(|(alias, _, _, _)| *alias == lower)
+        .map(|(_, id, _, _)| *id)
 }
