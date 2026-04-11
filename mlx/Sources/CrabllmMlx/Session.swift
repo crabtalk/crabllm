@@ -23,13 +23,19 @@ import Foundation
 import MLXHuggingFace
 import MLXLLM
 import MLXLMCommon
+import MLXVLM
 import Tokenizers
 
-// Force the ObjC runtime to load MLXLLM's TrampolineModelFactory.
-// Without this, NSClassFromString("MLXLLM.TrampolineModelFactory")
-// returns nil in a static library because the linker dead-strips the
-// unreferenced ObjC class. This no-op reference keeps it alive.
-private let _forceLoadLLMFactory: AnyClass? = TrampolineModelFactory.self
+// Force the ObjC runtime to load the TrampolineModelFactory classes
+// from MLXLLM and MLXVLM. Without these, NSClassFromString lookups
+// for "MLXLLM.TrampolineModelFactory" / "MLXVLM.TrampolineModelFactory"
+// return nil in a static library because the linker dead-strips the
+// unreferenced ObjC classes. `loadModelContainer` auto-dispatches
+// through `ModelFactoryRegistry`, which walks both trampolines in
+// order (VLM first, then LLM) — if either is missing the corresponding
+// model family silently fails to load.
+private let _forceLoadLLMFactory: AnyClass? = MLXLLM.TrampolineModelFactory.self
+private let _forceLoadVLMFactory: AnyClass? = MLXVLM.TrampolineModelFactory.self
 
 // MARK: - Status constants (pinned by smoke.c _Static_asserts)
 
