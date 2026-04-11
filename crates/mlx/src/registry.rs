@@ -9,26 +9,21 @@
 //! HF repo path. Use [`list`] to get all available models for UI
 //! display.
 
-include!(concat!(env!("OUT_DIR"), "/model_registry.rs"));
-
 /// Which mlx-swift-lm factory a model belongs to. `Llm` models accept
 /// text only; `Vlm` models accept text plus image (and sometimes video)
 /// content parts.
+///
+/// Declared *before* the `include!` so the generated `MODEL_REGISTRY`
+/// can reference `ModelKind::Llm` / `ModelKind::Vlm` variants directly
+/// — no stringly-typed runtime parse, no panic branch, the enum
+/// invariant is enforced by rustc at build time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelKind {
     Llm,
     Vlm,
 }
 
-impl ModelKind {
-    fn from_tag(tag: &str) -> Self {
-        match tag {
-            "llm" => Self::Llm,
-            "vlm" => Self::Vlm,
-            other => panic!("unknown model kind tag in generated registry: {other:?}"),
-        }
-    }
-}
+include!(concat!(env!("OUT_DIR"), "/model_registry.rs"));
 
 /// A model entry from the registry.
 #[derive(Debug, Clone)]
@@ -51,7 +46,7 @@ pub fn list() -> Vec<ModelEntry> {
             alias,
             repo_id,
             default_prompt,
-            kind: ModelKind::from_tag(kind),
+            kind,
         })
         .collect()
 }

@@ -27,7 +27,7 @@ fn main() {
         let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
         fs::write(
             out_dir.join("model_registry.rs"),
-            "pub const MODEL_REGISTRY: &[(&str, &str, &str, &str)] = &[];\n",
+            "pub const MODEL_REGISTRY: &[(&str, &str, &str, ModelKind)] = &[];\n",
         )
         .expect("write empty model_registry.rs");
         return;
@@ -279,6 +279,11 @@ fn compile_metallib(mlx_dir: &Path) {
 
 /// Parse `LLMModelFactory.swift` + `VLMModelFactory.swift` and generate
 /// a Rust registry of supported models at `$OUT_DIR/model_registry.rs`.
+///
+/// The `kind` column is emitted as a `ModelKind` variant, not a string
+/// tag — `ModelKind` is already in scope inside the generated file via
+/// `include!`, so the enum invariant is enforced by rustc at build time
+/// and no runtime parse / panic branch exists.
 fn generate_model_registry(mlx_dir: &Path) {
     let llm_factory =
         mlx_dir.join(".build/checkouts/mlx-swift-lm/Libraries/MLXLLM/LLMModelFactory.swift");
@@ -286,20 +291,19 @@ fn generate_model_registry(mlx_dir: &Path) {
         mlx_dir.join(".build/checkouts/mlx-swift-lm/Libraries/MLXVLM/VLMModelFactory.swift");
 
     let mut entries = Vec::new();
-    entries.extend(scrape_factory(&llm_factory, "llm"));
-    entries.extend(scrape_factory(&vlm_factory, "vlm"));
+    entries.extend(scrape_factory(&llm_factory, "ModelKind::Llm"));
+    entries.extend(scrape_factory(&vlm_factory, "ModelKind::Vlm"));
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let mut code = String::from(
         "/// Auto-generated from mlx-swift-lm's LLM + VLM model factories.\n\
          /// Each entry: (alias, hf_repo_id, default_prompt, kind).\n\
-         /// `kind` is \"llm\" or \"vlm\" — matches the factory the entry came from.\n\
-         pub const MODEL_REGISTRY: &[(&str, &str, &str, &str)] = &[\n",
+         pub const MODEL_REGISTRY: &[(&str, &str, &str, ModelKind)] = &[\n",
     );
     for (alias, id, prompt, kind) in &entries {
         let escaped_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
         code.push_str(&format!(
-            "    (\"{alias}\", \"{id}\", \"{escaped_prompt}\", \"{kind}\"),\n"
+            "    (\"{alias}\", \"{id}\", \"{escaped_prompt}\", {kind}),\n"
         ));
     }
     code.push_str("];\n");
@@ -310,6 +314,9 @@ fn generate_model_registry(mlx_dir: &Path) {
 
 /// Scrape `ModelConfiguration(id: ..., defaultPrompt: ...)` declarations
 /// out of one `*ModelFactory.swift` file and tag each with `kind`.
+/// `kind` is emitted verbatim into the generated Rust source, so it
+/// must be a valid `ModelKind` variant expression (`"ModelKind::Llm"`
+/// or `"ModelKind::Vlm"`).
 fn scrape_factory(path: &Path, kind: &'static str) -> Vec<(String, String, String, &'static str)> {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
