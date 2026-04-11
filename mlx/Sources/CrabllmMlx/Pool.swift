@@ -57,14 +57,26 @@ actor MlxPool {
         return container
     }
 
-    func evict(_ modelDir: String) {
-        models.removeValue(forKey: modelDir)
+    /// Returns `true` if the slot was present before this call.
+    func evict(_ modelDir: String) -> Bool {
+        models.removeValue(forKey: modelDir) != nil
     }
 
     func stopAll() {
         models.removeAll()
         monitorTask?.cancel()
         monitorTask = nil
+    }
+
+    /// Snapshot every loaded slot's name and last-used time. Returns
+    /// the minimum the FFI wrapper needs to build a `LoadedModel`
+    /// array; memory-footprint computation is a filesystem scan and
+    /// runs *outside* the actor so it doesn't block concurrent
+    /// generate / evict calls.
+    func snapshot() -> [(name: String, lastUsedUnix: Int64)] {
+        models.map { (dir, entry) in
+            (name: dir, lastUsedUnix: Int64(entry.lastUsed.timeIntervalSince1970))
+        }
     }
 
     private func evictExpired() {
@@ -236,10 +248,16 @@ public func crabllm_mlx_pool_generate_stream(
 public func crabllm_mlx_pool_evict(
     _ pool: UnsafeMutableRawPointer?,
     _ modelDirPath: UnsafePointer<CChar>?
-) {
-    guard let pool = pool, let dir = swiftString(modelDirPath) else { return }
+) -> Int32 {
+    guard let pool = pool, let dir = swiftString(modelDirPath) else { return 0 }
     let actor = Unmanaged<MlxPoolBox>.fromOpaque(pool).takeUnretainedValue().pool
-    try? blockingAwait { await actor.evict(dir) }
+    let wasPresent: Bool
+    do {
+        wasPresent = try blockingAwait { await actor.evict(dir) }
+    } catch {
+        return 0
+    }
+    return wasPresent ? 1 : 0
 }
 
 @_cdecl("crabllm_mlx_pool_stop_all")
@@ -247,4 +265,146 @@ public func crabllm_mlx_pool_stop_all(_ pool: UnsafeMutableRawPointer?) {
     guard let pool = pool else { return }
     let actor = Unmanaged<MlxPoolBox>.fromOpaque(pool).takeUnretainedValue().pool
     try? blockingAwait { await actor.stopAll() }
+}
+
+// MARK: - Loaded model inventory
+//
+// The C ABI struct `CrabllmMlxLoadedModel` is written via byte-offset
+// stores against an `UnsafeMutableRawPointer` buffer, mirroring the
+// `CrabllmMlxGenerateResult` pattern in Session.swift. We don't define
+// a Swift struct for it because plain Swift structs have no layout
+// guarantee — smoke.c pins the C-side layout, and these offset
+// constants are the Swift-side mirror pinned to those same values.
+
+private let loadedOffsetName = 0
+private let loadedOffsetMemoryBytes = 8
+private let loadedOffsetLastUsedUnix = 16
+private let loadedModelStride = 24
+
+/// Sum of weight-file sizes under a model directory. Best-effort:
+/// unreadable / missing paths contribute zero. Runs outside the actor
+/// so concurrent generate/evict aren't blocked on filesystem I/O.
+private func bestEffortWeightBytes(atPath dir: String) -> UInt64 {
+    let fm = FileManager.default
+    let url = URL(fileURLWithPath: dir)
+    guard let entries = try? fm.contentsOfDirectory(
+        at: url,
+        includingPropertiesForKeys: [.fileSizeKey],
+        options: [.skipsHiddenFiles]
+    ) else {
+        return 0
+    }
+    var total: UInt64 = 0
+    for entry in entries {
+        let ext = entry.pathExtension.lowercased()
+        guard ext == "safetensors" || ext == "bin" || ext == "gguf" else { continue }
+        if let size = try? entry.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            total &+= UInt64(size)
+        }
+    }
+    return total
+}
+
+/// Free all strdup'd name pointers in a loaded-model buffer, then
+/// deallocate the buffer. `count` must match the allocation.
+private func loadedBufferFreeNames(_ buf: UnsafeMutableRawPointer, _ count: Int) {
+    for i in 0..<count {
+        let slot = buf.advanced(by: i * loadedModelStride + loadedOffsetName)
+            .assumingMemoryBound(to: UnsafeMutablePointer<CChar>?.self)
+        if let name = slot.pointee {
+            free(UnsafeMutableRawPointer(name))
+            slot.pointee = nil
+        }
+    }
+}
+
+@_cdecl("crabllm_mlx_pool_list_loaded")
+public func crabllm_mlx_pool_list_loaded(
+    _ pool: UnsafeMutableRawPointer?,
+    _ outArray: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ outCount: UnsafeMutablePointer<Int>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    guard let outArray = outArray, let outCount = outCount else {
+        if let outError = outError {
+            outError.pointee = cString("out_array / out_count is NULL")
+        }
+        return CRABLLM_MLX_ERR_INVALID_ARG
+    }
+    outArray.pointee = nil
+    outCount.pointee = 0
+
+    guard let pool = pool else {
+        if let outError = outError {
+            outError.pointee = cString("pool is NULL")
+        }
+        return CRABLLM_MLX_ERR_INVALID_ARG
+    }
+
+    let actor = Unmanaged<MlxPoolBox>.fromOpaque(pool).takeUnretainedValue().pool
+    let snapshot: [(name: String, lastUsedUnix: Int64)]
+    do {
+        snapshot = try blockingAwait { await actor.snapshot() }
+    } catch {
+        if let outError = outError {
+            outError.pointee = cString("pool list_loaded error: \(error)")
+        }
+        return CRABLLM_MLX_ERR_UNKNOWN
+    }
+
+    let count = snapshot.count
+    if count == 0 {
+        return CRABLLM_MLX_OK
+    }
+
+    // Compute memory footprints outside the actor — each one is a
+    // FileManager scan, and we don't want to serialize all pool
+    // operations behind a directory enumeration.
+    let memoryBytes: [UInt64] = snapshot.map { bestEffortWeightBytes(atPath: $0.name) }
+
+    // Raw-byte buffer; field layout is pinned by smoke.c's
+    // _Static_assert on the C side and the `loadedOffset*` constants
+    // on this side.
+    let buf = UnsafeMutableRawPointer.allocate(
+        byteCount: count * loadedModelStride,
+        alignment: MemoryLayout<UInt64>.alignment
+    )
+    // Zero the buffer so partial-failure cleanup sees NULL name slots.
+    buf.initializeMemory(as: UInt8.self, repeating: 0, count: count * loadedModelStride)
+
+    for (idx, entry) in snapshot.enumerated() {
+        guard let namePtr = cString(entry.name) else {
+            // strdup OOM: release any names we've already written,
+            // deallocate, and report failure.
+            loadedBufferFreeNames(buf, idx)
+            buf.deallocate()
+            if let outError = outError {
+                outError.pointee = cString("pool list_loaded: out of memory")
+            }
+            return CRABLLM_MLX_ERR_UNKNOWN
+        }
+        let base = buf.advanced(by: idx * loadedModelStride)
+        base.advanced(by: loadedOffsetName)
+            .assumingMemoryBound(to: UnsafeMutablePointer<CChar>?.self)
+            .pointee = namePtr
+        base.advanced(by: loadedOffsetMemoryBytes)
+            .assumingMemoryBound(to: UInt.self)
+            .pointee = UInt(memoryBytes[idx])
+        base.advanced(by: loadedOffsetLastUsedUnix)
+            .assumingMemoryBound(to: Int64.self)
+            .pointee = entry.lastUsedUnix
+    }
+    outArray.pointee = buf
+    outCount.pointee = count
+    return CRABLLM_MLX_OK
+}
+
+@_cdecl("crabllm_mlx_pool_loaded_free")
+public func crabllm_mlx_pool_loaded_free(
+    _ array: UnsafeMutableRawPointer?,
+    _ count: Int
+) {
+    guard let array = array else { return }
+    loadedBufferFreeNames(array, count)
+    array.deallocate()
 }

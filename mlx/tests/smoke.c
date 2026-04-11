@@ -65,6 +65,15 @@ _Static_assert(offsetof(CrabllmMlxGenerateResult, completion_tokens) == 20,
 _Static_assert(offsetof(CrabllmMlxGenerateResult, error) == 24,
                "result.error must be at offset 24");
 
+_Static_assert(sizeof(CrabllmMlxLoadedModel) == 24,
+               "CrabllmMlxLoadedModel must be 24 bytes (8+8+8) on 64-bit");
+_Static_assert(offsetof(CrabllmMlxLoadedModel, name) == 0,
+               "loaded_model.name must be at offset 0");
+_Static_assert(offsetof(CrabllmMlxLoadedModel, memory_bytes) == 8,
+               "loaded_model.memory_bytes must be at offset 8");
+_Static_assert(offsetof(CrabllmMlxLoadedModel, last_used_unix) == 16,
+               "loaded_model.last_used_unix must be at offset 16");
+
 /* Status constant pins. */
 _Static_assert(CRABLLM_MLX_OK == 0, "OK must be 0");
 _Static_assert(CRABLLM_MLX_ERR_INVALID_ARG == 1, "INVALID_ARG must be 1");
@@ -129,6 +138,25 @@ static int test_null_safety(void) {
     crabllm_mlx_session_free(NULL);
     crabllm_mlx_string_free(NULL);
     crabllm_mlx_result_free(NULL);
+    crabllm_mlx_pool_loaded_free(NULL, 0);
+    return 0;
+}
+
+static int test_pool_list_loaded_rejects_null_pool(void) {
+    CrabllmMlxLoadedModel *arr = (CrabllmMlxLoadedModel *)0xdeadbeef;
+    size_t count = 42;
+    char *err = NULL;
+    CrabllmMlxStatus status = crabllm_mlx_pool_list_loaded(NULL, &arr, &count, &err);
+    if (status == CRABLLM_MLX_OK) {
+        FAIL("pool_list_loaded(NULL) should have failed");
+    }
+    if (err == NULL) {
+        FAIL("pool_list_loaded(NULL) did not populate out_error");
+    }
+    if (count != 0) {
+        FAIL("pool_list_loaded(NULL) should have zeroed out_count, got %zu", count);
+    }
+    crabllm_mlx_string_free(err);
     return 0;
 }
 
@@ -137,6 +165,7 @@ int main(void) {
     if (test_session_new_rejects_empty() != 0) return 1;
     if (test_session_new_rejects_missing_dir() != 0) return 1;
     if (test_null_safety() != 0) return 1;
+    if (test_pool_list_loaded_rejects_null_pool() != 0) return 1;
     printf("smoke: ok\n");
     return 0;
 }

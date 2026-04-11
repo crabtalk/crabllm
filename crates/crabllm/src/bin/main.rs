@@ -450,6 +450,7 @@ async fn run<S: Storage + 'static>(
         extensions: Arc::new(extensions),
         storage,
         key_map,
+        usage_events: None,
     };
 
     let app = crabllm_proxy::router(state, admin_routes);

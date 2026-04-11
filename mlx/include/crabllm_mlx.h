@@ -253,11 +253,60 @@ CrabllmMlxStatus crabllm_mlx_pool_generate_stream(
     void *user_data,
     CrabllmMlxGenerateResult *result);
 
-/* Evict a single model from the pool. No-op if not loaded. */
-void crabllm_mlx_pool_evict(CrabllmMlxPool *pool, const char *model_dir_path);
+/*
+ * Evict a single model from the pool. Returns 1 if the slot was
+ * present and was evicted, 0 otherwise (slot absent, NULL args, or
+ * Swift-side error). Idempotent: calling on an absent slot is a
+ * no-op aside from the return value.
+ */
+int32_t crabllm_mlx_pool_evict(CrabllmMlxPool *pool, const char *model_dir_path);
 
 /* Evict all models and stop the idle monitor. */
 void crabllm_mlx_pool_stop_all(CrabllmMlxPool *pool);
+
+/*
+ * One entry in the pool's loaded-model inventory. Ownership: returned
+ * by crabllm_mlx_pool_list_loaded in a caller-owned array that must
+ * be released with crabllm_mlx_pool_loaded_free. `name` is a null-
+ * terminated UTF-8 string (the local directory path the pool stores
+ * the slot under). `memory_bytes` is a best-effort resident footprint
+ * — currently the sum of weight-file sizes on disk (.safetensors /
+ * .bin / .gguf), which dominates MLX's unified-memory footprint.
+ * `last_used_unix` is seconds since the epoch of the last generate
+ * call that touched the slot.
+ *
+ * Field order is chosen to eliminate padding on 64-bit: 8, 8, 8.
+ */
+typedef struct {
+    const char *name;
+    size_t memory_bytes;
+    int64_t last_used_unix;
+} CrabllmMlxLoadedModel;
+
+/*
+ * Snapshot the pool's loaded-model inventory.
+ *
+ * On success, `*out_array` points to a newly allocated array of
+ * `*out_count` `CrabllmMlxLoadedModel` entries; the caller owns the
+ * array and every `name` pointer inside it, and must release the
+ * whole thing via `crabllm_mlx_pool_loaded_free`. On empty pool,
+ * `*out_count == 0` and `*out_array` may be NULL.
+ *
+ * Blocking. Call from a background thread. Actor-isolated: races
+ * cleanly against concurrent generate / evict calls.
+ */
+CrabllmMlxStatus crabllm_mlx_pool_list_loaded(
+    CrabllmMlxPool *pool,
+    CrabllmMlxLoadedModel **out_array,
+    size_t *out_count,
+    char **out_error);
+
+/*
+ * Release the array returned by crabllm_mlx_pool_list_loaded. Frees
+ * every `name` pointer and the array itself. Safe to call with
+ * array == NULL and count == 0.
+ */
+void crabllm_mlx_pool_loaded_free(CrabllmMlxLoadedModel *array, size_t count);
 
 #ifdef __cplusplus
 }

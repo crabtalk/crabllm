@@ -12,10 +12,23 @@ use crate::session::{
 };
 use crabllm_core::Error;
 use std::{
-    ffi::{CString, c_char},
+    ffi::{CStr, CString, c_char},
     os::raw::c_void,
     ptr,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+/// One entry in [`MlxPool::loaded_models`]'s inventory. `name` is the
+/// local directory path the pool stores the slot under (what was
+/// passed to `generate`). `memory_bytes` is a best-effort weight-file
+/// footprint on disk — the weights dominate MLX's unified-memory
+/// residency, so it's a stable proxy for "how big is this slot".
+#[derive(Debug, Clone)]
+pub struct LoadedModel {
+    pub name: String,
+    pub memory_bytes: u64,
+    pub last_used: SystemTime,
+}
 
 /// Handle to a Swift-side multi-model pool.
 pub struct MlxPool {
@@ -135,16 +148,79 @@ impl MlxPool {
         }
     }
 
-    /// Evict a single model.
-    pub(crate) fn evict(&self, model_dir: &str) {
-        if let Ok(c) = CString::new(model_dir) {
-            unsafe { ffi::crabllm_mlx_pool_evict(self.inner.as_ptr(), c.as_ptr()) };
-        }
+    /// Evict a single model. Returns `true` if the slot was present
+    /// before the call (i.e. something was actually unloaded).
+    pub(crate) fn evict(&self, model_dir: &str) -> bool {
+        let Ok(c) = CString::new(model_dir) else {
+            return false;
+        };
+        unsafe { ffi::crabllm_mlx_pool_evict(self.inner.as_ptr(), c.as_ptr()) == 1 }
     }
 
     /// Evict all models and stop the idle monitor.
     pub(crate) fn stop_all(&self) {
         unsafe { ffi::crabllm_mlx_pool_stop_all(self.inner.as_ptr()) };
+    }
+
+    /// Snapshot the pool's loaded-model inventory.
+    ///
+    /// Each returned [`LoadedModel`] is a copy of the Swift-side slot
+    /// at snapshot time. Concurrent generate / evict calls race
+    /// cleanly against the snapshot's name + timestamp read, but the
+    /// `memory_bytes` field is computed by a filesystem scan that
+    /// happens *outside* the Swift actor to avoid blocking other
+    /// pool operations. If the model directory is wiped between the
+    /// snapshot and the scan — rare, but possible if another thread
+    /// calls `unload` on exactly this slot while a status poll is in
+    /// flight — the scan returns zero. Such zero-byte entries are
+    /// dropped from the result rather than reported as a misleading
+    /// "Qwen · 0 B · 3m ago" row. Genuine empty directories (model
+    /// never successfully loaded) are unlikely and accepting the
+    /// loss there is cheaper than the alternative.
+    pub fn loaded_models(&self) -> Result<Vec<LoadedModel>, Error> {
+        let mut arr: *mut ffi::CrabllmMlxLoadedModel = ptr::null_mut();
+        let mut count: usize = 0;
+        let mut err: *mut c_char = ptr::null_mut();
+        let status = unsafe {
+            ffi::crabllm_mlx_pool_list_loaded(self.inner.as_ptr(), &mut arr, &mut count, &mut err)
+        };
+        if status != ffi::CRABLLM_MLX_OK {
+            let msg = unsafe { take_owned_c_string(err) };
+            return Err(translate_status(status, msg));
+        }
+
+        // Empty inventory: Swift may leave arr NULL; count == 0.
+        // Nothing to free and nothing to copy.
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut out = Vec::with_capacity(count);
+        for i in 0..count {
+            let item = unsafe { &*arr.add(i) };
+            // TOCTOU filter: zero memory_bytes means the FS scan
+            // found nothing at the dir (raced with an evict that
+            // cleaned up the cache). Drop the row rather than
+            // surface a misleading entry.
+            if item.memory_bytes == 0 {
+                continue;
+            }
+            let name = if item.name.is_null() {
+                String::new()
+            } else {
+                unsafe { CStr::from_ptr(item.name) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            let last_used = UNIX_EPOCH + Duration::from_secs(item.last_used_unix.max(0) as u64);
+            out.push(LoadedModel {
+                name,
+                memory_bytes: item.memory_bytes as u64,
+                last_used,
+            });
+        }
+        unsafe { ffi::crabllm_mlx_pool_loaded_free(arr, count) };
+        Ok(out)
     }
 }
 

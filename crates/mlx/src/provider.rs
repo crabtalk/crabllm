@@ -12,7 +12,7 @@
 
 use crate::{
     download,
-    pool::MlxPool,
+    pool::{LoadedModel, MlxPool},
     session::{GenerateOptions, GenerateRequest},
 };
 use crabllm_core::{
@@ -43,6 +43,12 @@ impl MlxProvider {
         Self { pool }
     }
 
+    /// Snapshot the pool's loaded-model inventory. See
+    /// [`MlxPool::loaded_models`] for the full contract.
+    pub fn loaded_models(&self) -> Result<Vec<LoadedModel>, Error> {
+        self.pool.loaded_models()
+    }
+
     /// Resolve a model name to a local directory path.
     ///
     /// Accepts: local directory path, full HF repo id, or a registry
@@ -50,19 +56,52 @@ impl MlxProvider {
     /// is not cached. Use [`download::download_model`] to download
     /// explicitly before calling the provider.
     fn resolve_model_dir(&self, model_id: &str) -> Result<PathBuf, Error> {
-        let as_path = Path::new(model_id);
-        if as_path.exists() && as_path.is_dir() {
-            return Ok(as_path.to_path_buf());
-        }
-
-        let repo_id = crate::registry::resolve(model_id).unwrap_or(model_id);
-
-        download::cached_model_path(repo_id).ok_or_else(|| {
+        self.lookup_cached_model_dir(model_id).ok_or_else(|| {
+            let repo_id = crate::registry::resolve(model_id).unwrap_or(model_id);
             Error::Internal(format!(
                 "mlx: model not downloaded: {repo_id}. \
                  Use download::download_model() first."
             ))
         })
+    }
+
+    fn lookup_cached_model_dir(&self, model_id: &str) -> Option<PathBuf> {
+        let as_path = Path::new(model_id);
+        if as_path.exists() && as_path.is_dir() {
+            return Some(as_path.to_path_buf());
+        }
+        let repo_id = crate::registry::resolve(model_id).unwrap_or(model_id);
+        download::cached_model_path(repo_id)
+    }
+
+    /// Unload a model from the pool.
+    ///
+    /// Accepts the same inputs as a generate call: a local directory
+    /// path, a full HuggingFace repo id, or a registry alias.
+    ///
+    /// Returns `true` if the slot was loaded in the pool at the
+    /// moment of the call and was actually evicted; `false` if the
+    /// model was not cached on disk or was cached but not loaded in
+    /// the pool. Downstream admin endpoints can map `false` to a
+    /// 404 "not loaded" response and `true` to a 200 "evicted".
+    ///
+    /// Generations already in flight for this model continue
+    /// uninterrupted: the Swift side holds a strong reference to the
+    /// `ModelContainer` for the duration of the call, so dropping it
+    /// from the pool's slot table only releases the pool's reference.
+    /// The next request for this model reloads from disk.
+    pub fn unload(&self, model_id: &str) -> bool {
+        let Some(dir) = self.lookup_cached_model_dir(model_id) else {
+            return false;
+        };
+        self.pool.evict(&dir.to_string_lossy())
+    }
+
+    /// Evict every loaded model and stop the idle monitor. The pool
+    /// handle remains valid — subsequent requests will load models
+    /// on demand but no new idle sweep will run.
+    pub fn unload_all(&self) {
+        self.pool.stop_all();
     }
 }
 

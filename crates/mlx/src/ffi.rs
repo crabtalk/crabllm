@@ -52,6 +52,16 @@ pub struct CrabllmMlxGenerateResult {
     pub error: *mut c_char,
 }
 
+/// Layout mirror of `CrabllmMlxLoadedModel` in `crabllm_mlx.h`.
+/// `memory_bytes` is `size_t` on the C side — `usize` here keeps
+/// the ABI stable on 64-bit platforms (the only target we build).
+#[repr(C)]
+pub struct CrabllmMlxLoadedModel {
+    pub name: *const c_char,
+    pub memory_bytes: usize,
+    pub last_used_unix: i64,
+}
+
 pub type CrabllmMlxTokenFn = unsafe extern "C" fn(*const c_char, *mut c_void) -> c_int;
 
 #[allow(dead_code)] // Session-level FFI is used by tests and as an escape hatch
@@ -107,7 +117,16 @@ unsafe extern "C" {
         result: *mut CrabllmMlxGenerateResult,
     ) -> CrabllmMlxStatus;
 
-    pub fn crabllm_mlx_pool_evict(pool: *mut CrabllmMlxPool, model_dir_path: *const c_char);
+    pub fn crabllm_mlx_pool_evict(pool: *mut CrabllmMlxPool, model_dir_path: *const c_char) -> i32;
 
     pub fn crabllm_mlx_pool_stop_all(pool: *mut CrabllmMlxPool);
+
+    pub fn crabllm_mlx_pool_list_loaded(
+        pool: *mut CrabllmMlxPool,
+        out_array: *mut *mut CrabllmMlxLoadedModel,
+        out_count: *mut usize,
+        out_error: *mut *mut c_char,
+    ) -> CrabllmMlxStatus;
+
+    pub fn crabllm_mlx_pool_loaded_free(array: *mut CrabllmMlxLoadedModel, count: usize);
 }

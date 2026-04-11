@@ -8,7 +8,7 @@ use axum::{
 use crabllm_core::{Provider, Storage};
 
 pub use auth::KeyName;
-pub use state::AppState;
+pub use state::{AppState, UsageEvent};
 
 pub mod admin;
 pub mod auth;
