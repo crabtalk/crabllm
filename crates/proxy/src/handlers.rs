@@ -2,7 +2,7 @@ use crate::{AppState, auth::KeyName, state::UsageEvent};
 use axum::{
     Extension, Json,
     extract::{Multipart, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{
         IntoResponse, Response,
         sse::{Event, Sse},
@@ -22,7 +22,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant, SystemTime};
 
-fn record_duration(ctx: &RequestContext, status: &'static str) {
+pub(crate) fn record_duration(ctx: &RequestContext, status: &'static str) {
     metrics::histogram!("crabllm_request_duration_seconds",
         "provider" => ctx.provider.clone(),
         "model" => ctx.model.clone(),
@@ -32,7 +32,7 @@ fn record_duration(ctx: &RequestContext, status: &'static str) {
     .record(ctx.started_at.elapsed().as_secs_f64());
 }
 
-fn error_status(e: &crabllm_core::Error) -> &'static str {
+pub(crate) fn error_status(e: &crabllm_core::Error) -> &'static str {
     match e {
         crabllm_core::Error::Provider { status, .. } => match status {
             429 => "429",
@@ -43,7 +43,7 @@ fn error_status(e: &crabllm_core::Error) -> &'static str {
     }
 }
 
-fn record_tokens(ctx: &RequestContext, prompt: u32, completion: u32) {
+pub(crate) fn record_tokens(ctx: &RequestContext, prompt: u32, completion: u32) {
     if prompt > 0 {
         metrics::counter!("crabllm_tokens_total",
             "provider" => ctx.provider.clone(),
@@ -62,7 +62,7 @@ fn record_tokens(ctx: &RequestContext, prompt: u32, completion: u32) {
     }
 }
 
-fn emit_usage<S: Storage, P: Provider>(
+pub(crate) fn emit_usage<S: Storage, P: Provider>(
     state: &AppState<S, P>,
     ctx: &RequestContext,
     endpoint: &'static str,
@@ -97,7 +97,7 @@ fn http_status_from_error(e: &crabllm_core::Error) -> u16 {
     }
 }
 
-fn emit_usage_error<S: Storage, P: Provider>(
+pub(crate) fn emit_usage_error<S: Storage, P: Provider>(
     state: &AppState<S, P>,
     ctx: &RequestContext,
     endpoint: &'static str,
@@ -428,16 +428,47 @@ where
 }
 
 /// GET /v1/models
-pub async fn models<S, P>(State(state): State<AppState<S, P>>) -> Json<ModelList>
+///
+/// Serves OpenAI-shaped model list by default. When the request carries an
+/// Anthropic-flavored auth header (`x-api-key` without `Authorization: Bearer`)
+/// or the `anthropic-version` header, returns Anthropic's model-list shape
+/// instead, so the official Anthropic SDKs see the response format they expect.
+pub async fn models<S, P>(State(state): State<AppState<S, P>>, headers: HeaderMap) -> Response
 where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let data: Vec<Model> = state
+    let names: Vec<String> = state
         .registry
         .model_names()
+        .map(|n| n.to_string())
+        .collect();
+
+    if is_anthropic_client(&headers) {
+        let data: Vec<serde_json::Value> = names
+            .into_iter()
+            .map(|id| {
+                serde_json::json!({
+                    "type": "model",
+                    "id": id.clone(),
+                    "display_name": id,
+                    "created_at": "1970-01-01T00:00:00Z",
+                })
+            })
+            .collect();
+        return Json(serde_json::json!({
+            "data": data,
+            "has_more": false,
+            "first_id": null,
+            "last_id": null,
+        }))
+        .into_response();
+    }
+
+    let data: Vec<Model> = names
+        .into_iter()
         .map(|name| Model {
-            id: name.to_string(),
+            id: name,
             object: "model".to_string(),
             created: 0,
             owned_by: "crabllm".to_string(),
@@ -448,6 +479,21 @@ where
         object: "list".to_string(),
         data,
     })
+    .into_response()
+}
+
+fn is_anthropic_client(headers: &HeaderMap) -> bool {
+    if headers.contains_key("anthropic-version") {
+        return true;
+    }
+    // `x-api-key` without a Bearer Authorization header is the Anthropic SDK's
+    // default auth shape. OpenAI SDKs always send Authorization: Bearer.
+    headers.contains_key("x-api-key")
+        && !headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .map(|h| h.starts_with("Bearer "))
+            .unwrap_or(false)
 }
 
 /// POST /v1/images/generations
@@ -736,7 +782,7 @@ where
 
 /// Call a provider with a timeout, converting elapsed to Error::Timeout.
 /// A zero duration disables the timeout.
-async fn with_timeout<F, T>(timeout: Duration, fut: F) -> Result<T, crabllm_core::Error>
+pub(crate) async fn with_timeout<F, T>(timeout: Duration, fut: F) -> Result<T, crabllm_core::Error>
 where
     F: std::future::Future<Output = Result<T, crabllm_core::Error>>,
 {
@@ -756,7 +802,7 @@ fn jittered(backoff: Duration) -> Duration {
 }
 
 /// Retry a non-streaming chat completion on a single deployment.
-async fn try_chat_with_retries<P: Provider>(
+pub(crate) async fn try_chat_with_retries<P: Provider>(
     deployment: &Deployment<P>,
     request: &ChatCompletionRequest,
 ) -> Result<crabllm_core::ChatCompletionResponse, crabllm_core::Error> {
@@ -800,7 +846,7 @@ async fn try_chat_with_retries<P: Provider>(
 }
 
 /// Retry a streaming chat completion on a single deployment.
-async fn try_stream_with_retries<P: Provider>(
+pub(crate) async fn try_stream_with_retries<P: Provider>(
     deployment: &Deployment<P>,
     request: &ChatCompletionRequest,
 ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, crabllm_core::Error>>, crabllm_core::Error>
@@ -879,7 +925,7 @@ async fn try_embedding_with_retries<P: Provider>(
 }
 
 /// Map a provider Error to an HTTP error response.
-fn error_response(e: crabllm_core::Error) -> Response {
+pub(crate) fn error_response(e: crabllm_core::Error) -> Response {
     let (status, api_error) = match &e {
         crabllm_core::Error::Provider { status, body } => (
             StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY),

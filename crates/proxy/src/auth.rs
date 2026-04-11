@@ -32,18 +32,22 @@ pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
         return next.run(request).await;
     }
 
-    let auth_header = request
-        .headers()
+    // Accept either OpenAI-style `Authorization: Bearer <key>` or Anthropic-style
+    // `x-api-key: <key>`. Both map to the same virtual-key lookup.
+    let headers = request.headers();
+    let bearer = headers
         .get("authorization")
-        .and_then(|v| v.to_str().ok());
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "));
+    let x_api_key = headers.get("x-api-key").and_then(|v| v.to_str().ok());
 
-    let token = match auth_header.and_then(|h| h.strip_prefix("Bearer ")) {
+    let token = match bearer.or(x_api_key) {
         Some(t) => t,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(ApiError::new(
-                    "missing or invalid Authorization header",
+                    "missing Authorization or x-api-key header",
                     "authentication_error",
                 )),
             )

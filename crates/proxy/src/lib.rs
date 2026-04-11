@@ -14,7 +14,7 @@ pub mod admin;
 pub mod anthropic;
 pub mod auth;
 pub mod ext;
-mod handlers;
+pub(crate) mod handlers;
 mod state;
 pub mod storage;
 
@@ -39,6 +39,7 @@ where
             "/v1/chat/completions",
             post(handlers::chat_completions::<S, P>),
         )
+        .route("/v1/messages", post(anthropic::messages::<S, P>))
         .route("/v1/embeddings", post(handlers::embeddings::<S, P>))
         .route(
             "/v1/images/generations",
