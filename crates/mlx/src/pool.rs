@@ -12,10 +12,23 @@ use crate::session::{
 };
 use crabllm_core::Error;
 use std::{
-    ffi::{CString, c_char},
+    ffi::{CStr, CString, c_char},
     os::raw::c_void,
     ptr,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+/// One entry in [`MlxPool::loaded_models`]'s inventory. `name` is the
+/// local directory path the pool stores the slot under (what was
+/// passed to `generate`). `memory_bytes` is a best-effort weight-file
+/// footprint on disk — the weights dominate MLX's unified-memory
+/// residency, so it's a stable proxy for "how big is this slot".
+#[derive(Debug, Clone)]
+pub struct LoadedModel {
+    pub name: String,
+    pub memory_bytes: u64,
+    pub last_used: SystemTime,
+}
 
 /// Handle to a Swift-side multi-model pool.
 pub struct MlxPool {
@@ -145,6 +158,56 @@ impl MlxPool {
     /// Evict all models and stop the idle monitor.
     pub(crate) fn stop_all(&self) {
         unsafe { ffi::crabllm_mlx_pool_stop_all(self.inner.as_ptr()) };
+    }
+
+    /// Snapshot the pool's loaded-model inventory.
+    ///
+    /// Each returned [`LoadedModel`] is a copy of the Swift-side slot
+    /// at snapshot time. Concurrent generate / evict calls race
+    /// cleanly against this — the Swift actor serializes the
+    /// snapshot with every other mutation.
+    pub fn loaded_models(&self) -> Result<Vec<LoadedModel>, Error> {
+        let mut arr: *mut ffi::CrabllmMlxLoadedModel = ptr::null_mut();
+        let mut count: usize = 0;
+        let mut err: *mut c_char = ptr::null_mut();
+        let status = unsafe {
+            ffi::crabllm_mlx_pool_list_loaded(
+                self.inner.as_ptr(),
+                &mut arr,
+                &mut count,
+                &mut err,
+            )
+        };
+        if status != ffi::CRABLLM_MLX_OK {
+            let msg = unsafe { take_owned_c_string(err) };
+            return Err(translate_status(status, msg));
+        }
+
+        // Empty inventory: Swift may leave arr NULL; count == 0.
+        // Nothing to free and nothing to copy.
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut out = Vec::with_capacity(count);
+        for i in 0..count {
+            let item = unsafe { &*arr.add(i) };
+            let name = if item.name.is_null() {
+                String::new()
+            } else {
+                unsafe { CStr::from_ptr(item.name) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            let last_used = UNIX_EPOCH + Duration::from_secs(item.last_used_unix.max(0) as u64);
+            out.push(LoadedModel {
+                name,
+                memory_bytes: item.memory_bytes as u64,
+                last_used,
+            });
+        }
+        unsafe { ffi::crabllm_mlx_pool_loaded_free(arr, count) };
+        Ok(out)
     }
 }
 

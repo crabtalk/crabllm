@@ -12,7 +12,7 @@
 
 use crate::{
     download,
-    pool::MlxPool,
+    pool::{LoadedModel, MlxPool},
     session::{GenerateOptions, GenerateRequest},
 };
 use crabllm_core::{
@@ -41,6 +41,12 @@ impl std::fmt::Debug for MlxProvider {
 impl MlxProvider {
     pub fn new(pool: Arc<MlxPool>) -> Self {
         Self { pool }
+    }
+
+    /// Snapshot the pool's loaded-model inventory. See
+    /// [`MlxPool::loaded_models`] for the full contract.
+    pub fn loaded_models(&self) -> Result<Vec<LoadedModel>, Error> {
+        self.pool.loaded_models()
     }
 
     /// Resolve a model name to a local directory path.
