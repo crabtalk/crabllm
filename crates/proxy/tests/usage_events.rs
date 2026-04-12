@@ -99,7 +99,6 @@ fn empty_config() -> GatewayConfig {
         pricing: HashMap::new(),
         admin_token: None,
         shutdown_timeout: 30,
-        llamacpp: None,
     }
 }
 

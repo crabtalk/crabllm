@@ -5,8 +5,6 @@ use crabllm_core::{
     ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, Extension, GatewayConfig,
     ImageRequest, MultipartField, Provider, Storage,
 };
-#[cfg(feature = "llamacpp")]
-use crabllm_llamacpp::LlamaCppProvider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use crabllm_proxy::{
     AppState,
@@ -42,28 +40,6 @@ enum Commands {
         #[arg(short, long)]
         bind: Option<String>,
     },
-    /// Manage llama.cpp server and models
-    #[cfg(feature = "llamacpp")]
-    #[command(name = "llamacpp")]
-    LlamaCpp {
-        #[command(subcommand)]
-        action: LlamaCppAction,
-    },
-}
-
-#[cfg(feature = "llamacpp")]
-#[derive(Subcommand)]
-enum LlamaCppAction {
-    /// Download the llama-server binary for this platform
-    Download {
-        /// Release tag (e.g. b4567). Defaults to latest.
-        #[arg(short, long)]
-        tag: Option<String>,
-    },
-    /// Check that llama-server is installed and reachable
-    Check,
-    /// Show the resolved path to the llama-server binary
-    Which,
 }
 
 #[tokio::main]
@@ -71,83 +47,21 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        #[cfg(feature = "llamacpp")]
-        Some(Commands::LlamaCpp { action }) => run_llamacpp(action),
         Some(Commands::Serve { config, bind }) => serve(config, bind).await,
         // Default: serve with default config path.
         None => serve(PathBuf::from("crabllm.toml"), None).await,
     }
 }
 
-#[cfg(feature = "llamacpp")]
-fn run_llamacpp(action: LlamaCppAction) {
-    match action {
-        LlamaCppAction::Download { tag } => match crabllm_llamacpp::download(tag.as_deref()) {
-            Ok(path) => {
-                eprintln!("llama-server ready at {}", path.display());
-            }
-            Err(e) => {
-                eprintln!("error: {e}");
-                std::process::exit(1);
-            }
-        },
-        LlamaCppAction::Check => {
-            match crabllm_llamacpp::find_server_binary() {
-                Ok(path) => {
-                    eprintln!("llama-server found: {}", path.display());
-                    let output = std::process::Command::new(&path).arg("--version").output();
-                    match output {
-                        Ok(out) => {
-                            // llama-server may print version to stdout or stderr.
-                            let version = String::from_utf8_lossy(&out.stdout);
-                            let version = version.trim();
-                            if !version.is_empty() {
-                                eprintln!("{version}");
-                            } else {
-                                let version = String::from_utf8_lossy(&out.stderr);
-                                let version = version.trim();
-                                if !version.is_empty() {
-                                    eprintln!("{version}");
-                                }
-                            }
-                        }
-                        Err(_) => eprintln!("(could not determine version)"),
-                    }
-                }
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        LlamaCppAction::Which => match crabllm_llamacpp::find_server_binary() {
-            Ok(path) => println!("{}", path.display()),
-            Err(e) => {
-                eprintln!("error: {e}");
-                std::process::exit(1);
-            }
-        },
-    }
-}
-
 /// Concrete provider type the gateway binary composes.
 ///
-/// Union of every provider source the binary links — remote HTTP APIs
-/// via [`RemoteProvider`] and (behind `--features llamacpp`) a local
-/// llama.cpp backend via [`LlamaCppProvider`]. The proxy crate is
-/// generic over `P: Provider`; the binary picks this enum as `P` so
-/// dispatch monomorphizes through a match/delegate with no dyn or
-/// per-call boxing.
-///
-/// `LlamaCpp` is feature-gated so a no-llamacpp build collapses to a
-/// single-variant enum with zero runtime cost. The trait methods live
-/// inline in this file because extracting them into their own file
-/// would require a sibling module under `src/bin/`, which is overkill
-/// for ~70 lines of match-delegate.
+/// The proxy crate is generic over `P: Provider`; the binary picks
+/// this enum as `P` so dispatch monomorphizes through a match/delegate
+/// with no dyn or per-call boxing. Currently a single-variant wrapper
+/// around [`RemoteProvider`] — local backends (MLX, llama.cpp) are
+/// separate binaries, not compiled into the gateway.
 enum Dispatch {
     Remote(RemoteProvider),
-    #[cfg(feature = "llamacpp")]
-    LlamaCpp(LlamaCppProvider),
 }
 
 impl Provider for Dispatch {
@@ -157,8 +71,6 @@ impl Provider for Dispatch {
     ) -> Result<ChatCompletionResponse, Error> {
         match self {
             Self::Remote(p) => p.chat_completion(request).await,
-            #[cfg(feature = "llamacpp")]
-            Self::LlamaCpp(p) => p.chat_completion(request).await,
         }
     }
 
@@ -168,32 +80,24 @@ impl Provider for Dispatch {
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
         match self {
             Self::Remote(p) => p.chat_completion_stream(request).await,
-            #[cfg(feature = "llamacpp")]
-            Self::LlamaCpp(p) => p.chat_completion_stream(request).await,
         }
     }
 
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         match self {
             Self::Remote(p) => p.embedding(request).await,
-            #[cfg(feature = "llamacpp")]
-            Self::LlamaCpp(p) => p.embedding(request).await,
         }
     }
 
     async fn image_generation(&self, request: &ImageRequest) -> Result<(Bytes, String), Error> {
         match self {
             Self::Remote(p) => p.image_generation(request).await,
-            #[cfg(feature = "llamacpp")]
-            Self::LlamaCpp(p) => p.image_generation(request).await,
         }
     }
 
     async fn audio_speech(&self, request: &AudioSpeechRequest) -> Result<(Bytes, String), Error> {
         match self {
             Self::Remote(p) => p.audio_speech(request).await,
-            #[cfg(feature = "llamacpp")]
-            Self::LlamaCpp(p) => p.audio_speech(request).await,
         }
     }
 
@@ -204,84 +108,8 @@ impl Provider for Dispatch {
     ) -> Result<(Bytes, String), Error> {
         match self {
             Self::Remote(p) => p.audio_transcription(model, fields).await,
-            #[cfg(feature = "llamacpp")]
-            Self::LlamaCpp(p) => p.audio_transcription(model, fields).await,
         }
     }
-}
-
-/// Attach the llama.cpp local backend to the registry and return the
-/// pool so `serve()` can hold it alive and drive a clean shutdown.
-///
-/// The pool is constructed with the configured knobs, starts its idle
-/// monitor, and is wrapped in a single `LlamaCppProvider` that's
-/// cloned into one `Deployment` per configured model — all sharing the
-/// same pool. A startup resolution check walks every model and fails
-/// fast if its GGUF is neither cached nor a valid path, so missing
-/// models produce a clear error at boot instead of on the first chat
-/// completion.
-#[cfg(feature = "llamacpp")]
-fn wire_llamacpp(
-    registry: &mut ProviderRegistry<Dispatch>,
-    cfg: &crabllm_core::LlamaCppGatewayConfig,
-) -> Result<Arc<crabllm_llamacpp::ServerPool>, crabllm_core::Error> {
-    use crabllm_llamacpp::{ServerPool, registry as reg};
-    use crabllm_provider::Deployment;
-    use std::path::Path;
-
-    let bin = crabllm_llamacpp::find_server_binary()?;
-
-    let cache_dir = match &cfg.cache_dir {
-        Some(s) => PathBuf::from(s),
-        None => reg::default_cache_dir()?,
-    };
-
-    // Resolution check — fail fast on missing models without spawning.
-    for model in &cfg.models {
-        if reg::cached_model_path(model, &cache_dir).is_some() {
-            continue;
-        }
-        if Path::new(model).exists() {
-            continue;
-        }
-        let (name, tag) = reg::parse_model_name(model);
-        return Err(crabllm_core::Error::Config(format!(
-            "llamacpp model '{name}:{tag}' not cached. Run: crabllm-llamacpp pull {model}"
-        )));
-    }
-
-    let mut pool = ServerPool::new(bin, cache_dir);
-    if let Some(secs) = cfg.idle_timeout_secs {
-        pool = pool.with_idle_timeout(Duration::from_secs(secs));
-    }
-    if let Some(n) = cfg.n_gpu_layers {
-        pool = pool.with_gpu_layers(n);
-    }
-    if let Some(n) = cfg.n_ctx {
-        pool = pool.with_ctx_size(n);
-    }
-    if let Some(n) = cfg.n_threads {
-        pool = pool.with_threads(n);
-    }
-    let pool = Arc::new(pool);
-    pool.start_idle_monitor();
-
-    let provider = LlamaCppProvider::new(pool.clone(), crabllm_provider::make_client());
-
-    for model in &cfg.models {
-        let deployment = Deployment {
-            provider: Dispatch::LlamaCpp(provider.clone()),
-            weight: 1,
-            // Retry against a local child is pointless; the pool already
-            // serializes starts and the child is process-local.
-            max_retries: 0,
-            // Generation can legitimately run long on CPU.
-            timeout: Duration::from_secs(600),
-        };
-        registry.insert_deployment(model.clone(), "llamacpp".to_string(), deployment);
-    }
-
-    Ok(pool)
 }
 
 async fn serve(config_path: PathBuf, bind: Option<String>) {
@@ -297,8 +125,7 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
         config.listen = bind;
     }
 
-    #[cfg_attr(not(feature = "llamacpp"), expect(unused_mut))]
-    let mut registry: ProviderRegistry<Dispatch> =
+    let registry: ProviderRegistry<Dispatch> =
         match ProviderRegistry::from_config(&config, Dispatch::Remote) {
             Ok(r) => r,
             Err(e) => {
@@ -306,22 +133,6 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
                 std::process::exit(1);
             }
         };
-
-    // Wire the llama.cpp local backend if [llamacpp] is present. The
-    // returned pool is held on this stack frame so the child processes
-    // stay alive for the server's lifetime, then explicitly stopped
-    // after `run(...)` returns.
-    #[cfg(feature = "llamacpp")]
-    let llama_pool = match config.llamacpp.clone() {
-        Some(cfg) => match wire_llamacpp(&mut registry, &cfg) {
-            Ok(pool) => Some(pool),
-            Err(e) => {
-                eprintln!("error: failed to wire llamacpp: {e}");
-                std::process::exit(1);
-            }
-        },
-        None => None,
-    };
 
     let storage_kind = config
         .storage
@@ -377,15 +188,6 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
             let storage = Arc::new(MemoryStorage::new());
             run(config, registry, storage).await;
         }
-    }
-
-    // Stop llama-server child processes cleanly after the gateway has
-    // drained. `LlamaCppServer::Drop` also kills the process, but
-    // calling `stop_all` here gives the idle monitor a chance to see
-    // the shutdown flag and exit without another tick.
-    #[cfg(feature = "llamacpp")]
-    if let Some(pool) = llama_pool {
-        pool.stop_all().await;
     }
 }
 

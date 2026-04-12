@@ -143,6 +143,9 @@ fn main() {
     // MLXLMCommon code even when we only ever use MLXLLM.
     println!("cargo:rustc-link-lib=framework=CoreGraphics");
     println!("cargo:rustc-link-lib=framework=CoreImage");
+    // Speech framework for SFSpeechRecognizer — used by
+    // MessageParsing.swift to transcribe `input_audio` content parts.
+    println!("cargo:rustc-link-lib=framework=Speech");
 
     // mlx-swift's C++ core (libCmlx.a) throws exceptions so the final
     // binary needs the libc++ exception runtime and personality

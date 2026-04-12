@@ -11,6 +11,7 @@
 import CoreImage
 import Foundation
 import MLXLMCommon
+import Speech
 
 // MARK: - Message parsing
 
@@ -21,10 +22,12 @@ import MLXLMCommon
 /// Content handling:
 ///   * Plain string content (`"content": "..."`) is used as-is.
 ///   * Array-of-parts content (`"content": [{"type":"text","text":"..."},
-///     {"type":"image_url","image_url":{"url":"..."}}]`) is walked:
-///     text parts concatenated into `content`, image parts decoded
-///     into `UserInput.Image` values and attached to the message.
-///     Audio and other unknown part types are dropped.
+///     {"type":"image_url","image_url":{"url":"..."}},
+///     {"type":"input_audio","input_audio":{"data":"<base64>","format":"wav"}}]`)
+///     is walked: text parts concatenated into `content`, image parts
+///     decoded into `UserInput.Image` values and attached to the
+///     message, audio parts transcribed via `SFSpeechRecognizer` and
+///     appended to the text buffer. Other unknown part types are dropped.
 ///   * Missing / null / non-string / non-array content becomes "".
 ///
 /// Image URLs in `image_url` parts may be any of:
@@ -139,6 +142,14 @@ func parseContent(_ value: Any?) throws -> (text: String, images: [UserInput.Ima
                 throw FFIError.invalidArg("image_url part is missing url")
             }
             images.append(try decodeImageURL(urlStr))
+        case "input_audio":
+            guard let audioObj = part["input_audio"] as? [String: Any],
+                  let b64 = audioObj["data"] as? String, !b64.isEmpty
+            else {
+                throw FFIError.invalidArg("input_audio part is missing data")
+            }
+            let format = (audioObj["format"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "wav"
+            text.append(try transcribeAudio(data: b64, format: format))
         default:
             continue
         }
@@ -216,6 +227,91 @@ func fetchImageBytes(_ url: URL) throws -> Data {
         throw FFIError.invalidArg("image_url fetch returned no data")
     }
     return data
+}
+
+/// Transcribe base64-encoded audio via Apple's `SFSpeechRecognizer`.
+///
+/// Same threading contract as `fetchImageBytes` — the FFI call runs
+/// on a dedicated `spawn_blocking` worker, so blocking on a
+/// `DispatchSemaphore` is safe. The recognizer runs on CPU/ANE,
+/// leaving the GPU free for MLX inference.
+///
+/// The `format` parameter becomes the temp file extension so
+/// `SFSpeechURLRecognitionRequest` can detect the audio codec
+/// (wav, mp3, m4a, etc.). Authorization is requested on first use;
+/// if the user denies it, subsequent calls fail immediately.
+private let audioTranscriptionTimeout: TimeInterval = 60
+
+func transcribeAudio(data b64: String, format: String) throws -> String {
+    // Request authorization if not yet determined.
+    let status = SFSpeechRecognizer.authorizationStatus()
+    if status == .notDetermined {
+        let authSemaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var granted = false
+        SFSpeechRecognizer.requestAuthorization { s in
+            granted = (s == .authorized)
+            authSemaphore.signal()
+        }
+        if authSemaphore.wait(timeout: .now() + 120) == .timedOut {
+            throw FFIError.invalidArg(
+                "input_audio: speech recognition authorization prompt timed out"
+            )
+        }
+        if !granted {
+            throw FFIError.invalidArg(
+                "input_audio: speech recognition authorization denied — "
+                + "grant permission in System Settings → Privacy & Security → Speech Recognition"
+            )
+        }
+    } else if status != .authorized {
+        throw FFIError.invalidArg(
+            "input_audio: speech recognition not authorized (status \(status.rawValue)) — "
+            + "grant permission in System Settings → Privacy & Security → Speech Recognition"
+        )
+    }
+
+    guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
+        throw FFIError.invalidArg("input_audio: SFSpeechRecognizer is not available")
+    }
+    guard let audioData = Data(base64Encoded: b64) else {
+        throw FFIError.invalidArg("input_audio: base64 payload failed to decode")
+    }
+
+    // Write to a temp file — SFSpeechURLRecognitionRequest needs a file URL.
+    let tempFile = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathExtension(format)
+    try audioData.write(to: tempFile)
+    defer { try? FileManager.default.removeItem(at: tempFile) }
+
+    let request = SFSpeechURLRecognitionRequest(url: tempFile)
+    request.shouldReportPartialResults = false
+
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var transcript: String?
+    nonisolated(unsafe) var recognitionError: Error?
+
+    let task = recognizer.recognitionTask(with: request) { result, error in
+        if let error = error {
+            recognitionError = error
+            semaphore.signal()
+            return
+        }
+        if let result = result, result.isFinal {
+            transcript = result.bestTranscription.formattedString
+            semaphore.signal()
+        }
+    }
+
+    let waitDeadline = DispatchTime.now() + audioTranscriptionTimeout
+    if semaphore.wait(timeout: waitDeadline) == .timedOut {
+        task.cancel()
+        throw FFIError.invalidArg("input_audio: transcription exceeded \(Int(audioTranscriptionTimeout))s timeout")
+    }
+    if let error = recognitionError {
+        throw FFIError.invalidArg("input_audio: transcription failed: \(error)")
+    }
+    return transcript ?? ""
 }
 
 /// Decode a `data:[<mediatype>];base64,<payload>` URL. Anchors on the

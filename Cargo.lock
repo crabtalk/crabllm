@@ -465,7 +465,6 @@ dependencies = [
  "bytes",
  "clap",
  "crabllm-core",
- "crabllm-llamacpp",
  "crabllm-provider",
  "crabllm-proxy",
  "metrics-exporter-prometheus",
