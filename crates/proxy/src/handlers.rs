@@ -245,7 +245,7 @@ where
 
                     let sse_stream = observed.map(|result| match result {
                         Ok(chunk) => {
-                            let json = serde_json::to_string(&chunk).unwrap_or_default();
+                            let json = sonic_rs::to_string(&chunk).unwrap_or_default();
                             Ok(Event::default().data(json))
                         }
                         Err(e) => {

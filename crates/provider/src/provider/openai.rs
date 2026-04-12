@@ -14,10 +14,12 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let resp = client
         .post(&url)
         .bearer_auth(api_key)
-        .json(request)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;
@@ -28,9 +30,8 @@ pub async fn chat_completion(
         return Err(Error::Provider { status, body });
     }
 
-    resp.json::<ChatCompletionResponse>()
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))
+    let bytes = resp.bytes().await.map_err(|e| Error::Internal(e.to_string()))?;
+    sonic_rs::from_slice(&bytes).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Send an embedding request to an OpenAI-compatible endpoint.
@@ -41,10 +42,12 @@ pub async fn embedding(
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingResponse, Error> {
     let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
+    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let resp = client
         .post(&url)
         .bearer_auth(api_key)
-        .json(request)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;
@@ -55,9 +58,8 @@ pub async fn embedding(
         return Err(Error::Provider { status, body });
     }
 
-    resp.json::<EmbeddingResponse>()
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))
+    let bytes = resp.bytes().await.map_err(|e| Error::Internal(e.to_string()))?;
+    sonic_rs::from_slice(&bytes).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Send a streaming chat completion to an OpenAI-compatible endpoint.
@@ -69,10 +71,12 @@ pub async fn chat_completion_stream(
     request: &ChatCompletionRequest,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let resp = client
         .post(&url)
         .bearer_auth(api_key)
-        .json(request)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;
@@ -220,7 +224,7 @@ pub(crate) fn sse_stream(resp: Response) -> impl Stream<Item = Result<ChatComple
                         if data == "[DONE]" {
                             return None;
                         }
-                        let result = match serde_json::from_str::<ChatCompletionChunk>(data) {
+                        let result = match sonic_rs::from_str::<ChatCompletionChunk>(data) {
                             Ok(chunk) => Ok(chunk),
                             Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
                         };

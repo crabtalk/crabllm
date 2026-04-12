@@ -27,10 +27,12 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     let url = azure_url(base_url, &request.model, "chat/completions", api_version);
+    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let resp = client
         .post(&url)
         .header("api-key", api_key)
-        .json(request)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;
@@ -41,9 +43,8 @@ pub async fn chat_completion(
         return Err(Error::Provider { status, body });
     }
 
-    resp.json::<ChatCompletionResponse>()
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))
+    let bytes = resp.bytes().await.map_err(|e| Error::Internal(e.to_string()))?;
+    sonic_rs::from_slice(&bytes).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Send an embedding request to an Azure OpenAI deployment.
@@ -55,10 +56,12 @@ pub async fn embedding(
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingResponse, Error> {
     let url = azure_url(base_url, &request.model, "embeddings", api_version);
+    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let resp = client
         .post(&url)
         .header("api-key", api_key)
-        .json(request)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;
@@ -69,9 +72,8 @@ pub async fn embedding(
         return Err(Error::Provider { status, body });
     }
 
-    resp.json::<EmbeddingResponse>()
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))
+    let bytes = resp.bytes().await.map_err(|e| Error::Internal(e.to_string()))?;
+    sonic_rs::from_slice(&bytes).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Send an image generation request to an Azure OpenAI deployment.
@@ -186,10 +188,12 @@ pub async fn chat_completion_stream(
     request: &ChatCompletionRequest,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let url = azure_url(base_url, &request.model, "chat/completions", api_version);
+    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let resp = client
         .post(&url)
         .header("api-key", api_key)
-        .json(request)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
         .send()
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;
