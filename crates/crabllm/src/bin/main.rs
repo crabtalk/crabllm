@@ -189,7 +189,6 @@ async fn serve(config_path: PathBuf, bind: Option<String>) {
             run(config, registry, storage).await;
         }
     }
-
 }
 
 async fn run<S: Storage + 'static>(
