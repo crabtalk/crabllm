@@ -10,13 +10,12 @@ keywords = ["llm", "gateway", "proxy", "openai", "anthropic"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
 [features]
-default = ["rustls", "llamacpp"]
+default = ["rustls"]
 native-tls = ["crabllm-proxy/native-tls"]
 rustls = ["crabllm-proxy/rustls"]
 storage-redis = ["crabllm-proxy/storage-redis"]
 storage-sqlite = ["crabllm-proxy/storage-sqlite"]
 provider-bedrock = ["crabllm-provider/provider-bedrock"]
-llamacpp = ["dep:crabllm-llamacpp"]
 
 [[bin]]
 name = "crabllm"
@@ -24,7 +23,6 @@ path = "src/bin/main.rs"
 
 [dependencies]
 crabllm-core = { workspace = true, features = ["gateway"] }
-crabllm-llamacpp = { workspace = true, optional = true }
 crabllm-provider.workspace = true
 crabllm-proxy.workspace = true
 

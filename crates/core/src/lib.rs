@@ -1,5 +1,5 @@
 pub use config::{
-    GatewayConfig, KeyConfig, LlamaCppGatewayConfig, PricingConfig, ProviderConfig, ProviderKind,
+    GatewayConfig, KeyConfig, PricingConfig, ProviderConfig, ProviderKind,
     StorageConfig, cost,
 };
 pub use error::{ApiError, ApiErrorBody, Error};
