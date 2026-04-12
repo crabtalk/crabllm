@@ -123,20 +123,13 @@ impl Provider for Dispatch {
         }
     }
 
-    async fn chat_completion_raw(
-        &self,
-        model: &str,
-        raw_body: Bytes,
-    ) -> Result<Bytes, Error> {
+    async fn chat_completion_raw(&self, model: &str, raw_body: Bytes) -> Result<Bytes, Error> {
         match self {
             Self::Remote(p) => p.chat_completion_raw(model, raw_body).await,
         }
     }
 
-    async fn anthropic_messages_raw(
-        &self,
-        raw_body: Bytes,
-    ) -> Result<Bytes, Error> {
+    async fn anthropic_messages_raw(&self, raw_body: Bytes) -> Result<Bytes, Error> {
         match self {
             Self::Remote(p) => p.anthropic_messages_raw(raw_body).await,
         }

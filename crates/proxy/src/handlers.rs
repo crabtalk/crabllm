@@ -423,7 +423,9 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
     for deployment in deployments {
         match with_timeout(
             deployment.timeout,
-            deployment.provider.chat_completion_raw(model, raw_body.clone()),
+            deployment
+                .provider
+                .chat_completion_raw(model, raw_body.clone()),
         )
         .await
         {

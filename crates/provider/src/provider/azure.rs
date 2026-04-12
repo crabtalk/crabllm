@@ -1,5 +1,5 @@
-use crate::provider::openai;
 use crate::HttpClient;
+use crate::provider::openai;
 use bytes::Bytes;
 use crabllm_core::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
@@ -29,10 +29,7 @@ pub async fn chat_completion(
 ) -> Result<ChatCompletionResponse, Error> {
     let url = azure_url(base_url, &request.model, "chat/completions", api_version);
     let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
-    let headers = [
-        ("content-type", "application/json"),
-        ("api-key", api_key),
-    ];
+    let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let resp = client
         .post(&url, &headers, body.into())
         .await
@@ -40,7 +37,10 @@ pub async fn chat_completion(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
@@ -57,10 +57,7 @@ pub async fn chat_completion_raw(
     raw_body: Bytes,
 ) -> Result<Bytes, Error> {
     let url = azure_url(base_url, model, "chat/completions", api_version);
-    let headers = [
-        ("content-type", "application/json"),
-        ("api-key", api_key),
-    ];
+    let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let resp = client
         .post(&url, &headers, raw_body)
         .await
@@ -68,7 +65,10 @@ pub async fn chat_completion_raw(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     Ok(resp.body)
@@ -84,10 +84,7 @@ pub async fn embedding(
 ) -> Result<EmbeddingResponse, Error> {
     let url = azure_url(base_url, &request.model, "embeddings", api_version);
     let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
-    let headers = [
-        ("content-type", "application/json"),
-        ("api-key", api_key),
-    ];
+    let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let resp = client
         .post(&url, &headers, body.into())
         .await
@@ -95,7 +92,10 @@ pub async fn embedding(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
@@ -139,10 +139,7 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
     request: &T,
 ) -> Result<(Bytes, String), Error> {
     let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
-    let headers = [
-        ("content-type", "application/json"),
-        ("api-key", api_key),
-    ];
+    let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let resp = client
         .post(url, &headers, body.into())
         .await
@@ -150,7 +147,10 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     let content_type = resp
@@ -183,7 +183,10 @@ pub async fn audio_transcription(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     let content_type = resp
@@ -203,13 +206,8 @@ pub async fn chat_completion_stream(
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let url = azure_url(base_url, &request.model, "chat/completions", api_version);
     let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
-    let headers = [
-        ("content-type", "application/json"),
-        ("api-key", api_key),
-    ];
-    let byte_stream = client
-        .post_stream(&url, &headers, body.into())
-        .await?;
+    let headers = [("content-type", "application/json"), ("api-key", api_key)];
+    let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 
     Ok(openai::sse_stream(byte_stream))
 }

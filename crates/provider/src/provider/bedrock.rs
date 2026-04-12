@@ -380,7 +380,10 @@ pub async fn chat_completion(
     );
 
     let signed = sign_headers("POST", &url, &body, region, access_key, secret_key)?;
-    let headers: Vec<(&str, &str)> = signed.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let headers: Vec<(&str, &str)> = signed
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     let resp = client
         .post(&url, &headers, body.into())
         .await
@@ -388,7 +391,10 @@ pub async fn chat_completion(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     let bedrock_resp: ConverseResponse =
@@ -527,10 +533,11 @@ pub async fn chat_completion_stream(
     );
 
     let signed = sign_headers("POST", &url, &body, region, access_key, secret_key)?;
-    let headers: Vec<(&str, &str)> = signed.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    let byte_stream = client
-        .post_stream(&url, &headers, body.into())
-        .await?;
+    let headers: Vec<(&str, &str)> = signed
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 
     let model = model.to_string();
     Ok(bedrock_event_stream(byte_stream, model))
@@ -791,9 +798,9 @@ mod sigv4 {
         access_key: &str,
         secret_key: &str,
     ) -> Result<Vec<(String, String)>, crabllm_core::Error> {
-        let parsed: http::Uri = url
-            .parse()
-            .map_err(|e: http::uri::InvalidUri| crabllm_core::Error::Internal(format!("bad url: {e}")))?;
+        let parsed: http::Uri = url.parse().map_err(|e: http::uri::InvalidUri| {
+            crabllm_core::Error::Internal(format!("bad url: {e}"))
+        })?;
         let host = parsed
             .host()
             .ok_or_else(|| crabllm_core::Error::Internal("url has no host".to_string()))?;

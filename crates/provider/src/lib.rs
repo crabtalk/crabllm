@@ -36,15 +36,9 @@ pub enum RemoteProvider {
         api_key: String,
     },
     /// Anthropic Messages API. Requires request/response translation.
-    Anthropic {
-        client: HttpClient,
-        api_key: String,
-    },
+    Anthropic { client: HttpClient, api_key: String },
     /// Google Gemini API. Requires request/response translation.
-    Google {
-        client: HttpClient,
-        api_key: String,
-    },
+    Google { client: HttpClient, api_key: String },
     /// AWS Bedrock. Requires SigV4 signing + translation.
     Bedrock {
         client: HttpClient,
@@ -420,14 +414,13 @@ impl Provider for RemoteProvider {
     }
 
     fn is_openai_compat(&self) -> bool {
-        matches!(self, RemoteProvider::Openai { .. } | RemoteProvider::Azure { .. })
+        matches!(
+            self,
+            RemoteProvider::Openai { .. } | RemoteProvider::Azure { .. }
+        )
     }
 
-    async fn chat_completion_raw(
-        &self,
-        model: &str,
-        raw_body: Bytes,
-    ) -> Result<Bytes, Error> {
+    async fn chat_completion_raw(&self, model: &str, raw_body: Bytes) -> Result<Bytes, Error> {
         match self {
             RemoteProvider::Openai {
                 client,
@@ -441,7 +434,12 @@ impl Provider for RemoteProvider {
                 api_version,
             } => {
                 provider::azure::chat_completion_raw(
-                    client, base_url, api_key, api_version, model, raw_body,
+                    client,
+                    base_url,
+                    api_key,
+                    api_version,
+                    model,
+                    raw_body,
                 )
                 .await
             }
@@ -457,10 +455,7 @@ impl Provider for RemoteProvider {
         matches!(self, RemoteProvider::Anthropic { .. })
     }
 
-    async fn anthropic_messages_raw(
-        &self,
-        raw_body: Bytes,
-    ) -> Result<Bytes, Error> {
+    async fn anthropic_messages_raw(&self, raw_body: Bytes) -> Result<Bytes, Error> {
         match self {
             RemoteProvider::Anthropic { client, api_key } => {
                 provider::anthropic::anthropic_messages_raw(client, api_key, raw_body).await

@@ -2,10 +2,7 @@ use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::{Stream, StreamExt};
 use http_body_util::{BodyExt, BodyStream, Full};
-use hyper_util::{
-    client::legacy::Client,
-    rt::TokioExecutor,
-};
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::pin::Pin;
 
 type Connector = hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
@@ -54,9 +51,7 @@ impl HttpClient {
             .parse()
             .map_err(|e: http::uri::InvalidUri| Error::Internal(e.to_string()))?;
 
-        let mut builder = http::Request::builder()
-            .method(http::Method::POST)
-            .uri(uri);
+        let mut builder = http::Request::builder().method(http::Method::POST).uri(uri);
         for &(name, value) in headers {
             builder = builder.header(name, value);
         }
@@ -102,9 +97,7 @@ impl HttpClient {
             .parse()
             .map_err(|e: http::uri::InvalidUri| Error::Internal(e.to_string()))?;
 
-        let mut builder = http::Request::builder()
-            .method(http::Method::POST)
-            .uri(uri);
+        let mut builder = http::Request::builder().method(http::Method::POST).uri(uri);
         for &(name, value) in headers {
             builder = builder.header(name, value);
         }
@@ -130,15 +123,15 @@ impl HttpClient {
             return Err(Error::Provider { status, body: text });
         }
 
-        Ok(Box::pin(
-            BodyStream::new(resp.into_body()).filter_map(|frame| {
+        Ok(Box::pin(BodyStream::new(resp.into_body()).filter_map(
+            |frame| {
                 let result = match frame {
                     Ok(f) => f.into_data().ok().map(Ok),
                     Err(e) => Some(Err(std::io::Error::new(std::io::ErrorKind::Other, e))),
                 };
                 std::future::ready(result)
-            }),
-        ))
+            },
+        )))
     }
 }
 

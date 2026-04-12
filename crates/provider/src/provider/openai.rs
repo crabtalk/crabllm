@@ -1,9 +1,9 @@
+use crate::{ByteStream, HttpClient};
 use bytes::{Buf, Bytes, BytesMut};
 use crabllm_core::{
     AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
     EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
 };
-use crate::{ByteStream, HttpClient};
 use futures::stream::{self, Stream};
 
 /// Send a non-streaming chat completion to an OpenAI-compatible endpoint.
@@ -26,7 +26,10 @@ pub async fn chat_completion(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
@@ -52,7 +55,10 @@ pub async fn embedding(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
@@ -78,7 +84,10 @@ pub async fn chat_completion_raw(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     Ok(resp.body)
@@ -98,9 +107,7 @@ pub async fn chat_completion_stream(
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let byte_stream = client
-        .post_stream(&url, &headers, body.into())
-        .await?;
+    let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 
     Ok(sse_stream(byte_stream))
 }
@@ -155,7 +162,10 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     let content_type = resp
@@ -186,7 +196,10 @@ pub async fn audio_transcription(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     let content_type = resp
@@ -196,7 +209,9 @@ pub async fn audio_transcription(
 }
 
 /// Parse an SSE byte stream into `ChatCompletionChunk` items.
-pub(crate) fn sse_stream(byte_stream: ByteStream) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> {
+pub(crate) fn sse_stream(
+    byte_stream: ByteStream,
+) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> {
     stream::unfold(
         (byte_stream, BytesMut::new()),
         |(mut byte_stream, mut buffer)| async move {

@@ -442,7 +442,10 @@ pub async fn chat_completion(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     let gemini_resp: GeminiResponse =
@@ -468,9 +471,7 @@ pub async fn chat_completion_stream(
         ("x-goog-api-key", api_key),
         ("content-type", "application/json"),
     ];
-    let byte_stream = client
-        .post_stream(&url, &headers, body.into())
-        .await?;
+    let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 
     let model = model.to_string();
     Ok(gemini_sse_stream(byte_stream, model))

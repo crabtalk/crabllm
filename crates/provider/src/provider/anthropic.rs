@@ -416,7 +416,10 @@ pub async fn anthropic_messages_raw(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     Ok(resp.body)
@@ -455,7 +458,10 @@ pub async fn chat_completion(
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider { status: resp.status, body });
+        return Err(Error::Provider {
+            status: resp.status,
+            body,
+        });
     }
 
     let anthropic_resp: AnthropicResponse =
@@ -486,9 +492,7 @@ pub async fn chat_completion_stream(
     if anthropic_req.thinking.is_some() {
         headers.push(("anthropic-beta", "interleaved-thinking-2025-05-14"));
     }
-    let byte_stream = client
-        .post_stream(&url, &headers, body.into())
-        .await?;
+    let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 
     let model = model.to_string();
     Ok(anthropic_sse_stream(byte_stream, model))
