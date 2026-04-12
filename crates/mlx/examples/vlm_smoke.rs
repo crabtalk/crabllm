@@ -16,7 +16,7 @@
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use crabllm_core::{ChatCompletionRequest, Message, Provider, Role};
-use crabllm_mlx::{DownloadEvent, MlxPool, MlxProvider, download_model};
+use crabllm_mlx::{DownloadEvent, MlxPool, MlxProvider, cached_model_path, download_model};
 use serde_json::{Value, json};
 use std::{error::Error, sync::Arc};
 
@@ -58,40 +58,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn ensure_downloaded() -> Result<(), Box<dyn Error>> {
-    // Always call download_model — hf-hub is idempotent and skips
-    // files that are already cached. This guards against partial
-    // downloads where only config.json was fetched previously.
-    eprintln!("ensuring {MODEL} is fully downloaded...");
+    if cached_model_path(MODEL).is_some() {
+        return Ok(());
+    }
+    eprintln!("downloading {MODEL}...");
     let (tx, rx) = std::sync::mpsc::channel();
     let repo = MODEL.to_string();
     let handle = std::thread::spawn(move || download_model(&repo, &tx));
-
-    let mut current_file = String::new();
-    let mut file_total: usize = 0;
-    let mut file_done: usize = 0;
     for event in rx {
-        match event {
-            DownloadEvent::FileStart {
-                filename,
-                total_bytes,
-            } => {
-                current_file = filename;
-                file_total = total_bytes;
-                file_done = 0;
-            }
-            DownloadEvent::FileProgress { bytes } => {
-                file_done += bytes;
-                if file_total > 0 {
-                    let pct = file_done * 100 / file_total;
-                    let mb = file_done / (1024 * 1024);
-                    let total_mb = file_total / (1024 * 1024);
-                    eprint!("\r  {current_file}: {mb}/{total_mb} MB ({pct}%)    ");
-                }
-            }
-            DownloadEvent::FileDone => {
-                eprintln!("\r  {current_file}: done                              ");
-            }
-            DownloadEvent::AllDone { .. } => {}
+        if let DownloadEvent::FileDone = event {
+            // drain — progress noise not needed for a smoke test
         }
     }
     handle.join().expect("download thread panicked")?;
