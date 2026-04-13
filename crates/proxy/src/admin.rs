@@ -46,8 +46,8 @@ pub fn key_admin_routes(
         .with_state(state)
 }
 
-/// Constant-time token comparison to prevent timing attacks.
-fn constant_time_eq(a: &str, b: &str) -> bool {
+/// Timing-resistant token comparison. Leaks length but not content.
+pub(crate) fn constant_time_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }

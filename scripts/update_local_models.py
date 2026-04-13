@@ -55,12 +55,7 @@ def get_size_mb(model) -> int | None:
     # But the API doesn't give disk size directly — compute from param counts.
     params = st.get("parameters", {})
     if not params:
-        # Fall back to total param count with rough estimate.
-        total = st.get("total", 0)
-        if total == 0:
-            return None
-        # Assume average 4 bits per param for quantized models.
-        return max(1, int(total * 0.5 / 1_000_000))
+        return None
 
     total_bytes = 0
     dtype_bytes = {

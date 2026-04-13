@@ -53,18 +53,6 @@ pub fn model_admin_routes(
         .with_state(state)
 }
 
-/// Constant-time token comparison to prevent timing attacks.
-fn constant_time_eq(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.bytes().zip(b.bytes()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
-
 async fn admin_auth(
     State(state): State<ModelAdminState>,
     request: Request,
@@ -77,7 +65,7 @@ async fn admin_auth(
         .and_then(|h| h.strip_prefix("Bearer "));
 
     match token {
-        Some(t) if constant_time_eq(t, &state.admin_token) => next.run(request).await,
+        Some(t) if crate::admin::constant_time_eq(t, &state.admin_token) => next.run(request).await,
         _ => err_response(
             StatusCode::UNAUTHORIZED,
             "missing or invalid admin token",
@@ -232,14 +220,13 @@ async fn upsert_model(
 
 /// DELETE /v1/admin/models/:model — remove an admin override.
 async fn delete_model(State(state): State<ModelAdminState>, Path(model): Path<String>) -> Response {
-    // Take write lock once to avoid TOCTOU between check and remove.
-    let removed = state
+    let exists = state
         .model_overrides
-        .write()
+        .read()
         .unwrap_or_else(|e| e.into_inner())
-        .remove(&model);
+        .contains_key(&model);
 
-    if removed.is_none() {
+    if !exists {
         return err_response(
             StatusCode::NOT_FOUND,
             &format!("no admin override for model '{model}'"),
@@ -247,6 +234,7 @@ async fn delete_model(State(state): State<ModelAdminState>, Path(model): Path<St
         );
     }
 
+    // Storage-first: delete from storage before updating in-memory map.
     let skey = storage_key(&MODEL_PREFIX, model.as_bytes());
     if let Err(e) = state.storage.delete(&skey).await {
         return err_response(
@@ -255,6 +243,12 @@ async fn delete_model(State(state): State<ModelAdminState>, Path(model): Path<St
             "server_error",
         );
     }
+
+    state
+        .model_overrides
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&model);
 
     StatusCode::NO_CONTENT.into_response()
 }
@@ -279,8 +273,29 @@ async fn flush_models(State(state): State<ModelAdminState>) -> Response {
         );
     }
 
-    // Merge admin overrides into config.
-    let mut config = state.config.clone();
+    // Read the current config from disk (not the stale startup clone)
+    // to avoid overwriting manual edits made since startup.
+    let mut config: GatewayConfig = match std::fs::read_to_string(&state.config_path) {
+        Ok(raw) => match toml::from_str(&raw) {
+            Ok(c) => c,
+            Err(e) => {
+                return err_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("failed to parse config file: {e}"),
+                    "server_error",
+                );
+            }
+        },
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("failed to read config file: {e}"),
+                "server_error",
+            );
+        }
+    };
+
+    // Merge admin overrides into the current config.
     for (model, info) in &admin_map {
         config.models.insert(model.clone(), info.clone());
     }
