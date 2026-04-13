@@ -200,12 +200,21 @@ impl StorageConfig {
     }
 }
 
-/// Wrapper for local model TOML: `[models]` section mapping alias → repo_id.
+/// A single local model entry: HF repo ID and optional disk size.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LocalModelEntry {
+    pub repo_id: String,
+    /// Approximate disk size in megabytes.
+    #[serde(default)]
+    pub size_mb: Option<u64>,
+}
+
+/// Wrapper for local model TOML: `[models.alias]` sections.
 #[cfg(feature = "gateway")]
 #[derive(Deserialize)]
 struct LocalModelsFile {
     #[serde(default)]
-    models: HashMap<String, String>,
+    models: HashMap<String, LocalModelEntry>,
 }
 
 impl GatewayConfig {
@@ -248,13 +257,13 @@ impl GatewayConfig {
         Ok(())
     }
 
-    /// Load local model aliases from the configured TOML file.
-    /// Returns alias → HF repo ID mappings for the MLX provider.
+    /// Load local model entries from the configured TOML file.
+    /// Returns alias → entry mappings (repo ID + size).
     #[cfg(feature = "gateway")]
     pub fn load_local_models(
         &self,
         config_dir: &std::path::Path,
-    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    ) -> Result<HashMap<String, LocalModelEntry>, Box<dyn std::error::Error>> {
         let Some(ref path) = self.local_models else {
             return Ok(HashMap::new());
         };
