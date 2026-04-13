@@ -1,3 +1,4 @@
+use crate::PREFIX_MODELS;
 use axum::{
     Json, Router,
     extract::{Path, Request, State},
@@ -6,17 +7,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post, put},
 };
-use crabllm_core::{
-    ApiError, GatewayConfig, ModelInfo, Prefix, Storage, resolve_model_info_full, storage_key,
-};
+use crabllm_core::{GatewayConfig, ModelInfo, Storage, resolve_model_info_full, storage_key};
 use serde::Serialize;
 use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-
-const MODEL_PREFIX: Prefix = *b"modl";
 
 #[derive(Clone)]
 struct ModelAdminState {
@@ -58,24 +55,14 @@ async fn admin_auth(
     request: Request,
     next: Next,
 ) -> Response {
-    let token = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "));
-
-    match token {
-        Some(t) if crate::admin::constant_time_eq(t, &state.admin_token) => next.run(request).await,
-        _ => err_response(
-            StatusCode::UNAUTHORIZED,
-            "missing or invalid admin token",
-            "authentication_error",
-        ),
+    if let Err(r) = crate::admin::check_admin_token(&request, &state.admin_token) {
+        return r;
     }
+    next.run(request).await
 }
 
 fn err_response(status: StatusCode, message: &str, error_type: &str) -> Response {
-    (status, Json(ApiError::new(message, error_type))).into_response()
+    crate::admin::err_response(status, message, error_type)
 }
 
 #[derive(Serialize)]
@@ -174,7 +161,7 @@ async fn upsert_model(
     Json(info): Json<ModelInfo>,
 ) -> Response {
     // Persist to storage first.
-    let skey = storage_key(&MODEL_PREFIX, model.as_bytes());
+    let skey = storage_key(&PREFIX_MODELS, model.as_bytes());
     let value = match serde_json::to_vec(&info) {
         Ok(v) => v,
         Err(e) => {
@@ -240,7 +227,7 @@ async fn delete_model(State(state): State<ModelAdminState>, Path(model): Path<St
     }
 
     // Storage-first: delete from storage before updating in-memory map.
-    let skey = storage_key(&MODEL_PREFIX, model.as_bytes());
+    let skey = storage_key(&PREFIX_MODELS, model.as_bytes());
     if let Err(e) = state.storage.delete(&skey).await {
         return err_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -334,7 +321,7 @@ async fn flush_models(State(state): State<ModelAdminState>) -> Response {
         .clear();
 
     for model in admin_map.keys() {
-        let skey = storage_key(&MODEL_PREFIX, model.as_bytes());
+        let skey = storage_key(&PREFIX_MODELS, model.as_bytes());
         let _ = state.storage.delete(&skey).await;
     }
 
@@ -356,7 +343,7 @@ pub async fn load_stored_models(
     storage: &dyn Storage,
     overrides: &RwLock<HashMap<String, ModelInfo>>,
 ) {
-    let pairs = match storage.list(&MODEL_PREFIX).await {
+    let pairs = match storage.list(&PREFIX_MODELS).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("warning: failed to load stored model overrides: {e}");

@@ -86,6 +86,7 @@ impl<'de> Deserialize<'de> for FinishReason {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum ToolType {
     #[serde(rename = "function")]
     #[default]
@@ -159,6 +160,7 @@ impl From<&str> for ToolChoice {
 // ── Request ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChatCompletionRequest {
     pub model: String,
     pub messages: Vec<Message>,
@@ -199,6 +201,7 @@ pub enum Stop {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Message {
     pub role: Role,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -269,6 +272,7 @@ impl Message {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ToolCall {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index: Option<u32>,
@@ -279,12 +283,14 @@ pub struct ToolCall {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FunctionCall {
     pub name: String,
     pub arguments: String,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Tool {
     #[serde(rename = "type")]
     pub kind: ToolType,
@@ -294,6 +300,7 @@ pub struct Tool {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FunctionDef {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -305,6 +312,7 @@ pub struct FunctionDef {
 // ── Response ──
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChatCompletionResponse {
     pub id: String,
     pub object: String,
@@ -318,6 +326,7 @@ pub struct ChatCompletionResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Choice {
     pub index: u32,
     pub message: Message,
@@ -367,6 +376,7 @@ impl ChatCompletionResponse {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -380,6 +390,7 @@ pub struct Usage {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CompletionTokensDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
@@ -388,6 +399,7 @@ pub struct CompletionTokensDetails {
 // ── Streaming ──
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChatCompletionChunk {
     pub id: String,
     pub object: String,
@@ -440,6 +452,7 @@ impl ChatCompletionChunk {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChunkChoice {
     pub index: u32,
     pub delta: Delta,
@@ -450,6 +463,7 @@ pub struct ChunkChoice {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Delta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<Role>,
@@ -462,6 +476,7 @@ pub struct Delta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ToolCallDelta {
     pub index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -474,6 +489,7 @@ pub struct ToolCallDelta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FunctionCallDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,

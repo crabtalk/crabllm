@@ -1,3 +1,4 @@
+use crate::PREFIX_AUDIT;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -7,12 +8,10 @@ use axum::{
 };
 use crabllm_core::{
     ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
-    ModelInfo, Prefix, RequestContext, Storage, resolve_model_info_full, storage_key,
+    ModelInfo, RequestContext, Storage, resolve_model_info_full, storage_key,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::SystemTime};
-
-const PREFIX: Prefix = *b"alog";
 
 pub struct AuditLogger {
     storage: Arc<dyn Storage>,
@@ -57,7 +56,7 @@ impl AuditLogger {
         let mut suffix = Vec::with_capacity(8 + record.request_id.len());
         suffix.extend_from_slice(&ts_bytes);
         suffix.extend_from_slice(record.request_id.as_bytes());
-        let key = storage_key(&PREFIX, &suffix);
+        let key = storage_key(&PREFIX_AUDIT, &suffix);
 
         let storage = self.storage.clone();
         // Fire-and-forget — audit logging must not block the response path.
@@ -94,8 +93,8 @@ impl crabllm_core::Extension for AuditLogger {
         "audit"
     }
 
-    fn prefix(&self) -> Prefix {
-        PREFIX
+    fn prefix(&self) -> crabllm_core::Prefix {
+        PREFIX_AUDIT
     }
 
     fn on_response(
@@ -222,7 +221,7 @@ async fn logs_handler(
     State(storage): State<Arc<dyn Storage>>,
     Query(query): Query<LogQuery>,
 ) -> Response {
-    let pairs = match storage.list(&PREFIX).await {
+    let pairs = match storage.list(&PREFIX_AUDIT).await {
         Ok(p) => p,
         Err(e) => {
             return (

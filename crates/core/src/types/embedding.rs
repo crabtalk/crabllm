@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EmbeddingRequest {
     pub model: String,
     pub input: EmbeddingInput,
@@ -14,6 +15,7 @@ pub enum EmbeddingInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EmbeddingResponse {
     pub object: String,
     pub data: Vec<Embedding>,
@@ -22,6 +24,7 @@ pub struct EmbeddingResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Embedding {
     pub object: String,
     pub index: u32,
@@ -29,6 +32,7 @@ pub struct Embedding {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EmbeddingUsage {
     pub prompt_tokens: u32,
     pub total_tokens: u32,

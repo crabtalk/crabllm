@@ -1,3 +1,4 @@
+use crate::PREFIX_KEYS;
 use axum::{
     Json, Router,
     extract::{Path, Request, State},
@@ -6,14 +7,12 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use crabllm_core::{ApiError, KeyConfig, Prefix, Storage, storage_key};
+use crabllm_core::{ApiError, KeyConfig, KeyRateLimit, Storage, storage_key};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
 };
-
-const KEY_PREFIX: Prefix = *b"keys";
 
 #[derive(Clone)]
 pub struct KeyAdminState {
@@ -41,13 +40,16 @@ pub fn key_admin_routes(
     };
     Router::new()
         .route("/v1/admin/keys", post(create_key).get(list_keys))
-        .route("/v1/admin/keys/{name}", get(get_key).delete(delete_key))
+        .route(
+            "/v1/admin/keys/{name}",
+            get(get_key).patch(update_key).delete(delete_key),
+        )
         .route_layer(middleware::from_fn_with_state(state.clone(), admin_auth))
         .with_state(state)
 }
 
 /// Timing-resistant token comparison. Leaks length but not content.
-pub(crate) fn constant_time_eq(a: &str, b: &str) -> bool {
+fn constant_time_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -58,36 +60,34 @@ pub(crate) fn constant_time_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
-/// Admin auth middleware — validates Bearer token against admin_token.
-async fn admin_auth(State(state): State<KeyAdminState>, request: Request, next: Next) -> Response {
-    let auth_header = request
+/// Validate admin Bearer token from request headers.
+/// Returns `Ok(())` on success, `Err(Response)` with 401 on failure.
+#[allow(clippy::result_large_err)]
+pub(crate) fn check_admin_token(request: &Request, admin_token: &str) -> Result<(), Response> {
+    let token = request
         .headers()
         .get("authorization")
-        .and_then(|v| v.to_str().ok());
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "));
 
-    let token = match auth_header.and_then(|h| h.strip_prefix("Bearer ")) {
-        Some(t) => t,
-        None => {
-            return err_response(
-                StatusCode::UNAUTHORIZED,
-                "missing or invalid Authorization header",
-                "authentication_error",
-            );
-        }
-    };
-
-    if !constant_time_eq(token, &state.admin_token) {
-        return err_response(
+    match token {
+        Some(t) if constant_time_eq(t, admin_token) => Ok(()),
+        _ => Err(err_response(
             StatusCode::UNAUTHORIZED,
-            "invalid admin token",
+            "missing or invalid admin token",
             "authentication_error",
-        );
+        )),
     }
+}
 
+async fn admin_auth(State(state): State<KeyAdminState>, request: Request, next: Next) -> Response {
+    if let Err(r) = check_admin_token(&request, &state.admin_token) {
+        return r;
+    }
     next.run(request).await
 }
 
-fn err_response(status: StatusCode, message: &str, error_type: &str) -> Response {
+pub(crate) fn err_response(status: StatusCode, message: &str, error_type: &str) -> Response {
     (status, Json(ApiError::new(message, error_type))).into_response()
 }
 
@@ -96,6 +96,8 @@ struct CreateKeyRequest {
     name: String,
     #[serde(default = "default_models")]
     models: Vec<String>,
+    #[serde(default)]
+    rate_limit: Option<KeyRateLimit>,
 }
 
 fn default_models() -> Vec<String> {
@@ -107,6 +109,8 @@ struct KeyResponse {
     name: String,
     key: String,
     models: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rate_limit: Option<KeyRateLimit>,
 }
 
 #[derive(Serialize)]
@@ -114,6 +118,8 @@ struct KeySummary {
     name: String,
     key_prefix: String,
     models: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rate_limit: Option<KeyRateLimit>,
     source: &'static str,
 }
 
@@ -157,7 +163,7 @@ async fn create_key(
 
     // Check storage for existing name (storage is keyed by name, the
     // authoritative source for dynamic keys).
-    let skey = storage_key(&KEY_PREFIX, body.name.as_bytes());
+    let skey = storage_key(&PREFIX_KEYS, body.name.as_bytes());
     match state.storage.get(&skey).await {
         Ok(Some(_)) => {
             return err_response(
@@ -181,6 +187,7 @@ async fn create_key(
         name: body.name.clone(),
         key: key.clone(),
         models: body.models.clone(),
+        rate_limit: body.rate_limit.clone(),
     };
 
     // Storage-first: persist before updating key_map.
@@ -215,6 +222,7 @@ async fn create_key(
             name: body.name,
             key,
             models: body.models,
+            rate_limit: body.rate_limit,
         }),
     )
         .into_response()
@@ -229,11 +237,12 @@ async fn list_keys(State(state): State<KeyAdminState>) -> Response {
             name: kc.name.clone(),
             key_prefix: mask_key(&kc.key),
             models: kc.models.clone(),
+            rate_limit: kc.rate_limit.clone(),
             source: "config",
         })
         .collect();
 
-    let pairs = match state.storage.list(&KEY_PREFIX).await {
+    let pairs = match state.storage.list(&PREFIX_KEYS).await {
         Ok(p) => p,
         Err(e) => {
             return err_response(
@@ -254,6 +263,7 @@ async fn list_keys(State(state): State<KeyAdminState>) -> Response {
                 name: kc.name,
                 key_prefix: mask_key(&kc.key),
                 models: kc.models,
+                rate_limit: kc.rate_limit,
                 source: "dynamic",
             });
         }
@@ -270,18 +280,20 @@ async fn get_key(State(state): State<KeyAdminState>, Path(name): Path<String>) -
             name: kc.name.clone(),
             key_prefix: mask_key(&kc.key),
             models: kc.models.clone(),
+            rate_limit: kc.rate_limit.clone(),
             source: "config",
         })
         .into_response();
     }
 
-    let skey = storage_key(&KEY_PREFIX, name.as_bytes());
+    let skey = storage_key(&PREFIX_KEYS, name.as_bytes());
     match state.storage.get(&skey).await {
         Ok(Some(bytes)) => match serde_json::from_slice::<KeyConfig>(&bytes) {
             Ok(kc) => Json(KeySummary {
                 name: kc.name,
                 key_prefix: mask_key(&kc.key),
                 models: kc.models,
+                rate_limit: kc.rate_limit,
                 source: "dynamic",
             })
             .into_response(),
@@ -304,6 +316,119 @@ async fn get_key(State(state): State<KeyAdminState>, Path(name): Path<String>) -
     }
 }
 
+/// PATCH /v1/admin/keys/:name — partial update of a dynamic key.
+///
+/// JSON Merge Patch semantics: present fields are set, absent fields
+/// are unchanged, `null` clears the field. The `name` and `key` fields
+/// are immutable (not accepted in the patch body).
+async fn update_key(
+    State(state): State<KeyAdminState>,
+    Path(name): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    if state.toml_key_names.contains(&name) {
+        return err_response(
+            StatusCode::FORBIDDEN,
+            &format!("key '{name}' is managed by config file and cannot be updated via API"),
+            "invalid_request_error",
+        );
+    }
+
+    let skey = storage_key(&PREFIX_KEYS, name.as_bytes());
+
+    // Load the existing config from storage.
+    let mut config = match state.storage.get(&skey).await {
+        Ok(Some(bytes)) => match serde_json::from_slice::<KeyConfig>(&bytes) {
+            Ok(kc) => kc,
+            Err(_) => {
+                return err_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "corrupt key data",
+                    "server_error",
+                );
+            }
+        },
+        Ok(None) => {
+            return err_response(
+                StatusCode::NOT_FOUND,
+                &format!("key '{name}' not found"),
+                "invalid_request_error",
+            );
+        }
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &e.to_string(),
+                "server_error",
+            );
+        }
+    };
+
+    // Reject immutable fields.
+    if body.get("name").is_some() || body.get("key").is_some() {
+        return err_response(
+            StatusCode::BAD_REQUEST,
+            "'name' and 'key' are immutable and cannot be patched",
+            "invalid_request_error",
+        );
+    }
+
+    // Apply patch fields.
+    if let Some(models) = body.get("models") {
+        match serde_json::from_value::<Vec<String>>(models.clone()) {
+            Ok(m) => config.models = m,
+            Err(e) => {
+                return err_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("invalid 'models': {e}"),
+                    "invalid_request_error",
+                );
+            }
+        }
+    }
+
+    if body.get("rate_limit").is_some() {
+        match serde_json::from_value::<Option<KeyRateLimit>>(body["rate_limit"].clone()) {
+            Ok(rl) => config.rate_limit = rl,
+            Err(e) => {
+                return err_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("invalid 'rate_limit': {e}"),
+                    "invalid_request_error",
+                );
+            }
+        }
+    }
+
+    // Persist updated config.
+    let value = match serde_json::to_vec(&config) {
+        Ok(v) => v,
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &e.to_string(),
+                "server_error",
+            );
+        }
+    };
+    if let Err(e) = state.storage.set(&skey, value).await {
+        return err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &e.to_string(),
+            "server_error",
+        );
+    }
+
+    Json(KeySummary {
+        name: config.name,
+        key_prefix: mask_key(&config.key),
+        models: config.models,
+        rate_limit: config.rate_limit,
+        source: "dynamic",
+    })
+    .into_response()
+}
+
 /// DELETE /v1/admin/keys/:name — revoke a virtual key.
 async fn delete_key(State(state): State<KeyAdminState>, Path(name): Path<String>) -> Response {
     // TOML-managed keys cannot be deleted via the API.
@@ -315,7 +440,7 @@ async fn delete_key(State(state): State<KeyAdminState>, Path(name): Path<String>
         );
     }
 
-    let skey = storage_key(&KEY_PREFIX, name.as_bytes());
+    let skey = storage_key(&PREFIX_KEYS, name.as_bytes());
 
     // Load the key to find the token for key_map removal.
     let token = match state.storage.get(&skey).await {
@@ -370,7 +495,7 @@ pub async fn load_stored_keys(
     toml_keys: &[KeyConfig],
     key_map: &RwLock<HashMap<String, String>>,
 ) {
-    let pairs = match storage.list(&KEY_PREFIX).await {
+    let pairs = match storage.list(&PREFIX_KEYS).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("warning: failed to load stored keys: {e}");

@@ -14,6 +14,7 @@ native-tls = ["crabllm-provider/native-tls"]
 rustls = ["crabllm-provider/rustls"]
 storage-redis = ["redis"]
 storage-sqlite = ["sqlx"]
+openapi = ["crabllm-core/openapi", "utoipa"]
 
 [dependencies]
 crabllm-core = { workspace = true, features = ["gateway"] }
@@ -37,6 +38,7 @@ uuid.workspace = true
 sha2.workspace = true
 rand.workspace = true
 metrics.workspace = true
+utoipa = { workspace = true, optional = true }
 
 # optional
 redis = { workspace = true, optional = true }

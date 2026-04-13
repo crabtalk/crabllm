@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use crabllm_core::{ApiError, Error, GatewayConfig, Provider};
+use crabllm_core::{Error, GatewayConfig, Provider};
 use crabllm_provider::ProviderRegistry;
 use serde::Serialize;
 use std::{path::PathBuf, sync::Arc};
@@ -63,23 +63,10 @@ async fn admin_auth<P: Provider>(
     request: Request,
     next: Next,
 ) -> Response {
-    let token = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "));
-
-    match token {
-        Some(t) if crate::admin::constant_time_eq(t, &state.admin_token) => next.run(request).await,
-        _ => (
-            StatusCode::UNAUTHORIZED,
-            Json(ApiError::new(
-                "missing or invalid admin token",
-                "authentication_error",
-            )),
-        )
-            .into_response(),
+    if let Err(r) = crate::admin::check_admin_token(&request, &state.admin_token) {
+        return r;
     }
+    next.run(request).await
 }
 
 #[derive(Serialize)]
@@ -95,42 +82,33 @@ async fn reload_providers<P: Provider>(State(state): State<ProviderAdminState<P>
     let raw = match tokio::fs::read_to_string(&state.config_path).await {
         Ok(s) => s,
         Err(e) => {
-            return (
+            return crate::admin::err_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::new(
-                    format!("failed to read config file: {e}"),
-                    "server_error",
-                )),
-            )
-                .into_response();
+                &format!("failed to read config file: {e}"),
+                "server_error",
+            );
         }
     };
 
     let config: GatewayConfig = match toml::from_str(&raw) {
         Ok(c) => c,
         Err(e) => {
-            return (
+            return crate::admin::err_response(
                 StatusCode::BAD_REQUEST,
-                Json(ApiError::new(
-                    format!("failed to parse config: {e}"),
-                    "invalid_request_error",
-                )),
-            )
-                .into_response();
+                &format!("failed to parse config: {e}"),
+                "invalid_request_error",
+            );
         }
     };
 
     let new_registry = match (state.rebuilder)(&config) {
         Ok(r) => r,
         Err(e) => {
-            return (
+            return crate::admin::err_response(
                 StatusCode::BAD_REQUEST,
-                Json(ApiError::new(
-                    format!("failed to build registry: {e}"),
-                    "invalid_request_error",
-                )),
-            )
-                .into_response();
+                &format!("failed to build registry: {e}"),
+                "invalid_request_error",
+            );
         }
     };
 

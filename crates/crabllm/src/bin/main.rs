@@ -266,6 +266,16 @@ async fn run<S: Storage + 'static>(
         .collect();
     let key_map = Arc::new(RwLock::new(key_map));
 
+    // Persist TOML key configs to storage so extensions (rate limiter,
+    // etc.) can look up per-key config without a separate in-memory map.
+    // Overwrites on every startup to reflect config edits.
+    for kc in &config.keys {
+        let skey = crabllm_core::storage_key(&crabllm_proxy::PREFIX_KEYS, kc.name.as_bytes());
+        if let Ok(value) = serde_json::to_vec(kc) {
+            let _ = storage.set(&skey, value).await;
+        }
+    }
+
     // Load stored keys and merge (TOML takes precedence on conflicts).
     crabllm_proxy::admin::load_stored_keys(
         storage.as_ref() as &dyn crabllm_core::Storage,
@@ -301,6 +311,9 @@ async fn run<S: Storage + 'static>(
         ));
     }
 
+    #[cfg(feature = "openapi")]
+    let enable_openapi = config.openapi;
+
     let state: AppState<S, Dispatch> = AppState {
         registry,
         config,
@@ -311,7 +324,22 @@ async fn run<S: Storage + 'static>(
         usage_events: None,
     };
 
-    let app = crabllm_proxy::router(state, admin_routes);
+    #[allow(unused_mut)]
+    let mut app = crabllm_proxy::router(state, admin_routes);
+
+    #[cfg(feature = "openapi")]
+    if enable_openapi {
+        use utoipa_scalar::Servable;
+        let spec = crabllm_proxy::openapi::spec();
+        app = app
+            .merge(utoipa_scalar::Scalar::with_url("/docs", spec.clone()))
+            .route(
+                "/openapi.json",
+                axum::routing::get(move || async { axum::Json(spec) }),
+            );
+        eprintln!("openapi docs enabled at /docs");
+    }
+
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {

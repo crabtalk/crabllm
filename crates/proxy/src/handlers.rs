@@ -89,6 +89,21 @@ pub(crate) fn emit_usage<S: Storage, P: Provider>(
     });
 }
 
+/// GET /v1/usage — user-facing, auto-scoped to the caller's key.
+pub(crate) async fn usage<S: Storage + 'static, P: Provider + 'static>(
+    State(state): State<AppState<S, P>>,
+    Extension(KeyName(key_name)): Extension<KeyName>,
+    query: axum::extract::Query<crate::ext::usage::UserUsageQuery>,
+) -> Json<Vec<crate::ext::usage::UsageEntry>> {
+    let name = key_name.as_deref().unwrap_or("__global");
+    crate::ext::usage::query_usage(
+        state.storage.as_ref() as &dyn Storage,
+        Some(name),
+        query.model.as_deref(),
+    )
+    .await
+}
+
 fn http_status_from_error(e: &crabllm_core::Error) -> u16 {
     match e {
         crabllm_core::Error::Provider { status, .. } => *status,

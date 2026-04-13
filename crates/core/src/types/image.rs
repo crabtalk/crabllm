@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ImageRequest {
     pub model: String,
     pub prompt: String,

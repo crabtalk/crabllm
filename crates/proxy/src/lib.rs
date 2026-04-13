@@ -5,10 +5,20 @@ use axum::{
     response::Response,
     routing::{get, post},
 };
-use crabllm_core::{Provider, Storage};
+use crabllm_core::{Prefix, Provider, Storage};
 
 pub use auth::KeyName;
 pub use state::{AppState, UsageEvent};
+
+// Storage table prefixes. Each 4-byte prefix namespaces a logical table
+// in the key-value storage backend.
+pub const PREFIX_KEYS: Prefix = *b"keys";
+pub const PREFIX_MODELS: Prefix = *b"modl";
+pub const PREFIX_RATE_LIMIT: Prefix = *b"rlim";
+pub const PREFIX_USAGE: Prefix = *b"usge";
+pub const PREFIX_CACHE: Prefix = *b"cach";
+pub const PREFIX_BUDGET: Prefix = *b"bdgt";
+pub const PREFIX_AUDIT: Prefix = *b"alog";
 
 pub mod admin;
 pub mod admin_models;
@@ -17,6 +27,8 @@ pub mod anthropic;
 pub mod auth;
 pub mod ext;
 pub(crate) mod handlers;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 mod state;
 pub mod storage;
 
@@ -53,6 +65,7 @@ where
             post(handlers::audio_transcriptions::<S, P>),
         )
         .route("/v1/models", get(handlers::models::<S, P>))
+        .route("/v1/usage", get(handlers::usage::<S, P>))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth::<S, P>,

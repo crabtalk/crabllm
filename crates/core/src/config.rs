@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 /// Per-model token pricing configuration.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PricingConfig {
     /// Cost per million prompt tokens in USD.
     pub prompt_cost_per_million: f64,
@@ -48,6 +49,9 @@ pub struct GatewayConfig {
     /// Graceful shutdown timeout in seconds. Default: 30.
     #[serde(default = "default_shutdown_timeout")]
     pub shutdown_timeout: u64,
+    /// Enable OpenAPI documentation at /openapi.json and /docs.
+    #[serde(default)]
+    pub openapi: bool,
 }
 
 /// Configuration for a single LLM provider.
@@ -172,6 +176,17 @@ impl ProviderConfig {
     }
 }
 
+/// Per-key rate limit override. When set on a key, these values take
+/// precedence over the global `[extensions.rate_limit]` config.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct KeyRateLimit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests_per_minute: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_per_minute: Option<u64>,
+}
+
 /// Virtual API key for client authentication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyConfig {
@@ -181,6 +196,10 @@ pub struct KeyConfig {
     pub key: String,
     /// Which models this key can access. `["*"]` means all.
     pub models: Vec<String>,
+    /// Per-key rate limit override. Takes precedence over the global
+    /// `[extensions.rate_limit]` config when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_limit: Option<KeyRateLimit>,
 }
 
 /// Storage backend configuration.

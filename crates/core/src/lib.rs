@@ -1,6 +1,6 @@
 pub use config::{
-    GatewayConfig, KeyConfig, LocalModelEntry, PricingConfig, ProviderConfig, ProviderKind,
-    StorageConfig,
+    GatewayConfig, KeyConfig, KeyRateLimit, LocalModelEntry, PricingConfig, ProviderConfig,
+    ProviderKind, StorageConfig,
 };
 pub use error::{ApiError, ApiErrorBody, Error};
 pub use extension::{Extension, ExtensionError, RequestContext};
@@ -21,6 +21,8 @@ mod config;
 mod error;
 mod extension;
 mod model_info;
+#[cfg(feature = "openapi")]
+mod openapi;
 mod provider;
 mod storage;
 mod types;

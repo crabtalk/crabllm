@@ -1,7 +1,8 @@
+use crate::PREFIX_BUDGET;
 use axum::{Json, Router, routing::get};
 use crabllm_core::{
     BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ExtensionError,
-    ModelInfo, Prefix, RequestContext, Storage, resolve_model_info_full, storage_key,
+    ModelInfo, RequestContext, Storage, resolve_model_info_full, storage_key,
 };
 use serde::Serialize;
 use std::{collections::HashMap, sync::Arc};
@@ -15,8 +16,6 @@ pub struct Budget {
 }
 
 impl Budget {
-    const PREFIX: Prefix = *b"bdgt";
-
     pub fn new(
         config: &serde_json::Value,
         storage: Arc<dyn Storage>,
@@ -86,7 +85,7 @@ impl Budget {
 
     pub fn admin_routes(&self) -> Router {
         let storage = self.storage.clone();
-        let prefix = Self::PREFIX;
+        let prefix = PREFIX_BUDGET;
         let default_budget = self.default_budget_micros;
         let key_budgets = self.key_budgets.clone();
 
@@ -110,7 +109,7 @@ impl Budget {
     ) {
         let micros = self.cost_micros(model, provider, prompt, completion);
         if micros > 0 {
-            let key = storage_key(&Self::PREFIX, key_name.as_bytes());
+            let key = storage_key(&PREFIX_BUDGET, key_name.as_bytes());
             let _ = self.storage.increment(&key, micros).await;
         }
     }
@@ -121,8 +120,8 @@ impl crabllm_core::Extension for Budget {
         "budget"
     }
 
-    fn prefix(&self) -> Prefix {
-        Self::PREFIX
+    fn prefix(&self) -> crabllm_core::Prefix {
+        PREFIX_BUDGET
     }
 
     fn on_request(&self, ctx: &RequestContext) -> BoxFuture<'_, Result<(), ExtensionError>> {
@@ -133,7 +132,7 @@ impl crabllm_core::Extension for Budget {
         let budget = self.budget_for_key(&key_name);
 
         Box::pin(async move {
-            let key = storage_key(&Self::PREFIX, key_name.as_bytes());
+            let key = storage_key(&PREFIX_BUDGET, key_name.as_bytes());
             let spent = self.storage.increment(&key, 0).await.unwrap_or(0);
 
             if spent >= budget {
@@ -210,7 +209,7 @@ struct BudgetEntry {
 
 async fn budget_handler(
     storage: Arc<dyn Storage>,
-    prefix: Prefix,
+    prefix: crabllm_core::Prefix,
     default_budget_micros: i64,
     key_budgets: HashMap<String, i64>,
 ) -> Json<Vec<BudgetEntry>> {

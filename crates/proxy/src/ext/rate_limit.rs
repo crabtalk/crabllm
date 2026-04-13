@@ -1,6 +1,7 @@
+use crate::{PREFIX_KEYS, PREFIX_RATE_LIMIT};
 use crabllm_core::{
     BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ExtensionError,
-    Prefix, RequestContext, Storage,
+    KeyConfig, KeyRateLimit, RequestContext, Storage, storage_key,
 };
 use std::{
     sync::Arc,
@@ -42,6 +43,36 @@ impl RateLimit {
             tokens_per_minute: tpm,
         })
     }
+
+    /// Look up per-key rate limit from storage. Returns the per-key
+    /// override merged with global defaults, or the global defaults
+    /// if the key has no override.
+    async fn limits_for(&self, key_name: &str) -> (u64, Option<u64>) {
+        if key_name == "__global" {
+            return (self.requests_per_minute, self.tokens_per_minute);
+        }
+
+        let skey = storage_key(&PREFIX_KEYS, key_name.as_bytes());
+        let rl = self
+            .storage
+            .get(&skey)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice::<KeyConfig>(&bytes).ok())
+            .and_then(|kc| kc.rate_limit);
+
+        match rl {
+            Some(KeyRateLimit {
+                requests_per_minute,
+                tokens_per_minute,
+            }) => (
+                requests_per_minute.unwrap_or(self.requests_per_minute),
+                tokens_per_minute.or(self.tokens_per_minute),
+            ),
+            None => (self.requests_per_minute, self.tokens_per_minute),
+        }
+    }
 }
 
 fn current_minute() -> u64 {
@@ -57,26 +88,20 @@ impl crabllm_core::Extension for RateLimit {
         "rate_limit"
     }
 
-    fn prefix(&self) -> Prefix {
-        *b"rlim"
+    fn prefix(&self) -> crabllm_core::Prefix {
+        PREFIX_RATE_LIMIT
     }
 
     fn on_request(&self, ctx: &RequestContext) -> BoxFuture<'_, Result<(), ExtensionError>> {
-        let key_name = ctx.key_name.as_deref().unwrap_or("__global");
-        let minute = current_minute();
-
-        let rpm_suffix = format!("{key_name}:{minute}");
-        let rpm_key = self.storage_key(rpm_suffix.as_bytes());
-        let rpm_limit = self.requests_per_minute;
-
-        let tpm_limit = self.tokens_per_minute;
-        let tpm_key = tpm_limit.map(|_| {
-            let tpm_suffix = format!("{key_name}:tpm:{minute}");
-            self.storage_key(tpm_suffix.as_bytes())
-        });
+        let key_name = ctx.key_name.as_deref().unwrap_or("__global").to_string();
 
         Box::pin(async move {
+            let (rpm_limit, tpm_limit) = self.limits_for(&key_name).await;
+            let minute = current_minute();
+
             // Check RPM.
+            let rpm_suffix = format!("{key_name}:{minute}");
+            let rpm_key = self.storage_key(rpm_suffix.as_bytes());
             let count = self
                 .storage
                 .increment(&rpm_key, 1)
@@ -92,10 +117,12 @@ impl crabllm_core::Extension for RateLimit {
             }
 
             // Check TPM.
-            if let (Some(limit), Some(key)) = (tpm_limit, &tpm_key) {
+            if let Some(limit) = tpm_limit {
+                let tpm_suffix = format!("{key_name}:tpm:{minute}");
+                let tpm_key = self.storage_key(tpm_suffix.as_bytes());
                 let tokens = self
                     .storage
-                    .increment(key, 0)
+                    .increment(&tpm_key, 0)
                     .await
                     .map_err(|e| ExtensionError::new(500, e.to_string(), "server_error"))?;
 
@@ -118,10 +145,6 @@ impl crabllm_core::Extension for RateLimit {
         _request: &ChatCompletionRequest,
         response: &ChatCompletionResponse,
     ) -> BoxFuture<'_, ()> {
-        if self.tokens_per_minute.is_none() {
-            return Box::pin(async {});
-        }
-
         let total_tokens = response
             .usage
             .as_ref()
@@ -132,6 +155,9 @@ impl crabllm_core::Extension for RateLimit {
             return Box::pin(async {});
         }
 
+        // Always record TPM — per-key overrides may enable TPM even when
+        // the global config has no tokens_per_minute. The actual limit
+        // check happens in on_request(); here we just track the counter.
         let key_name = ctx.key_name.as_deref().unwrap_or("__global");
         let minute = current_minute();
         let tpm_suffix = format!("{key_name}:tpm:{minute}");
@@ -143,10 +169,6 @@ impl crabllm_core::Extension for RateLimit {
     }
 
     fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
-        if self.tokens_per_minute.is_none() {
-            return Box::pin(async {});
-        }
-
         let total_tokens = chunk
             .usage
             .as_ref()

@@ -75,11 +75,13 @@ impl From<serde_json::Error> for Error {
 
 /// OpenAI-compatible error response returned to clients.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ApiError {
     pub error: ApiErrorBody,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ApiErrorBody {
     pub message: String,
     #[serde(rename = "type")]

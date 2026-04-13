@@ -8,6 +8,7 @@ use std::collections::HashMap;
 /// that sets only `context_length` inherits pricing from the static
 /// default via [`ModelInfo::merge`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ModelInfo {
     /// Maximum context window in tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -58,6 +58,8 @@ dirs = "6"
 arc-swap = "1"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
+utoipa = { version = "5", features = ["axum_extras"] }
+utoipa-scalar = { version = "0.3", features = ["axum"] }
 
 [profile.prod]
 inherits = "release"

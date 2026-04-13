@@ -31,6 +31,9 @@ rand.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[build-dependencies]
+toml.workspace = true
+
 [dev-dependencies]
 base64.workspace = true
 clap.workspace = true

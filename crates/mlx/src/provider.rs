@@ -22,7 +22,6 @@ use crabllm_core::{
 };
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -31,10 +30,6 @@ use std::{
 #[derive(Clone)]
 pub struct MlxProvider {
     pool: Arc<MlxPool>,
-    /// Extra model aliases (alias → HF repo ID) for models not in the
-    /// build-time static registry. Checked before the static registry
-    /// in all resolve calls.
-    extra_models: HashMap<String, String>,
 }
 
 impl std::fmt::Debug for MlxProvider {
@@ -45,27 +40,13 @@ impl std::fmt::Debug for MlxProvider {
 
 impl MlxProvider {
     pub fn new(pool: Arc<MlxPool>) -> Self {
-        Self {
-            pool,
-            extra_models: HashMap::new(),
-        }
+        Self { pool }
     }
 
-    /// Create a provider with additional model aliases beyond the
-    /// build-time registry. Each entry maps a short alias to a full
-    /// HuggingFace repo ID (e.g. `"qwen3.5-0.6b"` → `"mlx-community/Qwen3.5-0.6B-MLX-4bit"`).
-    pub fn with_extra_models(pool: Arc<MlxPool>, extra_models: HashMap<String, String>) -> Self {
-        Self { pool, extra_models }
-    }
-
-    /// Resolve a model alias to a HF repo ID, checking extra models
-    /// first, then the static registry, then passing through as-is.
+    /// Resolve a model alias to a HF repo ID via the build-time
+    /// registry, passing through as-is if not found.
     fn resolve_repo_id<'a>(&'a self, model_id: &'a str) -> &'a str {
-        self.extra_models
-            .get(model_id)
-            .map(|s| s.as_str())
-            .or_else(|| crate::registry::resolve(model_id))
-            .unwrap_or(model_id)
+        crate::registry::resolve(model_id).unwrap_or(model_id)
     }
 
     /// Snapshot the pool's loaded-model inventory. See

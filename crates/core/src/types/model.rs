@@ -2,6 +2,7 @@ use crate::PricingConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Model {
     pub id: String,
     pub object: String,
@@ -16,6 +17,7 @@ pub struct Model {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ModelList {
     pub object: String,
     pub data: Vec<Model>,

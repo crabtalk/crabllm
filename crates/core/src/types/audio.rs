@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AudioSpeechRequest {
     pub model: String,
     pub input: String,

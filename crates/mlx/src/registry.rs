@@ -1,9 +1,8 @@
-//! Predefined model registry, auto-generated from mlx-swift-lm's
-//! `LLMModelFactory.swift` + `VLMModelFactory.swift` at build time.
+//! Predefined model registry, auto-generated from `models/local.toml`
+//! at build time.
 //!
-//! Each entry is a `(alias, hf_repo_id, default_prompt, kind)` tuple.
-//! The alias is a lowercase version of the HuggingFace model name
-//! (e.g. `"qwen3.5-2b-mlx-4bit"` for `mlx-community/Qwen3.5-2B-MLX-4bit`).
+//! Each entry is a `(alias, hf_repo_id, kind, size_mb)` tuple.
+//! The alias is `family.size.quant` (e.g. `"qwen3.5.2b.4bit"`).
 //!
 //! Use [`resolve`] to map an alias or full repo id to the canonical
 //! HF repo path. Use [`list`] to get all available models for UI
@@ -32,21 +31,21 @@ pub struct ModelEntry {
     pub alias: &'static str,
     /// Full HuggingFace repo id (e.g. `"mlx-community/Qwen3.5-2B-MLX-4bit"`).
     pub repo_id: &'static str,
-    /// Example prompt for the model.
-    pub default_prompt: &'static str,
     /// Whether the model is an LLM or a VLM.
     pub kind: ModelKind,
+    /// Approximate disk size in megabytes (0 = unknown).
+    pub size_mb: u64,
 }
 
 /// List all predefined models.
 pub fn list() -> Vec<ModelEntry> {
     MODEL_REGISTRY
         .iter()
-        .map(|&(alias, repo_id, default_prompt, kind)| ModelEntry {
+        .map(|&(alias, repo_id, kind, size_mb)| ModelEntry {
             alias,
             repo_id,
-            default_prompt,
             kind,
+            size_mb,
         })
         .collect()
 }
@@ -66,8 +65,8 @@ pub fn resolve(model: &str) -> Option<&'static str> {
         return Some(
             MODEL_REGISTRY
                 .iter()
-                .find(|(_, id, _, _)| *id == model)
-                .map(|(_, id, _, _)| *id)
+                .find(|(_, id, ..)| *id == model)
+                .map(|(_, id, ..)| *id)
                 .unwrap_or_else(|| {
                     // Not in registry but looks like a repo id — pass through.
                     // Leak is fine: this is called once per model load.
@@ -80,6 +79,6 @@ pub fn resolve(model: &str) -> Option<&'static str> {
     let lower = model.to_lowercase();
     MODEL_REGISTRY
         .iter()
-        .find(|(alias, _, _, _)| *alias == lower)
-        .map(|(_, id, _, _)| *id)
+        .find(|(alias, ..)| *alias == lower)
+        .map(|(_, id, ..)| *id)
 }

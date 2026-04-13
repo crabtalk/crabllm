@@ -27,7 +27,7 @@ fn main() {
         let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
         fs::write(
             out_dir.join("model_registry.rs"),
-            "pub const MODEL_REGISTRY: &[(&str, &str, &str, ModelKind)] = &[];\n",
+            "pub const MODEL_REGISTRY: &[(&str, &str, ModelKind, u64)] = &[];\n",
         )
         .expect("write empty model_registry.rs");
         return;
@@ -280,33 +280,29 @@ fn compile_metallib(mlx_dir: &Path) {
     println!("cargo:rustc-env=MLX_METALLIB_PATH={}", metallib.display());
 }
 
-/// Parse `LLMModelFactory.swift` + `VLMModelFactory.swift` and generate
-/// a Rust registry of supported models at `$OUT_DIR/model_registry.rs`.
+/// Parse `models/local.toml` and generate a Rust registry at
+/// `$OUT_DIR/model_registry.rs`.
 ///
 /// The `kind` column is emitted as a `ModelKind` variant, not a string
 /// tag — `ModelKind` is already in scope inside the generated file via
 /// `include!`, so the enum invariant is enforced by rustc at build time
 /// and no runtime parse / panic branch exists.
 fn generate_model_registry(mlx_dir: &Path) {
-    let llm_factory =
-        mlx_dir.join(".build/checkouts/mlx-swift-lm/Libraries/MLXLLM/LLMModelFactory.swift");
-    let vlm_factory =
-        mlx_dir.join(".build/checkouts/mlx-swift-lm/Libraries/MLXVLM/VLMModelFactory.swift");
+    let workspace_root = mlx_dir.parent().expect("mlx_dir has parent");
+    let local_toml = workspace_root.join("models/local.toml");
+    println!("cargo:rerun-if-changed={}", local_toml.display());
 
-    let mut entries = Vec::new();
-    entries.extend(scrape_factory(&llm_factory, "ModelKind::Llm"));
-    entries.extend(scrape_factory(&vlm_factory, "ModelKind::Vlm"));
+    let entries = parse_local_toml(&local_toml);
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let mut code = String::from(
-        "/// Auto-generated from mlx-swift-lm's LLM + VLM model factories.\n\
-         /// Each entry: (alias, hf_repo_id, default_prompt, kind).\n\
-         pub const MODEL_REGISTRY: &[(&str, &str, &str, ModelKind)] = &[\n",
+        "/// Auto-generated from models/local.toml.\n\
+         /// Each entry: (alias, hf_repo_id, kind, size_mb).\n\
+         pub const MODEL_REGISTRY: &[(&str, &str, ModelKind, u64)] = &[\n",
     );
-    for (alias, id, prompt, kind) in &entries {
-        let escaped_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
+    for (alias, id, kind, size_mb) in &entries {
         code.push_str(&format!(
-            "    (\"{alias}\", \"{id}\", \"{escaped_prompt}\", {kind}),\n"
+            "    (\"{alias}\", \"{id}\", {kind}, {size_mb}),\n"
         ));
     }
     code.push_str("];\n");
@@ -315,12 +311,12 @@ fn generate_model_registry(mlx_dir: &Path) {
     fs::write(&registry_path, &code).expect("write model_registry.rs");
 }
 
-/// Scrape `ModelConfiguration(id: ..., defaultPrompt: ...)` declarations
-/// out of one `*ModelFactory.swift` file and tag each with `kind`.
-/// `kind` is emitted verbatim into the generated Rust source, so it
-/// must be a valid `ModelKind` variant expression (`"ModelKind::Llm"`
-/// or `"ModelKind::Vlm"`).
-fn scrape_factory(path: &Path, kind: &'static str) -> Vec<(String, String, String, &'static str)> {
+/// Parse `models/local.toml` into registry entries.
+///
+/// The TOML uses nested tables `[models.family.size.quant]` with fields
+/// `repo_id` and `size_mb`. This flattens them to
+/// `("family.size.quant", repo_id, ModelKind::Llm, size_mb)`.
+fn parse_local_toml(path: &Path) -> Vec<(String, String, &'static str, u64)> {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -328,47 +324,43 @@ fn scrape_factory(path: &Path, kind: &'static str) -> Vec<(String, String, Strin
             return Vec::new();
         }
     };
-    println!("cargo:rerun-if-changed={}", path.display());
 
-    // Parse entries like:
-    //   static public let foo = ModelConfiguration(
-    //       id: "mlx-community/Some-Model-4bit",
-    //       defaultPrompt: "Hello"
-    //   )
+    let table: toml::Table = match source.parse() {
+        Ok(t) => t,
+        Err(e) => {
+            println!("cargo:warning=cannot parse {}: {e}", path.display());
+            return Vec::new();
+        }
+    };
+
+    let Some(toml::Value::Table(families)) = table.get("models") else {
+        return Vec::new();
+    };
+
     let mut entries = Vec::new();
-    let lines: Vec<&str> = source.lines().collect();
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i].trim();
-        if line.starts_with("static public let") && line.contains("ModelConfiguration(") {
-            let mut id = String::new();
-            let mut prompt = String::new();
-            // Scan the next few lines for id: and defaultPrompt:
-            for l in lines[i..std::cmp::min(i + 8, lines.len())]
-                .iter()
-                .map(|l| l.trim())
-            {
-                if let Some(rest) = l.strip_prefix("id: \"").and_then(|r| r.split('"').next()) {
-                    id = rest.to_string();
-                }
-                if let Some(rest) = l
-                    .strip_prefix("defaultPrompt: \"")
-                    .and_then(|r| r.rfind('"').map(|end| &r[..end]))
-                {
-                    prompt = rest.to_string();
-                }
-            }
-            if !id.is_empty() {
-                // Derive a short alias from the HF repo name:
-                // "mlx-community/Qwen3.5-2B-MLX-4bit" → "qwen3.5-2b-mlx-4bit"
-                let alias = id
-                    .strip_prefix("mlx-community/")
-                    .unwrap_or(&id)
-                    .to_lowercase();
-                entries.push((alias, id, prompt, kind));
+    for (family, sizes) in families {
+        let Some(sizes) = sizes.as_table() else {
+            continue;
+        };
+        for (size, quants) in sizes {
+            let Some(quants) = quants.as_table() else {
+                continue;
+            };
+            for (quant, entry) in quants {
+                let Some(entry) = entry.as_table() else {
+                    continue;
+                };
+                let Some(repo_id) = entry.get("repo_id").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let size_mb = entry
+                    .get("size_mb")
+                    .and_then(|v| v.as_integer())
+                    .unwrap_or(0) as u64;
+                let alias = format!("{family}.{size}.{quant}");
+                entries.push((alias, repo_id.to_string(), "ModelKind::Llm", size_mb));
             }
         }
-        i += 1;
     }
     entries
 }
