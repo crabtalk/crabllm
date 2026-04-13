@@ -92,7 +92,7 @@ struct ReloadResponse {
 /// POST /v1/admin/providers/reload — re-read config from disk and
 /// atomically swap the provider registry.
 async fn reload_providers<P: Provider>(State(state): State<ProviderAdminState<P>>) -> Response {
-    let raw = match std::fs::read_to_string(&state.config_path) {
+    let raw = match tokio::fs::read_to_string(&state.config_path).await {
         Ok(s) => s,
         Err(e) => {
             return (
