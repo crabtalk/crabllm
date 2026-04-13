@@ -207,6 +207,9 @@ pub struct LocalModelEntry {
     /// Approximate disk size in megabytes.
     #[serde(default)]
     pub size_mb: Option<u64>,
+    /// Whether the model accepts image/video input (VLM).
+    #[serde(default)]
+    pub vision: Option<bool>,
 }
 
 /// Wrapper for local model TOML: `[models.family.size.quant]` nested tables.

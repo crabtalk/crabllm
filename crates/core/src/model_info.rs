@@ -15,6 +15,9 @@ pub struct ModelInfo {
     /// Token pricing (input + output cost per million tokens).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<PricingConfig>,
+    /// Whether the model accepts image/video input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision: Option<bool>,
 }
 
 impl ModelInfo {
@@ -26,6 +29,9 @@ impl ModelInfo {
         }
         if self.pricing.is_none() {
             self.pricing = fallback.pricing;
+        }
+        if self.vision.is_none() {
+            self.vision = fallback.vision;
         }
     }
 

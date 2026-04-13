@@ -258,6 +258,7 @@ fn canned_models() -> ModelList {
                 owned_by: "mock".into(),
                 context_length: None,
                 pricing: None,
+                vision: None,
             },
             Model {
                 id: "bench-embed".into(),
@@ -266,6 +267,7 @@ fn canned_models() -> ModelList {
                 owned_by: "mock".into(),
                 context_length: None,
                 pricing: None,
+                vision: None,
             },
         ],
     }

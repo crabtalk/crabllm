@@ -26,21 +26,29 @@ SWIFT_FACTORIES = [
 ]
 
 
-def load_supported_model_types() -> set[str]:
-    """Extract supported model_type strings from mlx-swift-lm factory source."""
-    types: set[str] = set()
+def load_supported_model_types() -> tuple[set[str], set[str]]:
+    """Extract supported model_type strings from mlx-swift-lm factory source.
+
+    Returns (all_types, vlm_types) — vlm_types is the subset that supports vision.
+    """
+    all_types: set[str] = set()
+    vlm_types: set[str] = set()
     pattern = re.compile(r'"([^"]+)":\s*create\(')
 
     for path in SWIFT_FACTORIES:
+        is_vlm = "VLM" in path
         try:
             text = Path(path).read_text()
         except FileNotFoundError:
             print(f"  warning: {path} not found, skipping")
             continue
         for m in pattern.finditer(text):
-            types.add(m.group(1))
+            model_type = m.group(1)
+            all_types.add(model_type)
+            if is_vlm:
+                vlm_types.add(model_type)
 
-    return types
+    return all_types, vlm_types
 
 
 def parse_model(repo_id: str) -> tuple[str, str, str] | None:
@@ -112,8 +120,8 @@ def get_model_type(model) -> str | None:
 
 
 def main():
-    supported = load_supported_model_types()
-    print(f"Supported model types ({len(supported)}): {', '.join(sorted(supported))}")
+    supported, vlm_types = load_supported_model_types()
+    print(f"Supported model types ({len(supported)}), VLM types ({len(vlm_types)}): {', '.join(sorted(vlm_types))}")
 
     print(f"Fetching models from {ORG} on HuggingFace ...")
     all_models = list(
@@ -129,7 +137,7 @@ def main():
     # Parse into (family, size, quant, repo_id, size_mb).
     # Models are sorted by downloads (descending), so first occurrence wins.
     seen: set[tuple[str, str, str]] = set()
-    entries: list[tuple[str, str, str, str, int | None]] = []
+    entries: list[tuple[str, str, str, str, int, bool]] = []
     skipped = 0
     unsupported = 0
     dupes = 0
@@ -142,6 +150,7 @@ def main():
         if model_type and model_type not in supported:
             unsupported += 1
             continue
+        is_vlm = model_type in vlm_types if model_type else False
         parsed = parse_model(repo_id)
         if not parsed:
             skipped += 1
@@ -156,7 +165,7 @@ def main():
         if size_mb is None:
             skipped += 1
             continue
-        entries.append((family, size, quant, repo_id, size_mb))
+        entries.append((family, size, quant, repo_id, size_mb, is_vlm))
 
     entries.sort()
 
@@ -175,10 +184,12 @@ def main():
         """Quote a TOML key if it contains dots."""
         return f'"{s}"' if "." in s else s
 
-    for family, size, quant, repo_id, size_mb in entries:
+    for family, size, quant, repo_id, size_mb, is_vlm in entries:
         lines.append(f"[models.{toml_key(family)}.{toml_key(size)}.{toml_key(quant)}]")
         lines.append(f'repo_id = "{repo_id}"')
         lines.append(f"size_mb = {size_mb}")
+        if is_vlm:
+            lines.append("vision = true")
         lines.append("")
 
     with open(OUTPUT, "w") as f:

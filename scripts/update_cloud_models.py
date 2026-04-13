@@ -102,11 +102,14 @@ def main():
         provider = info.get("litellm_provider", "")
         provider_label = PROVIDERS.get(provider.split("/")[0], provider)
 
-        models[model_name] = {
+        entry = {
             "context_length": int(context),
             "prompt_cost_per_million": round(input_cost * 1_000_000, 4),
             "completion_cost_per_million": round((output_cost or 0) * 1_000_000, 4),
         }
+        if info.get("supports_vision"):
+            entry["vision"] = True
+        models[model_name] = entry
         seen_providers[model_name] = provider_label
 
     # Group by provider for organized output.
@@ -131,6 +134,8 @@ def main():
             ctx = f"{info['context_length']:_}"
             lines.append(f"{to_toml_key(name)}")
             lines.append(f"context_length = {ctx}")
+            if info.get("vision"):
+                lines.append("vision = true")
             lines.append(f"{to_toml_pricing_key(name)}")
             lines.append(f"prompt_cost_per_million = {info['prompt_cost_per_million']}")
             lines.append(

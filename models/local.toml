@@ -49,6 +49,7 @@ size_mb = 11935
 [models.cosmos-reason1.7b.4bit]
 repo_id = "mlx-community/Cosmos-Reason1-7B-4bit"
 size_mb = 2700
+vision = true
 
 [models.cydonia-v3.24b.4bit]
 repo_id = "mlx-community/Cydonia-24B-v3-4bit"
@@ -817,6 +818,7 @@ size_mb = 4958
 [models.gemma-3-glitter.12b.8bit]
 repo_id = "mlx-community/Gemma-3-Glitter-12B-8bit"
 size_mb = 6312
+vision = true
 
 [models.gemma-sea-lion-v3-it.9b.4bit]
 repo_id = "mlx-community/Gemma-SEA-LION-v3-9B-IT-mlx-4bit"
@@ -825,10 +827,12 @@ size_mb = 3306
 [models.gemma-sea-lion-v4-it.27b.4bit]
 repo_id = "mlx-community/Gemma-SEA-LION-v4-27B-IT-mlx-4bit"
 size_mb = 9661
+vision = true
 
 [models.gemma-sea-lion-v4-vl.4b.3bit]
 repo_id = "mlx-community/Gemma-SEA-LION-v4-4B-VL-mlx-3bit"
 size_mb = 1886
+vision = true
 
 [models.glm-4-0414.32b.4bit]
 repo_id = "mlx-community/GLM-4-32B-0414-4bit"
@@ -921,6 +925,7 @@ size_mb = 2403
 [models.gui-owl.7b.6bit]
 repo_id = "mlx-community/GUI-Owl-7B-6bit"
 size_mb = 4476
+vision = true
 
 [models."happzy2633-qwen2.5-ins-v3".7b.4bit]
 repo_id = "mlx-community/Happzy2633-Qwen2.5-7b-ins-v3-4bit"
@@ -1013,26 +1018,32 @@ size_mb = 37849
 [models.holo1.3b.3bit]
 repo_id = "mlx-community/Holo1-3B-3bit"
 size_mb = 2011
+vision = true
 
 [models.holo1.3b.4bit]
 repo_id = "mlx-community/Holo1-3B-4bit"
 size_mb = 2195
+vision = true
 
 [models.holo1.3b.6bit]
 repo_id = "mlx-community/Holo1-3B-6bit"
 size_mb = 2563
+vision = true
 
 [models.holo1.3b.8bit]
 repo_id = "mlx-community/Holo1-3B-8bit"
 size_mb = 2931
+vision = true
 
 [models.holo1.7b.3bit]
 repo_id = "mlx-community/Holo1-7B-3bit"
 size_mb = 3106
+vision = true
 
 [models.holo3-a3b.35b.8bit]
 repo_id = "mlx-community/Holo3-35B-A3B-8bit"
 size_mb = 22366
+vision = true
 
 [models.huatuogpt-o1.72b.4bit]
 repo_id = "mlx-community/HuatuoGPT-o1-72B-4bit"
@@ -1069,34 +1080,42 @@ size_mb = 627
 [models."huihui-qwen3.5-a3b-abliterated".35b.6bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-35B-A3B-abliterated-6bit"
 size_mb = 14465
+vision = true
 
 [models."huihui-qwen3.5-a3b-claude-4.6-opus-abliterated".35b.4bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-35B-A3B-Claude-4.6-Opus-abliterated-4bit"
 size_mb = 11188
+vision = true
 
 [models."huihui-qwen3.5-a3b-claude-4.6-opus-abliterated".35b.6bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-35B-A3B-Claude-4.6-Opus-abliterated-6bit"
 size_mb = 14465
+vision = true
 
 [models."huihui-qwen3.5-abliterated".27b.6bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-27B-abliterated-6bit"
 size_mb = 11225
+vision = true
 
 [models."huihui-qwen3.5-claude-4.6-opus-abliterated".27b.4bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-27B-Claude-4.6-Opus-abliterated-4bit"
 size_mb = 8898
+vision = true
 
 [models."huihui-qwen3.5-claude-4.6-opus-abliterated".27b.6bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-27B-Claude-4.6-Opus-abliterated-6bit"
 size_mb = 12104
+vision = true
 
 [models."huihui-qwen3.5-claude-4.6-opus-abliterated".4b.4bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated-4bit"
 size_mb = 1891
+vision = true
 
 [models."huihui-qwen3.5-claude-4.6-opus-abliterated".4b.6bit]
 repo_id = "mlx-community/Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated-6bit"
 size_mb = 2392
+vision = true
 
 [models."ibm-granite-3.2-instruct".2b.4bit]
 repo_id = "mlx-community/IBM-granite-3.2-2b-instruct-4bit"
@@ -1105,18 +1124,22 @@ size_mb = 755
 [models.idefics3-llama3.8b.3bit]
 repo_id = "mlx-community/Idefics3-8B-Llama3-3bit"
 size_mb = 2707
+vision = true
 
 [models.idefics3-llama3.8b.4bit]
 repo_id = "mlx-community/Idefics3-8B-Llama3-4bit"
 size_mb = 3186
+vision = true
 
 [models.idefics3-llama3.8b.6bit]
 repo_id = "mlx-community/Idefics3-8B-Llama3-6bit"
 size_mb = 4146
+vision = true
 
 [models.idefics3-llama3.8b.8bit]
 repo_id = "mlx-community/Idefics3-8B-Llama3-8bit"
 size_mb = 5105
+vision = true
 
 [models.ii-medical.8b.4bit]
 repo_id = "mlx-community/II-Medical-8B-4bit"
@@ -1153,6 +1176,7 @@ size_mb = 2158
 [models.jedi-1080p.7b.4bit]
 repo_id = "mlx-community/Jedi-7B-1080p-4bit"
 size_mb = 2700
+vision = true
 
 [models."josie-1.1-instruct".4b.4bit]
 repo_id = "mlx-community/JOSIE-1.1-4B-Instruct-4bit"
@@ -1453,14 +1477,17 @@ size_mb = 2158
 [models."josiefied-qwen3.5-gabliterated-v1"."0.8b".4bit]
 repo_id = "mlx-community/Josiefied-Qwen3.5-0.8B-gabliterated-v1-4bit"
 size_mb = 225
+vision = true
 
 [models."josiefied-qwen3.5-gabliterated-v1"."0.8b".6bit]
 repo_id = "mlx-community/Josiefied-Qwen3.5-0.8B-gabliterated-v1-6bit"
 size_mb = 314
+vision = true
 
 [models."josiefied-qwen3.5-gabliterated-v1"."0.8b".8bit]
 repo_id = "mlx-community/Josiefied-Qwen3.5-0.8B-gabliterated-v1-8bit"
 size_mb = 404
+vision = true
 
 [models.josiev4o-stage1-beta.8b.4bit]
 repo_id = "mlx-community/JOSIEv4o-8b-stage1-beta-4bit"
@@ -1469,10 +1496,12 @@ size_mb = 2393
 [models.karakuri-vl-2-thinking-2603.8b.4bit]
 repo_id = "mlx-community/karakuri-vl-2-8b-thinking-2603-MLX-4bit"
 size_mb = 3540
+vision = true
 
 [models.karakuri-vl-2-thinking-2603.8b.8bit]
 repo_id = "mlx-community/karakuri-vl-2-8b-thinking-2603-MLX-8bit"
 size_mb = 5493
+vision = true
 
 [models.kimi-dev.72b.4bit]
 repo_id = "mlx-community/Kimi-Dev-72B-4bit"
@@ -1601,34 +1630,42 @@ size_mb = 1378
 [models.lfm2-vl."1.6b".4bit]
 repo_id = "mlx-community/LFM2-VL-1.6B-4bit"
 size_mb = 1112
+vision = true
 
 [models.lfm2-vl."1.6b".6bit]
 repo_id = "mlx-community/LFM2-VL-1.6B-6bit"
 size_mb = 1253
+vision = true
 
 [models.lfm2-vl."1.6b".8bit]
 repo_id = "mlx-community/LFM2-VL-1.6B-8bit"
 size_mb = 1395
+vision = true
 
 [models.lfm2-vl.3b.4bit]
 repo_id = "mlx-community/LFM2-VL-3B-4bit"
 size_mb = 1558
+vision = true
 
 [models.lfm2-vl.3b.6bit]
 repo_id = "mlx-community/LFM2-VL-3B-6bit"
 size_mb = 1866
+vision = true
 
 [models.lfm2-vl.3b.8bit]
 repo_id = "mlx-community/LFM2-VL-3B-8bit"
 size_mb = 2174
+vision = true
 
 [models.lfm2-vl.450m.4bit]
 repo_id = "mlx-community/LFM2-VL-450M-4bit"
 size_mb = 272
+vision = true
 
 [models.lfm2-vl.450m.8bit]
 repo_id = "mlx-community/LFM2-VL-450M-8bit"
 size_mb = 359
+vision = true
 
 [models."lfm2.5".350m.6bit]
 repo_id = "mlx-community/LFM2.5-350M-6bit"
@@ -1689,14 +1726,17 @@ size_mb = 627
 [models."lfm2.5-vl"."1.6b".4bit]
 repo_id = "mlx-community/LFM2.5-VL-1.6B-4bit"
 size_mb = 1140
+vision = true
 
 [models."lfm2.5-vl"."1.6b".6bit]
 repo_id = "mlx-community/LFM2.5-VL-1.6B-6bit"
 size_mb = 1281
+vision = true
 
 [models."lfm2.5-vl"."1.6b".8bit]
 repo_id = "mlx-community/LFM2.5-VL-1.6B-8bit"
 size_mb = 1422
+vision = true
 
 [models."liberated-qwen1.5".72b.4bit]
 repo_id = "mlx-community/Liberated-Qwen1.5-72B-4bit"
@@ -1705,26 +1745,32 @@ size_mb = 23553
 [models.lightonocr-1025.1b.4bit]
 repo_id = "mlx-community/LightOnOCR-1B-1025-4bit"
 size_mb = 995
+vision = true
 
 [models.lightonocr-1025.1b.6bit]
 repo_id = "mlx-community/LightOnOCR-1B-1025-6bit"
 size_mb = 1085
+vision = true
 
 [models.lightonocr-1025.1b.8bit]
 repo_id = "mlx-community/LightOnOCR-1B-1025-8bit"
 size_mb = 1175
+vision = true
 
 [models.lightonocr-2.1b.4bit]
 repo_id = "mlx-community/LightOnOCR-2-1B-4bit"
 size_mb = 948
+vision = true
 
 [models.lightonocr-2.1b.8bit]
 repo_id = "mlx-community/LightOnOCR-2-1B-8bit"
 size_mb = 1092
+vision = true
 
 [models.lingshu.7b.4bit]
 repo_id = "mlx-community/Lingshu-7B-4bit"
 size_mb = 2700
+vision = true
 
 [models.llama-3-16k.8b.4bit]
 repo_id = "mlx-community/Llama-3-8B-16K-4bit"
@@ -2077,10 +2123,12 @@ size_mb = 1999
 [models.mai-ui.8b.4bit]
 repo_id = "mlx-community/MAI-UI-8B-4bit"
 size_mb = 5129
+vision = true
 
 [models.mai-ui.8b.6bit]
 repo_id = "mlx-community/MAI-UI-8B-6bit"
 size_mb = 6105
+vision = true
 
 [models."mamba-codestral-v0.1".7b.4bit]
 repo_id = "mlx-community/Mamba-Codestral-7B-v0.1-4bit"
@@ -2125,14 +2173,17 @@ size_mb = 2369
 [models."medgemma-1.5-it".4b.4bit]
 repo_id = "mlx-community/medgemma-1.5-4b-it-4bit"
 size_mb = 2157
+vision = true
 
 [models."medgemma-1.5-it".4b.6bit]
 repo_id = "mlx-community/medgemma-1.5-4b-it-6bit"
 size_mb = 2700
+vision = true
 
 [models."medgemma-1.5-it".4b.8bit]
 repo_id = "mlx-community/medgemma-1.5-4b-it-8bit"
 size_mb = 3242
+vision = true
 
 [models.megrez-instruct-abliterated.3b.6bit]
 repo_id = "mlx-community/Megrez-3B-Instruct-abliterated-6bit"
@@ -2225,26 +2276,32 @@ size_mb = 2390
 [models."mistral-small-3.2-instruct-2506".24b.8bit]
 repo_id = "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-8bit"
 size_mb = 12645
+vision = true
 
 [models.mistral-small-4-2603.119b.4bit]
 repo_id = "mlx-community/Mistral-Small-4-119B-2603-4bit"
 size_mb = 36238
+vision = true
 
 [models.mistral-small-4-2603.119b.6bit]
 repo_id = "mlx-community/Mistral-Small-4-119B-2603-6bit"
 size_mb = 50421
+vision = true
 
 [models.mistral-small-4-2603.119b.8bit]
 repo_id = "mlx-community/Mistral-Small-4-119B-2603-8bit"
 size_mb = 64605
+vision = true
 
 [models.mistralai_devstral-small-2-instruct-2512.24b.4bit]
 repo_id = "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit"
 size_mb = 7025
+vision = true
 
 [models.mistralai_devstral-small-2-instruct-2512.24b.6bit]
 repo_id = "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-6Bit"
 size_mb = 9835
+vision = true
 
 [models.mn-mag-mell-r1.12b.6bit]
 repo_id = "mlx-community/MN-12B-Mag-Mell-R1-6bit"
@@ -2357,14 +2414,17 @@ size_mb = 4394
 [models.qwen-3-vl-ricoh-20260227.8b.4bit]
 repo_id = "mlx-community/Qwen-3-VL-Ricoh-8B-20260227-MLX-4bit"
 size_mb = 3540
+vision = true
 
 [models.qwen-3-vl-ricoh-20260227.8b.8bit]
 repo_id = "mlx-community/Qwen-3-VL-Ricoh-8B-20260227-MLX-8bit"
 size_mb = 5493
+vision = true
 
 [models.qwen-sea-lion-v4-vl.4b.4bit]
 repo_id = "mlx-community/Qwen-SEA-LION-v4-4B-VL-4bit"
 size_mb = 1991
+vision = true
 
 [models."qwen1.5-chat".110b.4bit]
 repo_id = "mlx-community/Qwen1.5-110B-Chat-4bit"
@@ -2481,178 +2541,222 @@ size_mb = 2158
 [models.qwen3-vl-embedding.2b.4bit]
 repo_id = "mlx-community/Qwen3-VL-Embedding-2B-4bit"
 size_mb = 1289
+vision = true
 
 [models.qwen3-vl-embedding.2b.6bit]
 repo_id = "mlx-community/Qwen3-VL-Embedding-2B-6bit"
 size_mb = 1494
+vision = true
 
 [models.qwen3-vl-embedding.2b.8bit]
 repo_id = "mlx-community/Qwen3-VL-Embedding-2B-8bit"
 size_mb = 1699
+vision = true
 
 [models.qwen3-vl-reranker.2b.4bit]
 repo_id = "mlx-community/Qwen3-VL-Reranker-2B-4bit"
 size_mb = 1289
+vision = true
 
 [models.qwen3-vl-reranker.2b.6bit]
 repo_id = "mlx-community/Qwen3-VL-Reranker-2B-6bit"
 size_mb = 1494
+vision = true
 
 [models.qwen3-vl-reranker.2b.8bit]
 repo_id = "mlx-community/Qwen3-VL-Reranker-2B-8bit"
 size_mb = 1699
+vision = true
 
 [models."qwen3.5"."0.8b".3bit]
 repo_id = "mlx-community/Qwen3.5-0.8B-3bit"
 size_mb = 372
+vision = true
 
 [models."qwen3.5"."0.8b".4bit]
 repo_id = "mlx-community/Qwen3.5-0.8B-MLX-4bit"
 size_mb = 416
+vision = true
 
 [models."qwen3.5"."0.8b".6bit]
 repo_id = "mlx-community/Qwen3.5-0.8B-6bit"
 size_mb = 506
+vision = true
 
 [models."qwen3.5"."0.8b".8bit]
 repo_id = "mlx-community/Qwen3.5-0.8B-8bit"
 size_mb = 596
+vision = true
 
 [models."qwen3.5".27b.4bit]
 repo_id = "mlx-community/Qwen3.5-27B-4bit"
 size_mb = 8898
+vision = true
 
 [models."qwen3.5".27b.6bit]
 repo_id = "mlx-community/Qwen3.5-27B-6bit"
 size_mb = 12104
+vision = true
 
 [models."qwen3.5".27b.8bit]
 repo_id = "mlx-community/Qwen3.5-27B-8bit"
 size_mb = 15310
+vision = true
 
 [models."qwen3.5".2b.3bit]
 repo_id = "mlx-community/Qwen3.5-2B-3bit"
 size_mb = 1081
+vision = true
 
 [models."qwen3.5".2b.4bit]
 repo_id = "mlx-community/Qwen3.5-2B-4bit"
 size_mb = 1193
+vision = true
 
 [models."qwen3.5".2b.6bit]
 repo_id = "mlx-community/Qwen3.5-2B-6bit"
 size_mb = 1418
+vision = true
 
 [models."qwen3.5".2b.8bit]
 repo_id = "mlx-community/Qwen3.5-2B-MLX-8bit"
 size_mb = 1642
+vision = true
 
 [models."qwen3.5".4b.3bit]
 repo_id = "mlx-community/Qwen3.5-4B-3bit"
 size_mb = 1640
+vision = true
 
 [models."qwen3.5".4b.4bit]
 repo_id = "mlx-community/Qwen3.5-4B-4bit"
 size_mb = 1891
+vision = true
 
 [models."qwen3.5".4b.6bit]
 repo_id = "mlx-community/Qwen3.5-4B-6bit"
 size_mb = 2392
+vision = true
 
 [models."qwen3.5".4b.8bit]
 repo_id = "mlx-community/Qwen3.5-4B-MLX-8bit"
 size_mb = 2893
+vision = true
 
 [models."qwen3.5".9b.4bit]
 repo_id = "mlx-community/Qwen3.5-9B-MLX-4bit"
 size_mb = 3539
+vision = true
 
 [models."qwen3.5".9b.6bit]
 repo_id = "mlx-community/Qwen3.5-9B-6bit"
 size_mb = 4607
+vision = true
 
 [models."qwen3.5".9b.8bit]
 repo_id = "mlx-community/Qwen3.5-9B-8bit"
 size_mb = 5674
+vision = true
 
 [models."qwen3.5-a10b".122b.4bit]
 repo_id = "mlx-community/Qwen3.5-122B-A10B-4bit"
 size_mb = 37256
+vision = true
 
 [models."qwen3.5-a10b".122b.6bit]
 repo_id = "mlx-community/Qwen3.5-122B-A10B-6bit"
 size_mb = 51812
+vision = true
 
 [models."qwen3.5-a10b".122b.8bit]
 repo_id = "mlx-community/Qwen3.5-122B-A10B-8bit"
 size_mb = 66369
+vision = true
 
 [models."qwen3.5-a17b".397b.4bit]
 repo_id = "mlx-community/Qwen3.5-397B-A17B-4bit"
 size_mb = 118994
+vision = true
 
 [models."qwen3.5-a17b".397b.6bit]
 repo_id = "mlx-community/Qwen3.5-397B-A17B-6bit"
 size_mb = 166242
+vision = true
 
 [models."qwen3.5-a17b".397b.8bit]
 repo_id = "mlx-community/Qwen3.5-397B-A17B-8bit"
 size_mb = 213490
+vision = true
 
 [models."qwen3.5-a3b".35b.4bit]
 repo_id = "mlx-community/Qwen3.5-35B-A3B-4bit"
 size_mb = 11183
+vision = true
 
 [models."qwen3.5-a3b".35b.6bit]
 repo_id = "mlx-community/Qwen3.5-35B-A3B-6bit"
 size_mb = 15315
+vision = true
 
 [models."qwen3.5-a3b".35b.8bit]
 repo_id = "mlx-community/Qwen3.5-35B-A3B-8bit"
 size_mb = 19446
+vision = true
 
 [models."qwen3.5-claude-4.6-opus-distilled".27b.4bit]
 repo_id = "mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit"
 size_mb = 8019
+vision = true
 
 [models."qwen3.5-claude-4.6-opus-distilled".27b.6bit]
 repo_id = "mlx-community/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-6bit"
 size_mb = 11225
+vision = true
 
 [models."qwen3.5-heretic".27b.8bit]
 repo_id = "mlx-community/Qwen3.5-27B-heretic-8bit"
 size_mb = 15310
+vision = true
 
 [models."qwen3.5-optiq"."0.8b".4bit]
 repo_id = "mlx-community/Qwen3.5-0.8B-OptiQ-4bit"
 size_mb = 308
+vision = true
 
 [models."qwen3.5-optiq".2b.4bit]
 repo_id = "mlx-community/Qwen3.5-2B-OptiQ-4bit"
 size_mb = 738
+vision = true
 
 [models."qwen3.5-optiq".4b.4bit]
 repo_id = "mlx-community/Qwen3.5-4B-OptiQ-4bit"
 size_mb = 1531
+vision = true
 
 [models."qwen3.5-optiq".9b.4bit]
 repo_id = "mlx-community/Qwen3.5-9B-OptiQ-4bit"
 size_mb = 3149
+vision = true
 
 [models."qwen3.5-reap-a10b".97b.4bit]
 repo_id = "mlx-community/Qwen3.5-REAP-97B-A10B-4bit"
 size_mb = 28840
+vision = true
 
 [models."qwopus3.5-v3".27b.4bit]
 repo_id = "mlx-community/Qwopus3.5-27B-v3-4bit"
 size_mb = 8898
+vision = true
 
 [models."qwopus3.5-v3".4b.4bit]
 repo_id = "mlx-community/Qwopus3.5-4B-v3-4bit"
 size_mb = 1891
+vision = true
 
 [models."qwopus3.5-v3".9b.4bit]
 repo_id = "mlx-community/Qwopus3.5-9B-v3-4bit"
 size_mb = 3539
+vision = true
 
 [models.qwq.32b.8bit]
 repo_id = "mlx-community/QwQ-32B-8bit"
@@ -2729,34 +2833,42 @@ size_mb = 4403
 [models.translategemma-it.12b.4bit]
 repo_id = "mlx-community/translategemma-12b-it-4bit"
 size_mb = 3507
+vision = true
 
 [models.translategemma-it.27b.4bit]
 repo_id = "mlx-community/translategemma-27b-it-4bit"
 size_mb = 8051
+vision = true
 
 [models.translategemma-it.27b.8bit]
 repo_id = "mlx-community/translategemma-27b-it-8bit"
 size_mb = 14490
+vision = true
 
 [models.translategemma-it.4b.4bit]
 repo_id = "mlx-community/translategemma-4b-it-4bit"
 size_mb = 1157
+vision = true
 
 [models.translategemma-it.4b.8bit]
 repo_id = "mlx-community/translategemma-4b-it-8bit"
 size_mb = 2082
+vision = true
 
 [models."ui-venus-1.5".2b.6bit]
 repo_id = "mlx-community/UI-Venus-1.5-2B-6bit"
 size_mb = 1624
+vision = true
 
 [models."ui-venus-1.5".8b.4bit]
 repo_id = "mlx-community/UI-Venus-1.5-8B-4bit"
 size_mb = 3540
+vision = true
 
 [models."ui-venus-1.5".8b.6bit]
 repo_id = "mlx-community/UI-Venus-1.5-8B-6bit"
 size_mb = 4517
+vision = true
 
 [models.unslopper-a3b.30b.6bit]
 repo_id = "mlx-community/Unslopper-30B-A3B-6bit"

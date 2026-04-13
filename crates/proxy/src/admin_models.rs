@@ -85,6 +85,8 @@ struct ModelMetadataEntry {
     context_length: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pricing: Option<crabllm_core::PricingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vision: Option<bool>,
     source: &'static str,
 }
 
@@ -121,6 +123,7 @@ async fn list_models(State(state): State<ModelAdminState>) -> Response {
                 model: model.to_string(),
                 context_length: info.context_length,
                 pricing: info.pricing,
+                vision: info.vision,
                 source,
             });
         }
@@ -158,6 +161,7 @@ async fn get_model(State(state): State<ModelAdminState>, Path(model): Path<Strin
         model,
         context_length: info.context_length,
         pricing: info.pricing,
+        vision: info.vision,
         source,
     })
     .into_response()
@@ -212,6 +216,7 @@ async fn upsert_model(
             model,
             context_length: resolved.context_length,
             pricing: resolved.pricing,
+            vision: resolved.vision,
             source: "admin",
         }),
     )

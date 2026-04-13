@@ -11,6 +11,8 @@ pub struct Model {
     pub context_length: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pricing: Option<PricingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vision: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
