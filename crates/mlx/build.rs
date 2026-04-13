@@ -311,7 +311,6 @@ fn generate_model_registry(mlx_dir: &Path) {
     fs::write(&registry_path, &code).expect("write model_registry.rs");
 }
 
-
 /// Parse `models/local.toml` into registry entries.
 ///
 /// The TOML uses nested tables `[models.family.size.quant]` with fields
