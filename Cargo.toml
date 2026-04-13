@@ -19,6 +19,7 @@ crabllm-bench = { version = "0.0.15", path = "crates/bench" }
 crabllm = { version = "0.0.15", path = "crates/crabllm" }
 crabllm-llamacpp = { version = "0.0.15", path = "crates/llamacpp" }
 crabllm-mlx = { version = "0.0.15", path = "crates/mlx" }
+crabctl = { version = "0.0.15", path = "crates/crabctl" }
 
 # crates-io
 axum = { version = "0.8", features = ["multipart"] }
