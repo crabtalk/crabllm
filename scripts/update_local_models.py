@@ -82,7 +82,9 @@ def main():
     ]
 
     for alias, repo_id, size_mb in entries:
-        lines.append(f"[models.{alias}]")
+        # Quote alias if it contains dots (TOML treats dots as table separators).
+        key = f'"{alias}"' if "." in alias else alias
+        lines.append(f"[models.{key}]")
         lines.append(f'repo_id = "{repo_id}"')
         if size_mb is not None:
             lines.append(f"size_mb = {size_mb}")
