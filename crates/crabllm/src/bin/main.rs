@@ -222,16 +222,14 @@ async fn run<S: Storage + 'static>(
     registry: ProviderRegistry<Dispatch>,
     storage: Arc<S>,
 ) {
-    let (extensions, mut admin_routes) = match build_extensions(
-        &config,
-        storage.clone() as Arc<dyn Storage>,
-    ) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("error: failed to build extensions: {e}");
-            std::process::exit(1);
-        }
-    };
+    let (extensions, mut admin_routes) =
+        match build_extensions(&config, storage.clone() as Arc<dyn Storage>) {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("error: failed to build extensions: {e}");
+                std::process::exit(1);
+            }
+        };
 
     // Install Prometheus metrics recorder and expose /metrics endpoint.
     let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
@@ -432,11 +430,7 @@ fn build_extensions(
                 extensions.push(Box::new(ext));
             }
             "budget" => {
-                let ext = Budget::new(
-                    value,
-                    storage.clone(),
-                    config.models.clone(),
-                )?;
+                let ext = Budget::new(value, storage.clone(), config.models.clone())?;
                 admin_routes.push(ext.admin_routes());
                 extensions.push(Box::new(ext));
             }
@@ -446,11 +440,7 @@ fn build_extensions(
                 has_logging = true;
             }
             "audit" => {
-                let ext = AuditLogger::new(
-                    value,
-                    storage.clone(),
-                    config.models.clone(),
-                )?;
+                let ext = AuditLogger::new(value, storage.clone(), config.models.clone())?;
                 admin_routes.push(ext.admin_routes());
                 extensions.push(Box::new(ext));
             }

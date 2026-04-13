@@ -352,10 +352,7 @@ fn generate_model_registry(mlx_dir: &Path) {
                     .get("vision")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let arch = entry
-                    .get("arch")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let arch = entry.get("arch").and_then(|v| v.as_str()).unwrap_or("");
                 let kind = if vision {
                     "ModelKind::Vlm"
                 } else {
