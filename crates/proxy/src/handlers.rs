@@ -149,8 +149,9 @@ where
         }
     };
     let is_stream = peek.stream == Some(true);
-    let model = state.registry.resolve(&peek.model).to_string();
-    let deployments = match state.registry.dispatch_list(&model) {
+    let registry = state.registry();
+    let model = registry.resolve(&peek.model).to_string();
+    let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
             return (
@@ -187,8 +188,7 @@ where
         }
     };
 
-    let provider_name = state
-        .registry
+    let provider_name = registry
         .provider_name(&model)
         .unwrap_or_default()
         .to_string();
@@ -404,8 +404,8 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
     deployments: &[&Deployment<P>],
     raw_body: axum::body::Bytes,
 ) -> Response {
-    let provider_name = state
-        .registry
+    let registry = state.registry();
+    let provider_name = registry
         .provider_name(model)
         .unwrap_or_default()
         .to_string();
@@ -474,8 +474,9 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let model = state.registry.resolve(&request.model).to_string();
-    let deployments = match state.registry.dispatch_list(&model) {
+    let registry = state.registry();
+    let model = registry.resolve(&request.model).to_string();
+    let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
             return (
@@ -489,8 +490,7 @@ where
         }
     };
 
-    let provider_name = state
-        .registry
+    let provider_name = registry
         .provider_name(&model)
         .unwrap_or_default()
         .to_string();
@@ -556,8 +556,8 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let names: Vec<String> = state
-        .registry
+    let registry = state.registry();
+    let names: Vec<String> = registry
         .model_names()
         .map(|n| n.to_string())
         .collect();
@@ -636,8 +636,9 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let model = state.registry.resolve(&request.model).to_string();
-    let deployments = match state.registry.dispatch_list(&model) {
+    let registry = state.registry();
+    let model = registry.resolve(&request.model).to_string();
+    let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
             return (
@@ -651,8 +652,7 @@ where
         }
     };
 
-    let provider_name = state
-        .registry
+    let provider_name = registry
         .provider_name(&model)
         .unwrap_or_default()
         .to_string();
@@ -714,8 +714,9 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let model = state.registry.resolve(&request.model).to_string();
-    let deployments = match state.registry.dispatch_list(&model) {
+    let registry = state.registry();
+    let model = registry.resolve(&request.model).to_string();
+    let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
             return (
@@ -729,8 +730,7 @@ where
         }
     };
 
-    let provider_name = state
-        .registry
+    let provider_name = registry
         .provider_name(&model)
         .unwrap_or_default()
         .to_string();
@@ -828,8 +828,9 @@ where
         });
     }
 
+    let registry = state.registry();
     let model = match model_value {
-        Some(m) => state.registry.resolve(&m).to_string(),
+        Some(m) => registry.resolve(&m).to_string(),
         None => {
             return (
                 StatusCode::BAD_REQUEST,
@@ -842,7 +843,7 @@ where
         }
     };
 
-    let deployments = match state.registry.dispatch_list(&model) {
+    let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
             return (
@@ -856,8 +857,7 @@ where
         }
     };
 
-    let provider_name = state
-        .registry
+    let provider_name = registry
         .provider_name(&model)
         .unwrap_or_default()
         .to_string();
