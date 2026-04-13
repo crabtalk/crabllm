@@ -34,6 +34,14 @@ pub struct GatewayConfig {
     /// built-in defaults at lookup time — only specify what you want to override.
     #[serde(default)]
     pub models: HashMap<String, crate::ModelInfo>,
+    /// Path to cloud model metadata TOML file (pricing + context windows).
+    /// Entries are merged into `models` at startup (config entries win).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud_models: Option<String>,
+    /// Path to local model registry TOML file (alias → HF repo ID).
+    /// Extends the build-time MLX model registry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_models: Option<String>,
     /// Admin API bearer token. If set, enables /v1/admin/* endpoints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admin_token: Option<String>,
@@ -192,15 +200,70 @@ impl StorageConfig {
     }
 }
 
+/// Wrapper for local model TOML: `[models]` section mapping alias → repo_id.
+#[cfg(feature = "gateway")]
+#[derive(Deserialize)]
+struct LocalModelsFile {
+    #[serde(default)]
+    models: HashMap<String, String>,
+}
+
 impl GatewayConfig {
-    /// Load config from a TOML file, expanding `${VAR}` patterns in string values.
+    /// Load config from a TOML file, expanding `${VAR}` patterns in
+    /// string values. If `cloud_models` is set, loads the referenced
+    /// file and merges entries into `models` (config entries win over
+    /// cloud file entries).
     #[cfg(feature = "gateway")]
     pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let raw = std::fs::read_to_string(path)?;
         let expanded = expand_env_vars(&raw);
 
-        let config: GatewayConfig = toml::from_str(&expanded)?;
+        let mut config: GatewayConfig = toml::from_str(&expanded)?;
+
+        let config_dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        config.load_cloud_models(config_dir)?;
+
         Ok(config)
+    }
+
+    /// Load cloud model metadata from the configured TOML file and merge
+    /// into `self.models`. Config entries take precedence — cloud file
+    /// entries only fill gaps.
+    #[cfg(feature = "gateway")]
+    fn load_cloud_models(
+        &mut self,
+        config_dir: &std::path::Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(ref path) = self.cloud_models else {
+            return Ok(());
+        };
+        let full = config_dir.join(path);
+        let raw = std::fs::read_to_string(&full)
+            .map_err(|e| format!("cloud_models '{}': {e}", full.display()))?;
+        let table: HashMap<String, crate::ModelInfo> =
+            toml::from_str(&raw).map_err(|e| format!("cloud_models '{}': {e}", full.display()))?;
+        for (model, info) in table {
+            self.models.entry(model).or_insert(info);
+        }
+        Ok(())
+    }
+
+    /// Load local model aliases from the configured TOML file.
+    /// Returns alias → HF repo ID mappings for the MLX provider.
+    #[cfg(feature = "gateway")]
+    pub fn load_local_models(
+        &self,
+        config_dir: &std::path::Path,
+    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+        let Some(ref path) = self.local_models else {
+            return Ok(HashMap::new());
+        };
+        let full = config_dir.join(path);
+        let raw = std::fs::read_to_string(&full)
+            .map_err(|e| format!("local_models '{}': {e}", full.display()))?;
+        let file: LocalModelsFile =
+            toml::from_str(&raw).map_err(|e| format!("local_models '{}': {e}", full.display()))?;
+        Ok(file.models)
     }
 }
 

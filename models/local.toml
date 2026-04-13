@@ -1,0 +1,9 @@
+# Local model registry — maps short aliases to HuggingFace repo IDs.
+#
+# Models listed here extend the build-time MLX registry. Use this file
+# to add models that are missing from mlx-swift-lm's factory list.
+#
+# Format: alias = "org/repo-id"
+
+[models]
+# qwen3.5-0.6b = "mlx-community/Qwen3.5-0.6B-MLX-4bit"
