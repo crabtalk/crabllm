@@ -1,7 +1,7 @@
+use crate::PREFIX_CACHE;
 use axum::{Router, http::StatusCode, routing::delete};
 use crabllm_core::{
-    BoxFuture, ChatCompletionRequest, ChatCompletionResponse, Prefix, RequestContext, Storage,
-    storage_key,
+    BoxFuture, ChatCompletionRequest, ChatCompletionResponse, RequestContext, Storage, storage_key,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -28,8 +28,6 @@ pub struct Cache {
 }
 
 impl Cache {
-    const PREFIX: Prefix = *b"cach";
-
     pub fn new(config: &serde_json::Value, storage: Arc<dyn Storage>) -> Result<Self, String> {
         let ttl_seconds = config
             .get("ttl_seconds")
@@ -46,7 +44,7 @@ impl Cache {
         let mut hasher = Sha256::new();
         // Write JSON directly into the hasher — no intermediate String allocation.
         let _ = serde_json::to_writer(DigestWriter(&mut hasher), request);
-        storage_key(&Self::PREFIX, &hasher.finalize())
+        storage_key(&PREFIX_CACHE, &hasher.finalize())
     }
 
     fn now_secs() -> u64 {
@@ -58,7 +56,7 @@ impl Cache {
 
     pub fn admin_routes(&self) -> Router {
         let storage = self.storage.clone();
-        let prefix = Self::PREFIX;
+        let prefix = PREFIX_CACHE;
         Router::new().route(
             "/v1/cache",
             delete(move || {
@@ -80,8 +78,8 @@ impl crabllm_core::Extension for Cache {
         "cache"
     }
 
-    fn prefix(&self) -> Prefix {
-        Self::PREFIX
+    fn prefix(&self) -> crabllm_core::Prefix {
+        PREFIX_CACHE
     }
 
     fn on_cache_lookup(

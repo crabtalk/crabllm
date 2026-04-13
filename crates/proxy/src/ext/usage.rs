@@ -1,9 +1,10 @@
-use axum::{Json, Router, routing::get};
+use crate::PREFIX_USAGE;
+use axum::{Json, Router, extract::Query, routing::get};
 use crabllm_core::{
-    BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Prefix,
-    RequestContext, Storage, storage_key,
+    BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, RequestContext,
+    Storage, storage_key,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub struct UsageTracker {
@@ -15,17 +16,13 @@ impl UsageTracker {
         Ok(Self { storage })
     }
 
-    /// The fixed prefix for this extension.
-    const PREFIX: Prefix = *b"usge";
-
     pub fn admin_routes(&self) -> Router {
         let storage = self.storage.clone();
-        let prefix = Self::PREFIX;
         Router::new().route(
             "/v1/usage",
-            get(move || {
+            get(move |query: Query<UsageQuery>| {
                 let storage = storage.clone();
-                async move { usage_handler(storage, prefix).await }
+                async move { usage_handler(storage, query.0).await }
             }),
         )
     }
@@ -44,14 +41,14 @@ impl UsageTracker {
         let _ = self
             .storage
             .increment(
-                &storage_key(&Self::PREFIX, prompt_suffix.as_bytes()),
+                &storage_key(&PREFIX_USAGE, prompt_suffix.as_bytes()),
                 prompt_tokens as i64,
             )
             .await;
         let _ = self
             .storage
             .increment(
-                &storage_key(&Self::PREFIX, completion_suffix.as_bytes()),
+                &storage_key(&PREFIX_USAGE, completion_suffix.as_bytes()),
                 completion_tokens as i64,
             )
             .await;
@@ -63,8 +60,8 @@ impl crabllm_core::Extension for UsageTracker {
         "usage"
     }
 
-    fn prefix(&self) -> Prefix {
-        Self::PREFIX
+    fn prefix(&self) -> crabllm_core::Prefix {
+        PREFIX_USAGE
     }
 
     fn on_response(
@@ -105,6 +102,12 @@ impl crabllm_core::Extension for UsageTracker {
     }
 }
 
+#[derive(Deserialize)]
+struct UsageQuery {
+    key: Option<String>,
+    model: Option<String>,
+}
+
 #[derive(Serialize)]
 struct UsageEntry {
     key: String,
@@ -113,8 +116,8 @@ struct UsageEntry {
     completion_tokens: i64,
 }
 
-async fn usage_handler(storage: Arc<dyn Storage>, prefix: Prefix) -> Json<Vec<UsageEntry>> {
-    let pairs = storage.list(&prefix).await.unwrap_or_default();
+async fn usage_handler(storage: Arc<dyn Storage>, query: UsageQuery) -> Json<Vec<UsageEntry>> {
+    let pairs = storage.list(&PREFIX_USAGE).await.unwrap_or_default();
 
     // Group by (key, model) — keys are PREFIX + "{key_name}:{model}:{p|c}"
     let mut entries: std::collections::HashMap<(String, String), (i64, i64)> =
@@ -135,6 +138,18 @@ async fn usage_handler(storage: Arc<dyn Storage>, prefix: Prefix) -> Json<Vec<Us
         let Some((key_name, model)) = rest.split_once(':') else {
             continue;
         };
+
+        // Apply filters.
+        if let Some(ref filter) = query.key
+            && key_name != filter
+        {
+            continue;
+        }
+        if let Some(ref filter) = query.model
+            && model != filter
+        {
+            continue;
+        }
 
         // Parse the counter value directly from the list() result bytes.
         let val = raw_value

@@ -1,6 +1,6 @@
 pub use config::{
-    GatewayConfig, KeyConfig, LocalModelEntry, PricingConfig, ProviderConfig, ProviderKind,
-    StorageConfig,
+    GatewayConfig, KeyConfig, KeyRateLimit, LocalModelEntry, PricingConfig, ProviderConfig,
+    ProviderKind, StorageConfig,
 };
 pub use error::{ApiError, ApiErrorBody, Error};
 pub use extension::{Extension, ExtensionError, RequestContext};
