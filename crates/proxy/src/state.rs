@@ -1,3 +1,4 @@
+use arc_swap::ArcSwap;
 use crabllm_core::{Extension, GatewayConfig, ModelInfo, Provider, Storage};
 use crabllm_provider::ProviderRegistry;
 use std::{
@@ -48,7 +49,7 @@ pub struct UsageEvent {
 /// every provider source it links — that enum implements `Provider` via
 /// match-and-delegate, so dispatch through `P` is fully monomorphized.
 pub struct AppState<S: Storage, P: Provider> {
-    pub registry: ProviderRegistry<P>,
+    pub registry: Arc<ArcSwap<ProviderRegistry<P>>>,
     pub config: GatewayConfig,
     pub extensions: Arc<Vec<Box<dyn Extension>>>,
     pub storage: Arc<S>,
@@ -77,5 +78,14 @@ impl<S: Storage, P: Provider> Clone for AppState<S, P> {
             model_overrides: self.model_overrides.clone(),
             usage_events: self.usage_events.clone(),
         }
+    }
+}
+
+impl<S: Storage, P: Provider> AppState<S, P> {
+    /// Snapshot the current provider registry. Returns a guard that
+    /// keeps the referenced registry alive for the duration of the
+    /// request — even if a concurrent swap replaces the global pointer.
+    pub fn registry(&self) -> arc_swap::Guard<Arc<ProviderRegistry<P>>> {
+        self.registry.load()
     }
 }

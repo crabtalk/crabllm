@@ -27,6 +27,7 @@ crabllm-provider.workspace = true
 crabllm-proxy.workspace = true
 
 # crates-io
+arc-swap.workspace = true
 axum.workspace = true
 bytes.workspace = true
 clap.workspace = true

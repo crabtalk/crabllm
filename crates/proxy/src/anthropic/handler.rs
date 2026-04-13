@@ -62,8 +62,9 @@ where
         }
     };
     let is_stream = peek.stream == Some(true);
-    let model = state.registry.resolve(&peek.model).to_string();
-    let deployments = match state.registry.dispatch_list(&model) {
+    let registry = state.registry();
+    let model = registry.resolve(&peek.model).to_string();
+    let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
             return (
@@ -99,8 +100,7 @@ where
     };
     let mut request = to_chat_completion(anthropic_req);
 
-    let provider_name = state
-        .registry
+    let provider_name = registry
         .provider_name(&model)
         .unwrap_or_default()
         .to_string();
@@ -348,8 +348,8 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         output_tokens: u32,
     }
 
-    let provider_name = state
-        .registry
+    let registry = state.registry();
+    let provider_name = registry
         .provider_name(model)
         .unwrap_or_default()
         .to_string();

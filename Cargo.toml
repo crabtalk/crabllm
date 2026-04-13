@@ -55,6 +55,7 @@ flate2 = "1"
 tar = "0.4"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 dirs = "6"
+arc-swap = "1"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 

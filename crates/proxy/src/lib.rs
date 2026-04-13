@@ -12,6 +12,7 @@ pub use state::{AppState, UsageEvent};
 
 pub mod admin;
 pub mod admin_models;
+pub mod admin_providers;
 pub mod anthropic;
 pub mod auth;
 pub mod ext;

@@ -4,6 +4,7 @@
 //! provider and storage, subscribes to `usage_events`, and asserts
 //! that exactly one event arrives with the expected shape.
 
+use arc_swap::ArcSwap;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -96,7 +97,9 @@ fn empty_config() -> GatewayConfig {
         extensions: None,
         storage: None,
         aliases: HashMap::new(),
-        pricing: HashMap::new(),
+        models: HashMap::new(),
+        cloud_models: None,
+        local_models: None,
         admin_token: None,
         shutdown_timeout: 30,
     }
@@ -119,11 +122,12 @@ fn build_state(tx: broadcast::Sender<UsageEvent>) -> AppState<FakeStorage, FakeP
     let registry = ProviderRegistry::new(providers, HashMap::new(), model_providers);
 
     AppState {
-        registry,
+        registry: Arc::new(ArcSwap::from_pointee(registry)),
         config: empty_config(),
         extensions: Arc::new(Vec::new()),
         storage: Arc::new(FakeStorage),
         key_map: Arc::new(RwLock::new(HashMap::new())),
+        model_overrides: Arc::new(RwLock::new(HashMap::new())),
         usage_events: Some(tx),
     }
 }
@@ -189,11 +193,12 @@ async fn none_usage_events_is_zero_cost() {
     let registry = ProviderRegistry::new(providers, HashMap::new(), model_providers);
 
     let state = AppState::<FakeStorage, FakeProvider> {
-        registry,
+        registry: Arc::new(ArcSwap::from_pointee(registry)),
         config: empty_config(),
         extensions: Arc::new(Vec::new()),
         storage: Arc::new(FakeStorage),
         key_map: Arc::new(RwLock::new(HashMap::new())),
+        model_overrides: Arc::new(RwLock::new(HashMap::new())),
         usage_events: None,
     };
 

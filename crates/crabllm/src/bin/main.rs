@@ -1,3 +1,4 @@
+use arc_swap::ArcSwap;
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
 use crabllm_core::{
@@ -255,6 +256,7 @@ async fn run<S: Storage + 'static>(
     let model_count = registry.model_names().count();
     let provider_count = registry.provider_count();
     let shutdown_timeout = Duration::from_secs(config.shutdown_timeout);
+    let registry = Arc::new(ArcSwap::from_pointee(registry));
 
     // Build key_map from TOML config keys.
     let key_map: HashMap<String, String> = config
@@ -284,8 +286,18 @@ async fn run<S: Storage + 'static>(
             storage.clone() as Arc<dyn crabllm_core::Storage>,
             model_overrides.clone(),
             config.clone(),
+            config_path.clone(),
+            admin_token.clone(),
+        ));
+        let rebuilder: crabllm_proxy::admin_providers::Rebuilder<Dispatch> =
+            Arc::new(|config: &GatewayConfig| {
+                ProviderRegistry::from_config(config, Dispatch::Remote)
+            });
+        admin_routes.push(crabllm_proxy::admin_providers::provider_admin_routes(
+            registry.clone(),
             config_path,
             admin_token.clone(),
+            rebuilder,
         ));
     }
 
