@@ -13,10 +13,36 @@ ORG = "mlx-community"
 QUANT_SUFFIXES = ("-4bit", "-8bit", "-3bit", "-6bit")
 
 
-def make_alias(repo_id: str) -> str:
-    """Convert 'mlx-community/Qwen3.5-2B-MLX-4bit' to 'qwen3.5-2b-mlx-4bit'."""
+def parse_model(repo_id: str) -> tuple[str, str, str] | None:
+    """Parse 'mlx-community/Qwen3.5-2B-MLX-4bit' into ('qwen3.5', '2b', '4bit').
+
+    Returns (family, size, quant) or None if the name can't be parsed.
+    """
+    import re
+
     name = repo_id.split("/", 1)[1] if "/" in repo_id else repo_id
-    return name.lower()
+    name = name.lower()
+
+    # Strip MLX marker.
+    name = re.sub(r"-?mlx-?", "-", name).strip("-")
+    name = re.sub(r"-{2,}", "-", name)
+
+    # Extract quant suffix (e.g., "4bit", "8bit").
+    quant_match = re.search(r"-(\d+bit)$", name)
+    # Extract param size (e.g., "2b", "70b", "0.5b", "135m").
+    size_match = re.search(r"-(\d+(?:\.\d+)?[bm])(?=-|$)", name)
+
+    if not (size_match and quant_match):
+        return None
+
+    quant = quant_match.group(1)
+    size = size_match.group(1)
+    # Family = everything before the size. Qualifiers between size and
+    # quant (e.g., "-instruct") are appended to keep aliases unique.
+    prefix = name[: size_match.start()]
+    suffix = name[size_match.end() : quant_match.start()].strip("-")
+    family = f"{prefix}-{suffix}" if suffix else prefix
+    return (family, size, quant)
 
 
 def get_size_mb(model) -> int | None:
@@ -59,14 +85,28 @@ def main():
     )
     print(f"  Found {len(all_models)} total repos")
 
-    entries: list[tuple[str, str, int | None]] = []
+    # Parse into (family, size, quant, repo_id, size_mb).
+    # Models are sorted by downloads (descending), so first occurrence wins.
+    seen: set[tuple[str, str, str]] = set()
+    entries: list[tuple[str, str, str, str, int | None]] = []
+    skipped = 0
+    dupes = 0
     for m in all_models:
         repo_id = m.id
         if not repo_id.lower().endswith(QUANT_SUFFIXES):
             continue
-        alias = make_alias(repo_id)
+        parsed = parse_model(repo_id)
+        if not parsed:
+            skipped += 1
+            continue
+        family, size, quant = parsed
+        key = (family, size, quant)
+        if key in seen:
+            dupes += 1
+            continue
+        seen.add(key)
         size_mb = get_size_mb(m)
-        entries.append((alias, repo_id, size_mb))
+        entries.append((family, size, quant, repo_id, size_mb))
 
     entries.sort()
 
@@ -76,15 +116,17 @@ def main():
         "#",
         "# Regenerate: python3 scripts/update_local_models.py",
         "#",
-        "# Each entry maps a short alias to a HuggingFace repo ID with disk size.",
-        "# Comment out models you don't need.",
+        "# Format: [models.{family}.{size}.{quant}]",
+        "# Family names with dots are quoted: [models.\"qwen3.5\".2b.4bit]",
         "",
     ]
 
-    for alias, repo_id, size_mb in entries:
-        # Quote alias if it contains dots (TOML treats dots as table separators).
-        key = f'"{alias}"' if "." in alias else alias
-        lines.append(f"[models.{key}]")
+    def toml_key(s: str) -> str:
+        """Quote a TOML key if it contains dots."""
+        return f'"{s}"' if "." in s else s
+
+    for family, size, quant, repo_id, size_mb in entries:
+        lines.append(f"[models.{toml_key(family)}.{toml_key(size)}.{toml_key(quant)}]")
         lines.append(f'repo_id = "{repo_id}"')
         if size_mb is not None:
             lines.append(f"size_mb = {size_mb}")
@@ -93,8 +135,8 @@ def main():
     with open(OUTPUT, "w") as f:
         f.write("\n".join(lines))
 
-    with_size = sum(1 for _, _, s in entries if s is not None)
-    print(f"Wrote {len(entries)} quantized models to {OUTPUT} ({with_size} with size info)")
+    with_size = sum(1 for *_, s in entries if s is not None)
+    print(f"Wrote {len(entries)} models to {OUTPUT} ({with_size} with size, {skipped} skipped, {dupes} dupes)")
 
 
 if __name__ == "__main__":

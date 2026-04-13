@@ -209,12 +209,12 @@ pub struct LocalModelEntry {
     pub size_mb: Option<u64>,
 }
 
-/// Wrapper for local model TOML: `[models.alias]` sections.
+/// Wrapper for local model TOML: `[models.family.size.quant]` nested tables.
 #[cfg(feature = "gateway")]
 #[derive(Deserialize)]
 struct LocalModelsFile {
     #[serde(default)]
-    models: HashMap<String, LocalModelEntry>,
+    models: HashMap<String, HashMap<String, HashMap<String, LocalModelEntry>>>,
 }
 
 impl GatewayConfig {
@@ -258,7 +258,9 @@ impl GatewayConfig {
     }
 
     /// Load local model entries from the configured TOML file.
-    /// Returns alias → entry mappings (repo ID + size).
+    ///
+    /// The TOML uses nested tables `[models.family.size.quant]`. This
+    /// flattens them to `"family.size.quant" → entry` for consumers.
     #[cfg(feature = "gateway")]
     pub fn load_local_models(
         &self,
@@ -272,7 +274,17 @@ impl GatewayConfig {
             .map_err(|e| format!("local_models '{}': {e}", full.display()))?;
         let file: LocalModelsFile =
             toml::from_str(&raw).map_err(|e| format!("local_models '{}': {e}", full.display()))?;
-        Ok(file.models)
+
+        let mut result = HashMap::new();
+        for (family, sizes) in file.models {
+            for (size, quants) in sizes {
+                for (quant, entry) in quants {
+                    let alias = format!("{family}.{size}.{quant}");
+                    result.insert(alias, entry);
+                }
+            }
+        }
+        Ok(result)
     }
 }
 
