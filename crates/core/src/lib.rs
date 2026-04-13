@@ -3,6 +3,7 @@ pub use config::{
 };
 pub use error::{ApiError, ApiErrorBody, Error};
 pub use extension::{Extension, ExtensionError, RequestContext};
+pub use model_info::{ModelInfo, default_model_info, resolve_model_info};
 pub use provider::{BoxStream, Provider};
 pub use storage::{BoxFuture, KvPairs, PREFIX_LEN, Prefix, Storage, storage_key};
 pub use types::{
@@ -18,6 +19,7 @@ pub use types::{
 mod config;
 mod error;
 mod extension;
+mod model_info;
 mod provider;
 mod storage;
 mod types;
