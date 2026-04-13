@@ -557,10 +557,7 @@ where
     P: Provider + 'static,
 {
     let registry = state.registry();
-    let names: Vec<String> = registry
-        .model_names()
-        .map(|n| n.to_string())
-        .collect();
+    let names: Vec<String> = registry.model_names().map(|n| n.to_string()).collect();
 
     if is_anthropic_client(&headers) {
         let data: Vec<serde_json::Value> = names

@@ -4,6 +4,7 @@
 //! provider and storage, subscribes to `usage_events`, and asserts
 //! that exactly one event arrives with the expected shape.
 
+use arc_swap::ArcSwap;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -12,7 +13,6 @@ use crabllm_core::{
     BoxFuture, BoxStream, ChatCompletionRequest, ChatCompletionResponse, Choice, Error,
     FinishReason, GatewayConfig, KvPairs, Message, Prefix, Provider, Role, Storage, Usage,
 };
-use arc_swap::ArcSwap;
 use crabllm_provider::{Deployment, ProviderRegistry};
 use crabllm_proxy::{AppState, UsageEvent, router};
 use std::{
