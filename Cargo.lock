@@ -568,6 +568,7 @@ dependencies = [
  "sonic-rs",
  "sqlx",
  "tokio",
+ "toml",
  "tower",
  "tracing",
  "uuid",
