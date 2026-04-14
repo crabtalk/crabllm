@@ -1,0 +1,1328 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Crabllm</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="High-performance LLM API gateway">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-e877b029.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-8afd4b46.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Crabllm</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/clearloop/crabllm" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>Crabllm is a high-performance LLM API gateway written in Rust. It sits between
+your application and LLM providers, exposing an OpenAI-compatible API surface.</p>
+<p>One API format. Many providers. Low overhead.</p>
+<h2 id="what-it-does"><a class="header" href="#what-it-does">What It Does</a></h2>
+<p>You send requests in OpenAI format to crabllm. It routes them to the configured
+provider — OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, or
+Ollama — translating the request and response as needed.</p>
+<p>The full HTTP API surface is documented interactively at <a href="https://crabtalk.github.io/crabllm/api">crabtalk.github.io/crabllm/api</a>.</p>
+<p>Your application talks to one endpoint. Crabllm handles the rest:</p>
+<ul>
+<li><strong>Provider translation</strong> — Anthropic, Google, and Bedrock have their own API
+formats. Crabllm translates automatically.</li>
+<li><strong>Routing</strong> — Weighted random selection across multiple providers for the same
+model. Automatic fallback when a provider fails.</li>
+<li><strong>Streaming</strong> — SSE streaming proxied without buffering.</li>
+<li><strong>Auth</strong> — Virtual API keys with per-key model access control.</li>
+<li><strong>Extensions</strong> — Rate limiting, caching, cost tracking, budget enforcement.</li>
+</ul>
+<h2 id="why-rust"><a class="header" href="#why-rust">Why Rust</a></h2>
+<ul>
+<li><strong>Sub-millisecond overhead</strong> — no GC pauses, no interpreter startup.</li>
+<li><strong>Memory safety</strong> — without runtime cost.</li>
+<li><strong>Concurrency</strong> — Tokio async runtime handles thousands of concurrent
+streaming connections efficiently.</li>
+<li><strong>Deployment</strong> — single static binary. No interpreter, no virtualenv, no
+Docker required.</li>
+</ul>
+<h2 id="feature-comparison"><a class="header" href="#feature-comparison">Feature Comparison</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Feature</th><th style="text-align: center">LiteLLM</th><th style="text-align: center">Crabllm</th></tr>
+</thead>
+<tbody>
+<tr><td><code>/chat/completions</code></td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td><code>/embeddings</code></td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td><code>/models</code></td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>OpenAI provider</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Anthropic provider</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Google Gemini provider</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Azure OpenAI provider</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>AWS Bedrock provider</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Tool/function calling</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>SSE streaming</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Virtual keys + auth</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Weighted routing</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Model aliasing</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Retry + fallback</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Rate limiting (RPM/TPM)</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Cost/usage tracking</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Budget enforcement</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Request caching</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Image/audio endpoints</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Storage (memory)</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Storage (persistent)</td><td style="text-align: center">Postgres</td><td style="text-align: center">SQLite</td></tr>
+<tr><td>Redis storage</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
+<h2 id="install"><a class="header" href="#install">Install</a></h2>
+<pre><code class="language-bash">cargo install crabllm
+</code></pre>
+<h2 id="configure"><a class="header" href="#configure">Configure</a></h2>
+<p>Create a <code>crabllm.toml</code> file:</p>
+<pre><code class="language-toml">listen = "0.0.0.0:8080"
+
+[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o", "gpt-4o-mini"]
+
+[providers.anthropic]
+kind = "anthropic"
+api_key = "${ANTHROPIC_API_KEY}"
+models = ["claude-sonnet-4-20250514"]
+</code></pre>
+<p>Environment variables in <code>${VAR}</code> syntax are expanded at startup.</p>
+<h2 id="run"><a class="header" href="#run">Run</a></h2>
+<pre><code class="language-bash">crabllm --config crabllm.toml
+</code></pre>
+<p>You’ll see:</p>
+<pre><code>crabllm listening on 0.0.0.0:8080 (3 models, 2 providers, 0 extensions)
+</code></pre>
+<h2 id="send-a-request"><a class="header" href="#send-a-request">Send a Request</a></h2>
+<p>All requests use the OpenAI format, regardless of which provider handles them:</p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+</code></pre>
+<p>To use Anthropic, just change the model name:</p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+</code></pre>
+<p>The request format is the same. Crabllm translates it to the Anthropic Messages
+API internally.</p>
+<h2 id="streaming"><a class="header" href="#streaming">Streaming</a></h2>
+<p>Add <code>"stream": true</code> to get SSE streaming:</p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": true
+  }'
+</code></pre>
+<h2 id="model-aliasing"><a class="header" href="#model-aliasing">Model Aliasing</a></h2>
+<p>Map friendly names to canonical model names:</p>
+<pre><code class="language-toml">[aliases]
+gpt4 = "gpt-4o"
+claude = "claude-sonnet-4-20250514"
+</code></pre>
+<p>Now <code>"model": "gpt4"</code> routes to <code>gpt-4o</code>.</p>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><a href="#configuration">Configuration</a> — full reference for all config options</li>
+<li><a href="#providers-1">Providers</a> — setup guides for each provider</li>
+<li><a href="#routing">Features</a> — routing, auth, extensions, and more</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="running-with-docker"><a class="header" href="#running-with-docker">Running with Docker</a></h1>
+<p>The <code>crabllm</code> image is published to the GitHub Container Registry as <code>ghcr.io/crabtalk/crabllm:latest</code>. It’s a minimal <code>debian:bookworm-slim</code> image with the statically-linked binary inside.</p>
+<h2 id="quick-start"><a class="header" href="#quick-start">Quick start</a></h2>
+<pre><code class="language-bash">mkdir -p ./crabllm-data
+docker run -d --name crabllm \
+  -p 5632:5632 \
+  -v ./crabllm-data:/data \
+  ghcr.io/crabtalk/crabllm:latest \
+  serve --config /data/crabllm.toml --bind 0.0.0.0:5632
+</code></pre>
+<p>First run: <code>crabllm.toml</code> doesn’t exist, so the server generates one in <code>./crabllm-data/crabllm.toml</code> with a fresh admin token and default API key. Inspect it:</p>
+<pre><code class="language-bash">cat ./crabllm-data/crabllm.toml | grep -E 'admin_token|key'
+</code></pre>
+<p>Copy the two <code>sk-…</code> values — you need the admin token to manage providers, and the default key to call the gateway.</p>
+<h2 id="connecting-with-crabctl"><a class="header" href="#connecting-with-crabctl">Connecting with crabctl</a></h2>
+<p>Install <code>crabctl</code> on the host (or any machine with network access to the container):</p>
+<pre><code class="language-bash">cargo install crabctl
+</code></pre>
+<p>Export the admin token and point it at the container:</p>
+<pre><code class="language-bash">export CRABLLM_URL=http://127.0.0.1:5632
+export CRABLLM_TOKEN=&lt;admin_token-from-crabllm.toml&gt;
+</code></pre>
+<p>Add a provider dynamically (no restart, no TOML edits):</p>
+<pre><code class="language-bash"># Known kind — OpenAI
+crabctl providers create openai \
+  --kind openai \
+  --api-key "$OPENAI_API_KEY"
+
+# Self-defined kind for any OpenAI-compatible upstream
+crabctl providers create openrouter \
+  --kind openrouter \
+  --base-url https://openrouter.ai/api/v1 \
+  --api-key "$OPENROUTER_API_KEY"
+</code></pre>
+<p>With <code>--models</code> omitted, the server calls <code>{base_url}/models</code> and populates the list automatically.</p>
+<p>List what’s live:</p>
+<pre><code class="language-bash">crabctl providers list
+crabctl keys list
+</code></pre>
+<h2 id="calling-the-gateway"><a class="header" href="#calling-the-gateway">Calling the gateway</a></h2>
+<p>Use the default key (not the admin token) for completions:</p>
+<pre><code class="language-bash">curl http://127.0.0.1:5632/v1/chat/completions \
+  -H "Authorization: Bearer &lt;default_key-from-crabllm.toml&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+</code></pre>
+<p>OpenAPI docs live at <code>http://127.0.0.1:5632/docs</code>. An online snapshot is hosted at <a href="https://crabtalk.github.io/crabllm/api">crabtalk.github.io/crabllm/api</a>.</p>
+<h2 id="passing-upstream-api-keys-via-environment"><a class="header" href="#passing-upstream-api-keys-via-environment">Passing upstream API keys via environment</a></h2>
+<p><code>crabllm.toml</code> expands <code>${VAR}</code> at load time, so secrets don’t have to live in the file. Edit the generated config:</p>
+<pre><code class="language-toml">[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o"]
+</code></pre>
+<p>Then pass the variable to the container:</p>
+<pre><code class="language-bash">docker run -d --name crabllm \
+  -p 5632:5632 \
+  -v ./crabllm-data:/data \
+  -e OPENAI_API_KEY \
+  ghcr.io/crabtalk/crabllm:latest \
+  serve --config /data/crabllm.toml --bind 0.0.0.0:5632
+</code></pre>
+<h2 id="docker-compose"><a class="header" href="#docker-compose">docker-compose</a></h2>
+<pre><code class="language-yaml">services:
+  crabllm:
+    image: ghcr.io/crabtalk/crabllm:latest
+    restart: unless-stopped
+    ports:
+      - "5632:5632"
+    volumes:
+      - ./crabllm-data:/data
+    environment:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+    command:
+      - serve
+      - --config
+      - /data/crabllm.toml
+      - --bind
+      - 0.0.0.0:5632
+</code></pre>
+<h2 id="verbose-logs"><a class="header" href="#verbose-logs">Verbose logs</a></h2>
+<p>Pass <code>-v</code> (info), <code>-vv</code> (debug), or <code>-vvv</code> (trace) before the subcommand to see request/response lines and outbound provider calls:</p>
+<pre><code class="language-bash">docker run --rm ghcr.io/crabtalk/crabllm:latest -vv serve --config /data/crabllm.toml
+</code></pre>
+<p><code>RUST_LOG</code> is honored when no <code>-v</code> is given.</p>
+<h2 id="tls-backends"><a class="header" href="#tls-backends">TLS backends</a></h2>
+<p>The published image uses the <code>native-tls</code> default, which links <code>libssl3</code> at runtime (installed in the image). If you need the pure-Rust <code>rustls</code> stack — for example to drop <code>libssl</code> from a derived image — rebuild from source:</p>
+<pre><code class="language-bash">cargo install crabllm --no-default-features --features rustls,openapi
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
+<p>Crabllm is configured via a TOML file, passed with <code>--config</code>:</p>
+<pre><code class="language-bash">crabllm --config crabllm.toml
+</code></pre>
+<p>The <code>--bind</code> flag overrides the <code>listen</code> address.</p>
+<h2 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h2>
+<p>Strings containing <code>${VAR}</code> are expanded from environment variables at startup.
+Unknown variables expand to empty string. Use this for secrets:</p>
+<pre><code class="language-toml">api_key = "${OPENAI_API_KEY}"
+</code></pre>
+<h2 id="top-level-fields"><a class="header" href="#top-level-fields">Top-Level Fields</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>listen</code></td><td>string</td><td>required</td><td>Address to bind, e.g. <code>"0.0.0.0:8080"</code></td></tr>
+<tr><td><code>shutdown_timeout</code></td><td>integer</td><td><code>30</code></td><td>Graceful shutdown timeout in seconds</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="providers"><a class="header" href="#providers">Providers</a></h2>
+<p>Each provider is a named entry under <code>[providers]</code>:</p>
+<pre><code class="language-toml">[providers.my_openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o", "gpt-4o-mini"]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>kind</code></td><td>string</td><td>required</td><td>Provider type (see <a href="#providers-1">Providers</a>)</td></tr>
+<tr><td><code>api_key</code></td><td>string</td><td><code>""</code></td><td>API key for authentication</td></tr>
+<tr><td><code>base_url</code></td><td>string</td><td>per-kind</td><td>Base URL override</td></tr>
+<tr><td><code>models</code></td><td>list</td><td><code>[]</code></td><td>Model names this provider serves</td></tr>
+<tr><td><code>weight</code></td><td>integer</td><td><code>1</code></td><td>Routing weight for load balancing</td></tr>
+<tr><td><code>max_retries</code></td><td>integer</td><td><code>2</code></td><td>Max retries on transient errors</td></tr>
+<tr><td><code>timeout</code></td><td>integer</td><td><code>30</code></td><td>Per-request timeout in seconds</td></tr>
+<tr><td><code>api_version</code></td><td>string</td><td>—</td><td>API version (Azure only)</td></tr>
+<tr><td><code>region</code></td><td>string</td><td>—</td><td>AWS region (Bedrock only)</td></tr>
+<tr><td><code>access_key</code></td><td>string</td><td>—</td><td>AWS access key (Bedrock only)</td></tr>
+<tr><td><code>secret_key</code></td><td>string</td><td>—</td><td>AWS secret key (Bedrock only)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="virtual-keys"><a class="header" href="#virtual-keys">Virtual Keys</a></h2>
+<pre><code class="language-toml">[[keys]]
+name = "team-a"
+key = "sk-team-a-secret"
+models = ["gpt-4o", "claude-sonnet-4-20250514"]
+
+[[keys]]
+name = "admin"
+key = "sk-admin-secret"
+models = ["*"]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td>string</td><td>Human-readable key name (used in usage tracking)</td></tr>
+<tr><td><code>key</code></td><td>string</td><td>The bearer token clients send</td></tr>
+<tr><td><code>models</code></td><td>list</td><td>Allowed models. <code>["*"]</code> means all</td></tr>
+</tbody>
+</table>
+</div>
+<p>When no keys are configured, authentication is disabled.</p>
+<h2 id="aliases"><a class="header" href="#aliases">Aliases</a></h2>
+<pre><code class="language-toml">[aliases]
+gpt4 = "gpt-4o"
+claude = "claude-sonnet-4-20250514"
+</code></pre>
+<p>Maps friendly model names to canonical names. Single-hop lookup.</p>
+<h2 id="pricing"><a class="header" href="#pricing">Pricing</a></h2>
+<pre><code class="language-toml">[pricing.gpt-4o]
+prompt_cost_per_million = 2.50
+completion_cost_per_million = 10.00
+
+[pricing.claude-sonnet-4-20250514]
+prompt_cost_per_million = 3.00
+completion_cost_per_million = 15.00
+</code></pre>
+<p>Per-model token pricing in USD. Used by the budget extension for spend tracking.</p>
+<h2 id="extensions"><a class="header" href="#extensions">Extensions</a></h2>
+<pre><code class="language-toml">[extensions.cache]
+ttl = 3600
+
+[extensions.rate_limit]
+rpm = 60
+
+[extensions.usage]
+
+[extensions.budget]
+default_limit = 10000000
+
+[extensions.logging]
+level = "info"
+</code></pre>
+<p>See <a href="#extensions-1">Extensions</a> for details on each.</p>
+<h2 id="storage"><a class="header" href="#storage">Storage</a></h2>
+<pre><code class="language-toml">[storage]
+kind = "memory"
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Kind</th><th>Feature flag</th><th><code>path</code> field</th></tr>
+</thead>
+<tbody>
+<tr><td><code>memory</code></td><td>none (default)</td><td>not used</td></tr>
+<tr><td><code>sqlite</code></td><td><code>storage-sqlite</code></td><td>file path, e.g. <code>"crabllm.db"</code></td></tr>
+<tr><td><code>redis</code></td><td><code>storage-redis</code></td><td>URL, e.g. <code>"redis://127.0.0.1:6379"</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>See <a href="#storage-1">Storage</a> for details.</p>
+<h2 id="full-example"><a class="header" href="#full-example">Full Example</a></h2>
+<pre><code class="language-toml">listen = "0.0.0.0:8080"
+shutdown_timeout = 30
+
+[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o", "gpt-4o-mini"]
+weight = 2
+max_retries = 2
+timeout = 30
+
+[providers.anthropic]
+kind = "anthropic"
+api_key = "${ANTHROPIC_API_KEY}"
+models = ["claude-sonnet-4-20250514"]
+
+[providers.ollama]
+kind = "ollama"
+models = ["llama3.2"]
+
+[aliases]
+gpt4 = "gpt-4o"
+claude = "claude-sonnet-4-20250514"
+
+[[keys]]
+name = "default"
+key = "${CRABTALK_API_KEY}"
+models = ["*"]
+
+[pricing.gpt-4o]
+prompt_cost_per_million = 2.50
+completion_cost_per_million = 10.00
+
+[extensions.rate_limit]
+rpm = 100
+
+[extensions.usage]
+
+[extensions.logging]
+level = "info"
+
+[storage]
+kind = "sqlite"
+path = "crabllm.db"
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="providers-1"><a class="header" href="#providers-1">Providers</a></h1>
+<p>A provider is an LLM service that crabllm routes requests to. Each provider has
+its own API format and authentication mechanism. Crabllm translates between the
+OpenAI-compatible format your application uses and the provider’s native format.</p>
+<h2 id="supported-providers"><a class="header" href="#supported-providers">Supported Providers</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Kind</th><th>Provider</th><th>Translation</th></tr>
+</thead>
+<tbody>
+<tr><td><code>openai</code></td><td>OpenAI, Groq, Together, vLLM, any OpenAI-compatible API</td><td>Pass-through</td></tr>
+<tr><td><code>anthropic</code></td><td>Anthropic Messages API</td><td>Full translation</td></tr>
+<tr><td><code>google</code></td><td>Google Gemini</td><td>Full translation</td></tr>
+<tr><td><code>azure</code></td><td>Azure OpenAI</td><td>URL + auth rewrite</td></tr>
+<tr><td><code>bedrock</code></td><td>AWS Bedrock Converse API</td><td>Full translation + SigV4 signing</td></tr>
+<tr><td><code>ollama</code></td><td>Ollama (local models)</td><td>Pass-through (OpenAI-compatible)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="common-fields"><a class="header" href="#common-fields">Common Fields</a></h2>
+<p>Every provider supports these fields:</p>
+<pre><code class="language-toml">[providers.name]
+kind = "..."           # required
+api_key = "..."        # API key (supports ${ENV_VAR})
+base_url = "..."       # base URL override
+models = ["..."]       # model names this provider serves
+weight = 1             # routing weight (higher = more traffic)
+max_retries = 2        # retries on transient errors (429, 5xx)
+timeout = 30           # per-request timeout in seconds
+</code></pre>
+<h2 id="multiple-providers-for-the-same-model"><a class="header" href="#multiple-providers-for-the-same-model">Multiple Providers for the Same Model</a></h2>
+<p>When multiple providers list the same model, crabllm selects between them using
+weighted random selection. If the selected provider fails, it falls back to the
+next provider by weight. See <a href="#routing">Routing</a>.</p>
+<pre><code class="language-toml">[providers.openai_primary]
+kind = "openai"
+api_key = "${OPENAI_KEY_1}"
+models = ["gpt-4o"]
+weight = 3
+
+[providers.openai_backup]
+kind = "openai"
+api_key = "${OPENAI_KEY_2}"
+models = ["gpt-4o"]
+weight = 1
+</code></pre>
+<h2 id="endpoint-support"><a class="header" href="#endpoint-support">Endpoint Support</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th style="text-align: center">OpenAI</th><th style="text-align: center">Anthropic</th><th style="text-align: center">Google</th><th style="text-align: center">Azure</th><th style="text-align: center">Bedrock</th><th style="text-align: center">Ollama</th></tr>
+</thead>
+<tbody>
+<tr><td>Chat completions</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Streaming</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+<tr><td>Embeddings</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">—</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">yes</td></tr>
+<tr><td>Image generation</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">—</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">—</td></tr>
+<tr><td>Audio speech</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">—</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">—</td></tr>
+<tr><td>Audio transcription</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">—</td><td style="text-align: center">yes</td><td style="text-align: center">—</td><td style="text-align: center">—</td></tr>
+<tr><td>Tool/function calling</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td><td style="text-align: center">yes</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="openai"><a class="header" href="#openai">OpenAI</a></h1>
+<p>The <code>openai</code> provider works with OpenAI and any OpenAI-compatible API
+(Groq, Together AI, vLLM, etc.). Requests are forwarded as-is with URL and auth
+rewrite — no translation needed.</p>
+<h2 id="configuration-1"><a class="header" href="#configuration-1">Configuration</a></h2>
+<pre><code class="language-toml">[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o", "gpt-4o-mini", "text-embedding-3-small"]
+</code></pre>
+<h2 id="custom-base-url"><a class="header" href="#custom-base-url">Custom Base URL</a></h2>
+<p>For OpenAI-compatible services, set <code>base_url</code>:</p>
+<pre><code class="language-toml">[providers.groq]
+kind = "openai"
+api_key = "${GROQ_API_KEY}"
+base_url = "https://api.groq.com/openai/v1"
+models = ["llama-3.3-70b-versatile"]
+
+[providers.together]
+kind = "openai"
+api_key = "${TOGETHER_API_KEY}"
+base_url = "https://api.together.xyz/v1"
+models = ["meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"]
+</code></pre>
+<h2 id="supported-endpoints"><a class="header" href="#supported-endpoints">Supported Endpoints</a></h2>
+<ul>
+<li>Chat completions (streaming and non-streaming)</li>
+<li>Embeddings</li>
+<li>Image generation</li>
+<li>Audio speech (TTS)</li>
+<li>Audio transcription</li>
+</ul>
+<h2 id="tool-calling"><a class="header" href="#tool-calling">Tool Calling</a></h2>
+<p>Tool calling works as-is — the request body is forwarded directly:</p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "What is the weather in Tokyo?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "parameters": {
+          "type": "object",
+          "properties": {"location": {"type": "string"}},
+          "required": ["location"]
+        }
+      }
+    }]
+  }'
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="anthropic"><a class="header" href="#anthropic">Anthropic</a></h1>
+<p>The <code>anthropic</code> provider translates OpenAI-format requests to the Anthropic
+Messages API and back.</p>
+<h2 id="configuration-2"><a class="header" href="#configuration-2">Configuration</a></h2>
+<pre><code class="language-toml">[providers.anthropic]
+kind = "anthropic"
+api_key = "${ANTHROPIC_API_KEY}"
+models = ["claude-sonnet-4-20250514", "claude-haiku-4-20250514"]
+</code></pre>
+<h2 id="translation"><a class="header" href="#translation">Translation</a></h2>
+<p>Crabllm handles the full translation between OpenAI and Anthropic formats:</p>
+<ul>
+<li><strong>System messages</strong> — extracted from the messages array and sent as the
+Anthropic <code>system</code> parameter.</li>
+<li><strong>Stop reasons</strong> — mapped between formats (<code>end_turn</code> to <code>stop</code>, etc.).</li>
+<li><strong>Tool calling</strong> — fully supported. Tool definitions, tool use responses,
+and tool result messages are all translated.</li>
+<li><strong>Streaming</strong> — Anthropic’s event stream (<code>message_start</code>, <code>content_block_delta</code>,
+etc.) is translated to OpenAI-format SSE chunks.</li>
+</ul>
+<h2 id="usage"><a class="header" href="#usage">Usage</a></h2>
+<p>Send requests in OpenAI format as usual:</p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-20250514",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Hello!"}
+    ]
+  }'
+</code></pre>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ul>
+<li>Embeddings, image generation, and audio endpoints are not supported by the
+Anthropic API.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="google-gemini"><a class="header" href="#google-gemini">Google Gemini</a></h1>
+<p>The <code>google</code> provider translates OpenAI-format requests to the Google Gemini API
+(generativeai).</p>
+<h2 id="configuration-3"><a class="header" href="#configuration-3">Configuration</a></h2>
+<pre><code class="language-toml">[providers.google]
+kind = "google"
+api_key = "${GOOGLE_API_KEY}"
+models = ["gemini-2.0-flash", "gemini-2.5-pro"]
+</code></pre>
+<h2 id="translation-1"><a class="header" href="#translation-1">Translation</a></h2>
+<ul>
+<li><strong>System messages</strong> — mapped to Gemini’s <code>systemInstruction</code> field.</li>
+<li><strong>Roles</strong> — <code>assistant</code> mapped to <code>model</code>, <code>user</code> stays <code>user</code>.</li>
+<li><strong>Content</strong> — mapped to Gemini’s <code>parts</code> array format.</li>
+<li><strong>Tool calling</strong> — tool definitions mapped to <code>functionDeclarations</code>, tool
+messages to <code>functionResponse</code> parts, responses extract <code>functionCall</code> parts.</li>
+<li><strong>Streaming</strong> — uses <code>streamGenerateContent?alt=sse</code> and translates the
+Gemini event stream to OpenAI-format SSE chunks.</li>
+</ul>
+<h2 id="usage-1"><a class="header" href="#usage-1">Usage</a></h2>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemini-2.0-flash",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+</code></pre>
+<h2 id="limitations-1"><a class="header" href="#limitations-1">Limitations</a></h2>
+<ul>
+<li>Embeddings, image generation, and audio endpoints are not supported.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="azure-openai"><a class="header" href="#azure-openai">Azure OpenAI</a></h1>
+<p>The <code>azure</code> provider routes to Azure OpenAI deployments. The request body is
+OpenAI-format (no translation needed), but the URL pattern and authentication
+differ.</p>
+<h2 id="configuration-4"><a class="header" href="#configuration-4">Configuration</a></h2>
+<pre><code class="language-toml">[providers.azure]
+kind = "azure"
+api_key = "${AZURE_OPENAI_KEY}"
+base_url = "https://my-resource.openai.azure.com"
+api_version = "2024-02-01"
+models = ["gpt-4o"]
+</code></pre>
+<ul>
+<li><code>base_url</code> — your Azure OpenAI resource URL.</li>
+<li><code>api_version</code> — the Azure API version string.</li>
+</ul>
+<h2 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h2>
+<p>Crabllm rewrites the URL to Azure’s deployment-based pattern:</p>
+<pre><code>POST /openai/deployments/{model}/chat/completions?api-version={api_version}
+</code></pre>
+<p>Authentication uses the <code>api-key</code> header instead of <code>Authorization: Bearer</code>.</p>
+<h2 id="supported-endpoints-1"><a class="header" href="#supported-endpoints-1">Supported Endpoints</a></h2>
+<ul>
+<li>Chat completions (streaming and non-streaming)</li>
+<li>Embeddings</li>
+<li>Image generation</li>
+<li>Audio speech (TTS)</li>
+<li>Audio transcription</li>
+</ul>
+<h2 id="usage-2"><a class="header" href="#usage-2">Usage</a></h2>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="aws-bedrock"><a class="header" href="#aws-bedrock">AWS Bedrock</a></h1>
+<p>The <code>bedrock</code> provider translates requests to the AWS Bedrock Converse API with
+SigV4 request signing. No AWS SDK dependency — signing is handled internally.</p>
+<h2 id="feature-flag"><a class="header" href="#feature-flag">Feature Flag</a></h2>
+<p>Bedrock support requires the <code>provider-bedrock</code> cargo feature:</p>
+<pre><code class="language-bash">cargo install crabllm --features provider-bedrock
+</code></pre>
+<h2 id="configuration-5"><a class="header" href="#configuration-5">Configuration</a></h2>
+<pre><code class="language-toml">[providers.bedrock]
+kind = "bedrock"
+region = "us-east-1"
+access_key = "${AWS_ACCESS_KEY_ID}"
+secret_key = "${AWS_SECRET_ACCESS_KEY}"
+models = ["anthropic.claude-3-5-sonnet-20241022-v2:0"]
+</code></pre>
+<h2 id="translation-2"><a class="header" href="#translation-2">Translation</a></h2>
+<ul>
+<li><strong>System messages</strong> — mapped to the Bedrock <code>system</code> field.</li>
+<li><strong>Tool calling</strong> — tool definitions mapped to <code>toolConfig.tools[].toolSpec</code>,
+tool results to <code>toolResult</code> content blocks.</li>
+<li><strong>Stop reasons</strong> — <code>end_turn</code> to <code>stop</code>, <code>tool_use</code> to <code>tool_calls</code>,
+<code>max_tokens</code> to <code>length</code>.</li>
+<li><strong>Streaming</strong> — uses ConverseStream with AWS event-stream binary framing.</li>
+</ul>
+<h2 id="usage-3"><a class="header" href="#usage-3">Usage</a></h2>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+</code></pre>
+<h2 id="limitations-2"><a class="header" href="#limitations-2">Limitations</a></h2>
+<ul>
+<li>Embeddings, image generation, and audio endpoints are not supported.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="ollama"><a class="header" href="#ollama">Ollama</a></h1>
+<p>The <code>ollama</code> provider connects to a local <a href="https://ollama.ai">Ollama</a> instance.
+Ollama exposes an OpenAI-compatible API, so requests are forwarded as-is.</p>
+<h2 id="configuration-6"><a class="header" href="#configuration-6">Configuration</a></h2>
+<pre><code class="language-toml">[providers.ollama]
+kind = "ollama"
+models = ["llama3.2", "mistral"]
+</code></pre>
+<p>The default base URL is <code>http://localhost:11434/v1</code>. Override it if Ollama runs
+on a different host:</p>
+<pre><code class="language-toml">[providers.ollama]
+kind = "ollama"
+base_url = "http://192.168.1.100:11434/v1"
+models = ["llama3.2"]
+</code></pre>
+<p>No API key is needed for local Ollama.</p>
+<h2 id="usage-4"><a class="header" href="#usage-4">Usage</a></h2>
+<p>Start Ollama, pull a model, then send requests through crabllm:</p>
+<pre><code class="language-bash">ollama pull llama3.2
+crabllm --config crabllm.toml
+</code></pre>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama3.2",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+</code></pre>
+<h2 id="supported-endpoints-2"><a class="header" href="#supported-endpoints-2">Supported Endpoints</a></h2>
+<ul>
+<li>Chat completions (streaming and non-streaming)</li>
+<li>Embeddings (if supported by the Ollama model)</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="routing"><a class="header" href="#routing">Routing</a></h1>
+<p>Crabllm decides which provider handles a request based on model name, routing
+weights, and fallback logic.</p>
+<h2 id="model-resolution"><a class="header" href="#model-resolution">Model Resolution</a></h2>
+<p>When a request arrives, crabllm looks up the model name in the configured
+providers. If the model is an alias, it resolves to the canonical name first
+(single-hop lookup).</p>
+<h2 id="weighted-selection"><a class="header" href="#weighted-selection">Weighted Selection</a></h2>
+<p>When multiple providers serve the same model, one is selected via weighted random
+selection. Higher <code>weight</code> values mean more traffic:</p>
+<pre><code class="language-toml">[providers.primary]
+kind = "openai"
+api_key = "${OPENAI_KEY_1}"
+models = ["gpt-4o"]
+weight = 3                    # 75% of traffic
+
+[providers.secondary]
+kind = "openai"
+api_key = "${OPENAI_KEY_2}"
+models = ["gpt-4o"]
+weight = 1                    # 25% of traffic
+</code></pre>
+<p>Selection is stateless — no shared counters. Each request picks independently.</p>
+<h2 id="retry"><a class="header" href="#retry">Retry</a></h2>
+<p>When a provider returns a transient error (HTTP 429, 500, 502, 503, 504),
+crabllm retries the same provider with exponential backoff:</p>
+<ul>
+<li>Base delay: 100ms, doubling each retry.</li>
+<li>Full jitter: each sleep is a random duration in <code>[backoff/2, backoff]</code> to
+prevent thundering herd.</li>
+<li>Max retries: configurable per provider via <code>max_retries</code> (default 2).</li>
+</ul>
+<pre><code class="language-toml">[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o"]
+max_retries = 3               # retry up to 3 times
+</code></pre>
+<p>Set <code>max_retries = 0</code> to disable retry entirely.</p>
+<h2 id="fallback"><a class="header" href="#fallback">Fallback</a></h2>
+<p>When retries are exhausted on a provider, crabllm tries the next provider by
+descending weight. This continues until a provider succeeds or all providers
+have been tried.</p>
+<pre><code class="language-toml"># Primary provider (tried first)
+[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o"]
+weight = 2
+
+# Fallback provider (tried if primary fails)
+[providers.azure]
+kind = "azure"
+api_key = "${AZURE_KEY}"
+base_url = "https://my-resource.openai.azure.com"
+api_version = "2024-02-01"
+models = ["gpt-4o"]
+weight = 1
+</code></pre>
+<h2 id="timeouts"><a class="header" href="#timeouts">Timeouts</a></h2>
+<p>Each provider call is wrapped in a timeout. If the timeout expires, the request
+is treated as a transient error (triggers retry/fallback):</p>
+<pre><code class="language-toml">[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o"]
+timeout = 60                  # seconds (default: 30)
+</code></pre>
+<p>Timeout errors return HTTP 504 Gateway Timeout if all providers time out.</p>
+<h2 id="streaming-behavior"><a class="header" href="#streaming-behavior">Streaming Behavior</a></h2>
+<p>For streaming requests, retry and fallback only apply to connection errors
+(before the stream starts). Once the first SSE chunk is sent to the client,
+the connection is committed to that provider.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="streaming-1"><a class="header" href="#streaming-1">Streaming</a></h1>
+<p>Crabllm supports Server-Sent Events (SSE) streaming for chat completions across
+all providers. Streams are proxied without buffering — tokens arrive
+incrementally as the provider generates them.</p>
+<h2 id="usage-5"><a class="header" href="#usage-5">Usage</a></h2>
+<p>Set <code>"stream": true</code> in the request body:</p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Write a haiku."}],
+    "stream": true
+  }'
+</code></pre>
+<p>The response is a stream of SSE events:</p>
+<pre><code>data: {"id":"...","object":"chat.completion.chunk","choices":[{"delta":{"content":"An"}}]}
+
+data: {"id":"...","object":"chat.completion.chunk","choices":[{"delta":{"content":" old"}}]}
+
+data: [DONE]
+</code></pre>
+<h2 id="provider-translation"><a class="header" href="#provider-translation">Provider Translation</a></h2>
+<p>For non-OpenAI providers, crabllm translates the provider’s native streaming
+format to OpenAI-compatible SSE chunks:</p>
+<ul>
+<li><strong>Anthropic</strong> — <code>message_start</code>, <code>content_block_delta</code> events translated to
+<code>chat.completion.chunk</code> format.</li>
+<li><strong>Google Gemini</strong> — <code>streamGenerateContent</code> response parts translated to
+OpenAI chunks.</li>
+<li><strong>Bedrock</strong> — AWS event-stream binary frames decoded and translated.</li>
+<li><strong>Azure</strong> — same SSE format as OpenAI, no translation needed.</li>
+</ul>
+<h2 id="extension-hooks"><a class="header" href="#extension-hooks">Extension Hooks</a></h2>
+<p>Extensions can observe each streaming chunk via the <code>on_chunk</code> hook. The rate
+limiter and budget extension use this to count tokens in real-time as they arrive.</p>
+<h2 id="keep-alive"><a class="header" href="#keep-alive">Keep-Alive</a></h2>
+<p>SSE connections include automatic keep-alive pings to prevent proxy/load balancer
+timeouts during long generation pauses.</p>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
+<p>If an error occurs mid-stream (after the first chunk has been sent), it is
+delivered as an SSE event with an error payload. The stream then terminates.
+Retry and fallback only apply before the stream starts.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="authentication"><a class="header" href="#authentication">Authentication</a></h1>
+<p>Crabllm supports virtual API keys for client authentication and model access
+control.</p>
+<h2 id="virtual-keys-1"><a class="header" href="#virtual-keys-1">Virtual Keys</a></h2>
+<p>Define keys in the config:</p>
+<pre><code class="language-toml">[[keys]]
+name = "team-frontend"
+key = "sk-frontend-abc123"
+models = ["gpt-4o-mini"]
+
+[[keys]]
+name = "team-backend"
+key = "sk-backend-xyz789"
+models = ["gpt-4o", "claude-sonnet-4-20250514"]
+
+[[keys]]
+name = "admin"
+key = "${ADMIN_API_KEY}"
+models = ["*"]
+</code></pre>
+<p>Clients send the key in the <code>Authorization</code> header:</p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer sk-frontend-abc123" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}'
+</code></pre>
+<h2 id="model-access-control"><a class="header" href="#model-access-control">Model Access Control</a></h2>
+<p>The <code>models</code> field controls which models a key can access:</p>
+<ul>
+<li><code>["gpt-4o", "gpt-4o-mini"]</code> — only these models.</li>
+<li><code>["*"]</code> — all models.</li>
+</ul>
+<p>Requests for unauthorized models return HTTP 401.</p>
+<h2 id="no-auth-mode"><a class="header" href="#no-auth-mode">No Auth Mode</a></h2>
+<p>When no keys are configured, authentication is disabled entirely. All requests
+pass through without checking the <code>Authorization</code> header.</p>
+<pre><code class="language-toml"># No [[keys]] section = auth disabled
+listen = "0.0.0.0:8080"
+
+[providers.openai]
+kind = "openai"
+api_key = "${OPENAI_API_KEY}"
+models = ["gpt-4o"]
+</code></pre>
+<h2 id="key-name-tracking"><a class="header" href="#key-name-tracking">Key Name Tracking</a></h2>
+<p>The key <code>name</code> field is used by extensions for per-key tracking:</p>
+<ul>
+<li><strong>Rate limiting</strong> — enforced per key name.</li>
+<li><strong>Usage tracking</strong> — tokens counted per key name.</li>
+<li><strong>Budget</strong> — spend limits per key name.</li>
+<li><strong>Logging</strong> — key name included in log entries.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="extensions-1"><a class="header" href="#extensions-1">Extensions</a></h1>
+<p>Extensions add functionality to the request pipeline via hooks. They run
+in-handler (not as middleware), giving direct access to typed request and
+response data.</p>
+<h2 id="available-extensions"><a class="header" href="#available-extensions">Available Extensions</a></h2>
+<h3 id="cache"><a class="header" href="#cache">Cache</a></h3>
+<p>Caches non-streaming chat completion responses. Cache key is a SHA-256 hash of
+the serialized request body.</p>
+<pre><code class="language-toml">[extensions.cache]
+ttl_seconds = 3600           # default: 300 (5 minutes)
+</code></pre>
+<p>Admin route: <code>DELETE /v1/cache</code> — clears all cached entries.</p>
+<h3 id="rate-limit"><a class="header" href="#rate-limit">Rate Limit</a></h3>
+<p>Enforces per-key request and token rate limits using a per-minute sliding window.</p>
+<pre><code class="language-toml">[extensions.rate_limit]
+requests_per_minute = 60      # required
+tokens_per_minute = 100000    # optional
+</code></pre>
+<p>Returns HTTP 429 when limits are exceeded. Token counting uses actual usage
+from provider responses (both streaming and non-streaming).</p>
+<h3 id="usage-tracker"><a class="header" href="#usage-tracker">Usage Tracker</a></h3>
+<p>Accumulates prompt and completion token counts per key and model.</p>
+<pre><code class="language-toml">[extensions.usage]
+</code></pre>
+<p>No configuration needed. Admin route: <code>GET /v1/usage</code> — returns JSON array of
+usage entries with <code>key</code>, <code>model</code>, <code>prompt_tokens</code>, and <code>completion_tokens</code>.</p>
+<h3 id="budget"><a class="header" href="#budget">Budget</a></h3>
+<p>Enforces per-key spend limits. Requires <a href="#pricing">pricing</a>
+to be configured for the models in use.</p>
+<pre><code class="language-toml">[extensions.budget]
+default_budget = 10.00        # USD, required
+
+[extensions.budget.keys.team-a]
+budget = 50.00                # USD override for this key
+</code></pre>
+<p>Returns HTTP 429 when a key’s spend exceeds its budget. Admin route:
+<code>GET /v1/budget</code> — returns JSON array with <code>key</code>, <code>spent_usd</code>, <code>budget_usd</code>,
+and <code>remaining_usd</code>.</p>
+<h3 id="logging"><a class="header" href="#logging">Logging</a></h3>
+<p>Structured request logging via the <code>tracing</code> framework.</p>
+<pre><code class="language-toml">[extensions.logging]
+level = "info"
+</code></pre>
+<p>Logs completed requests (model, provider, key, latency, token counts) and
+errors. Initializes the <code>tracing_subscriber</code> when enabled.</p>
+<h2 id="hook-pipeline"><a class="header" href="#hook-pipeline">Hook Pipeline</a></h2>
+<p>Extensions run in config order at these points:</p>
+<ol>
+<li><strong>on_request</strong> — before provider dispatch. Can short-circuit (rate limit, budget).</li>
+<li><strong>on_cache_lookup</strong> — before provider dispatch for non-streaming. Returns
+cached response if available.</li>
+<li><strong>on_response</strong> — after successful non-streaming response.</li>
+<li><strong>on_chunk</strong> — for each SSE chunk during streaming.</li>
+<li><strong>on_error</strong> — when a provider call fails.</li>
+</ol>
+<h2 id="combining-extensions"><a class="header" href="#combining-extensions">Combining Extensions</a></h2>
+<p>Multiple extensions can be enabled simultaneously:</p>
+<pre><code class="language-toml">[extensions.logging]
+level = "info"
+
+[extensions.rate_limit]
+requests_per_minute = 100
+
+[extensions.usage]
+
+[extensions.cache]
+ttl_seconds = 600
+
+[extensions.budget]
+default_budget = 100.00
+</code></pre>
+<p>All extensions share the same <a href="#storage-1">storage backend</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="storage-1"><a class="header" href="#storage-1">Storage</a></h1>
+<p>Extensions that persist data (cache, rate limits, usage, budget) use a shared
+storage backend. Three backends are available.</p>
+<h2 id="memory-default"><a class="header" href="#memory-default">Memory (default)</a></h2>
+<p>In-memory storage using concurrent hash maps. Fast, but data is lost on restart.</p>
+<pre><code class="language-toml">[storage]
+kind = "memory"
+</code></pre>
+<p>This is the default when no <code>[storage]</code> section is present. No feature flag
+required.</p>
+<h2 id="sqlite"><a class="header" href="#sqlite">SQLite</a></h2>
+<p>Persistent storage using SQLite via async pooled connections.</p>
+<pre><code class="language-toml">[storage]
+kind = "sqlite"
+path = "crabllm.db"
+</code></pre>
+<p>Requires the <code>storage-sqlite</code> feature:</p>
+<pre><code class="language-bash">cargo install crabllm --features storage-sqlite
+</code></pre>
+<p>The database file is created automatically if it doesn’t exist. Uses two tables
+(<code>kv</code> and <code>counters</code>) with atomic increment via <code>INSERT ... ON CONFLICT ... RETURNING</code>.</p>
+<h2 id="redis"><a class="header" href="#redis">Redis</a></h2>
+<p>Remote persistent storage using Redis async multiplexed connections.</p>
+<pre><code class="language-toml">[storage]
+kind = "redis"
+path = "redis://127.0.0.1:6379"
+</code></pre>
+<p>Requires the <code>storage-redis</code> feature:</p>
+<pre><code class="language-bash">cargo install crabllm --features storage-redis
+</code></pre>
+<p>Supports standard Redis URLs. Increment maps to <code>INCRBY</code>, key listing uses
+<code>SCAN</code> with prefix glob patterns.</p>
+<h2 id="how-extensions-use-storage"><a class="header" href="#how-extensions-use-storage">How Extensions Use Storage</a></h2>
+<p>Each extension namespaces its keys with a 4-byte prefix to avoid collisions:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Extension</th><th>Operations</th></tr>
+</thead>
+<tbody>
+<tr><td>Cache</td><td>get/set response JSON with TTL check</td></tr>
+<tr><td>Rate Limit</td><td>increment per-key-per-minute counters</td></tr>
+<tr><td>Usage</td><td>increment per-key-per-model token counters</td></tr>
+<tr><td>Budget</td><td>increment per-key spend in microdollars</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<h2 id="principles"><a class="header" href="#principles">Principles</a></h2>
+<ul>
+<li><strong>Simplicity over abstraction.</strong> No trait where a function suffices.</li>
+<li><strong>Single responsibility.</strong> Each crate has one focused job.</li>
+<li><strong>OpenAI as canonical format.</strong> Providers translate to/from it.</li>
+<li><strong>Streaming first-class.</strong> Never buffer a full response when streaming.</li>
+<li><strong>Configuration-driven.</strong> Provider setup and routing from config, not code.</li>
+<li><strong>Minimal gateway latency.</strong> Avoid hot-path allocations.</li>
+</ul>
+<h2 id="workspace-layout"><a class="header" href="#workspace-layout">Workspace Layout</a></h2>
+<pre><code>crabllm/
+  crates/
+    crabllm/   — binary, wires everything together
+    core/       — shared types, config, errors
+    provider/   — provider enum + translation modules
+    proxy/      — HTTP server, routing, extensions
+    bench/      — benchmark mock backend
+</code></pre>
+<h2 id="crates"><a class="header" href="#crates">Crates</a></h2>
+<h3 id="crabllm"><a class="header" href="#crabllm">crabllm</a></h3>
+<p>Binary entry point. Loads TOML config, builds the provider registry, initializes
+the storage backend and extensions, starts the Axum HTTP server. CLI args:
+<code>--config</code> and <code>--bind</code>.</p>
+<h3 id="core"><a class="header" href="#core">core</a></h3>
+<p>Shared types with no business logic. Contains:</p>
+<ul>
+<li><strong>Config</strong> — <code>GatewayConfig</code> with env var interpolation.</li>
+<li><strong>Types</strong> — OpenAI-compatible wire format structs (request, response, chunk).</li>
+<li><strong>Error</strong> — error enum with transient detection for retry logic.</li>
+<li><strong>Storage</strong> — async KV trait with memory, SQLite, and Redis backends.</li>
+<li><strong>Extension</strong> — hook trait for the request pipeline.</li>
+</ul>
+<h3 id="provider"><a class="header" href="#provider">provider</a></h3>
+<p>Provider dispatch. The <code>Provider</code> enum has variants for each supported provider.
+Each variant dispatches to a per-provider module that handles request/response
+translation. <code>ProviderRegistry</code> maps model names to weighted deployment lists.</p>
+<h3 id="proxy"><a class="header" href="#proxy">proxy</a></h3>
+<p>Axum HTTP server. Route handlers implement retry + fallback across deployments.
+Auth middleware validates virtual keys. Five built-in extensions run as
+in-handler hooks.</p>
+<h2 id="request-flow"><a class="header" href="#request-flow">Request Flow</a></h2>
+<ol>
+<li>Client sends OpenAI-format request to crabllm.</li>
+<li>Auth middleware validates the bearer token.</li>
+<li>Handler resolves model name (aliases) and gets deployment list.</li>
+<li>Extension <code>on_request</code> hooks run (rate limit, budget check).</li>
+<li>Cache lookup for non-streaming requests.</li>
+<li>Provider dispatch with retry + fallback.</li>
+<li>Provider translates request, calls upstream, translates response.</li>
+<li>Extension <code>on_response</code>/<code>on_chunk</code> hooks run (usage, budget, cache store).</li>
+<li>Response returned to client.</li>
+</ol>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="benchmarks"><a class="header" href="#benchmarks">Benchmarks</a></h1>
+<p>Gateway overhead measured against a mock LLM server with instant
+responses — numbers reflect pure proxy cost.</p>
+<p><em>Latency: P50 / P99 in milliseconds. Lower is better.</em></p>
+<h2 id="chat-completions"><a class="header" href="#chat-completions">Chat Completions</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: right">RPS</th><th style="text-align: right">direct</th><th style="text-align: right">crabllm</th><th style="text-align: right">bifrost</th><th style="text-align: right">litellm</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: right">100</td><td style="text-align: right">0.38 / 0.63</td><td style="text-align: right">1.00 / 1.31</td><td style="text-align: right">1.10 / 1.64</td><td style="text-align: right">5.35 / 10.79</td></tr>
+<tr><td style="text-align: right">500</td><td style="text-align: right">0.28 / 0.42</td><td style="text-align: right">0.66 / 1.07</td><td style="text-align: right">0.36 / 0.91</td><td style="text-align: right">168.79 / 223.69</td></tr>
+<tr><td style="text-align: right">1000</td><td style="text-align: right">0.15 / 0.31</td><td style="text-align: right">0.44 / 0.83</td><td style="text-align: right">0.27 / 0.46</td><td style="text-align: right">172.00 / 201.55</td></tr>
+<tr><td style="text-align: right">2000</td><td style="text-align: right">0.17 / 0.33</td><td style="text-align: right">0.29 / 0.88</td><td style="text-align: right">0.29 / 0.53</td><td style="text-align: right">169.99 / 194.34</td></tr>
+<tr><td style="text-align: right">5000</td><td style="text-align: right">0.13 / 0.33</td><td style="text-align: right">0.26 / 0.57</td><td style="text-align: right">0.26 / 0.48</td><td style="text-align: right">159.86 / 492.82</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="streaming-2"><a class="header" href="#streaming-2">Streaming</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: right">RPS</th><th style="text-align: right">direct</th><th style="text-align: right">crabllm</th><th style="text-align: right">bifrost</th><th style="text-align: right">litellm</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: right">100</td><td style="text-align: right">0.45 / 0.62</td><td style="text-align: right">43.53 / 48.14</td><td style="text-align: right">1.51 / 2.20</td><td style="text-align: right">670.25 / 3357.70</td></tr>
+<tr><td style="text-align: right">500</td><td style="text-align: right">0.34 / 0.54</td><td style="text-align: right">42.90 / 47.14</td><td style="text-align: right">0.51 / 0.93</td><td style="text-align: right">659.97 / 3569.92</td></tr>
+<tr><td style="text-align: right">1000</td><td style="text-align: right">0.22 / 0.42</td><td style="text-align: right">44.18 / 48.30</td><td style="text-align: right">0.45 / 0.98</td><td style="text-align: right">645.59 / 2797.66</td></tr>
+<tr><td style="text-align: right">2000</td><td style="text-align: right">44.04 / 48.23</td><td style="text-align: right">44.25 / 48.52</td><td style="text-align: right">44.18 / 48.64</td><td style="text-align: right">596.90 / 2678.08</td></tr>
+<tr><td style="text-align: right">5000</td><td style="text-align: right">44.04 / 48.23</td><td style="text-align: right">44.24 / 48.50</td><td style="text-align: right">44.20 / 48.66</td><td style="text-align: right">571.96 / 2563.73</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="embeddings"><a class="header" href="#embeddings">Embeddings</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: right">RPS</th><th style="text-align: right">direct</th><th style="text-align: right">crabllm</th><th style="text-align: right">bifrost</th><th style="text-align: right">litellm</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: right">100</td><td style="text-align: right">0.39 / 0.47</td><td style="text-align: right">1.18 / 1.48</td><td style="text-align: right">1.15 / 1.70</td><td style="text-align: right">7.09 / 10.72</td></tr>
+<tr><td style="text-align: right">500</td><td style="text-align: right">0.30 / 0.42</td><td style="text-align: right">0.78 / 1.15</td><td style="text-align: right">0.43 / 1.03</td><td style="text-align: right">356.71 / 414.36</td></tr>
+<tr><td style="text-align: right">1000</td><td style="text-align: right">0.17 / 0.27</td><td style="text-align: right">0.51 / 0.91</td><td style="text-align: right">0.38 / 0.85</td><td style="text-align: right">332.53 / 6516.44</td></tr>
+<tr><td style="text-align: right">2000</td><td style="text-align: right">0.18 / 0.32</td><td style="text-align: right">0.36 / 1.08</td><td style="text-align: right">0.39 / 0.94</td><td style="text-align: right">317.53 / 365.68</td></tr>
+<tr><td style="text-align: right">5000</td><td style="text-align: right">0.14 / 0.32</td><td style="text-align: right">0.34 / 0.64</td><td style="text-align: right">0.39 / 1.57</td><td style="text-align: right">305.91 / 8778.06</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="memory-peak-rss"><a class="header" href="#memory-peak-rss">Memory (Peak RSS)</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Gateway</th><th style="text-align: right">Peak RSS</th></tr>
+</thead>
+<tbody>
+<tr><td>direct</td><td style="text-align: right">15.3 MB</td></tr>
+<tr><td>crabllm</td><td style="text-align: right">34.9 MB</td></tr>
+<tr><td>bifrost</td><td style="text-align: right">171.7 MB</td></tr>
+<tr><td>litellm</td><td style="text-align: right">541.8 MB</td></tr>
+</tbody>
+</table>
+</div>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
