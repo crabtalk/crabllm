@@ -12,7 +12,6 @@ OpenAI, Anthropic, Azure, Ollama, and any OpenAI-compatible service.
 
 One API format. Many providers. Low overhead.
 
-Inspired by [LiteLLM][litellm]. Built in Rust for minimal overhead.
 See the [docs][docs] for [providers][providers], [routing][routing],
 [extensions][extensions], and [configuration][configuration].
 
@@ -20,49 +19,30 @@ See the [docs][docs] for [providers][providers], [routing][routing],
 ## Quick Start
 
 ```bash
-cargo install crabllm
+cargo install crabllm crabctl
+crabllm serve
 ```
 
-Create `crabllm.toml`:
-
-```toml
-listen = "0.0.0.0:8080"
-
-[providers.openai]
-kind = "openai"
-api_key = "${OPENAI_API_KEY}"
-models = ["gpt-4o"]
-
-[providers.anthropic]
-kind = "anthropic"
-api_key = "${ANTHROPIC_API_KEY}"
-models = ["claude-sonnet-4-20250514"]
-```
-
-Run:
+First run generates `crabllm.toml` with a fresh admin token and default
+key. Add a provider — no restart needed:
 
 ```bash
-crabllm --config crabllm.toml
+crabctl providers create openai --kind openai --api-key "$OPENAI_API_KEY"
 ```
 
-Send requests using the OpenAI format:
+With `--models` omitted the server auto-populates the list from the
+provider's `/models` endpoint. Send a request using the OpenAI format:
 
 ```bash
-curl http://localhost:8080/v1/chat/completions \
+curl http://127.0.0.1:5632/v1/chat/completions \
+  -H "Authorization: Bearer $(grep -m1 -oE 'sk-[a-z0-9]+' crabllm.toml | tail -1)" \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
-## Why Rust
-
-- **Performance**: Sub-millisecond proxy overhead. No GC pauses.
-- **Safety**: Memory safety without runtime cost.
-- **Concurrency**: Tokio async runtime handles thousands of concurrent
-  streaming connections.
-- **Deployment**: Single static binary. No interpreter, no virtualenv.
+Prefer Docker? See the [Docker chapter][docker] — pull
+`ghcr.io/crabtalk/crabllm:latest`, mount a volume, and manage providers
+the same way with `crabctl`.
 
 ## Benchmarks
 
@@ -119,6 +99,7 @@ MIT OR Apache-2.0
 [crabtalk]: https://crabtalk.xyz
 [litellm]: https://github.com/BerriAI/litellm
 [docs]: https://clearloop.github.io/crabllm
+[docker]: https://clearloop.github.io/crabllm/docker.html
 [providers]: https://clearloop.github.io/crabllm/providers/overview.html
 [routing]: https://clearloop.github.io/crabllm/features/routing.html
 [extensions]: https://clearloop.github.io/crabllm/features/extensions.html
