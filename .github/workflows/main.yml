@@ -11,21 +11,19 @@ concurrency:
 
 jobs:
   build:
-    name: Build (${{ matrix.tls }})
+    name: Build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        tls: [rustls, native-tls]
     steps:
       - uses: actions/checkout@v4
       - name: Install Toolchain
         run: rustup update stable && rustup default stable
+      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         uses: arduino/setup-protoc@v3
       - uses: taiki-e/install-action@sccache
       - uses: taiki-e/install-action@nextest
       - name: Build
-        run: cargo build -p crabllm --no-default-features --features ${{ matrix.tls }}
+        run: cargo build -p crabllm
 
       # - name: Run Tests
       #   run: cargo nextest run --workspace --no-fail-fast --release
@@ -39,6 +37,7 @@ jobs:
         run: |
           rustup update stable && rustup default stable
           rustup component add clippy rustfmt
+      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         uses: arduino/setup-protoc@v3
       - uses: taiki-e/install-action@sccache
