@@ -22,7 +22,7 @@ pub enum ModelKind {
 /// A model entry from the registry.
 #[derive(Debug, Clone, Copy)]
 pub struct ModelEntry {
-    /// Lowercase alias: `"family.param_size.quant"` (e.g. `"qwen3.5.2b.4bit"`).
+    /// Lowercase alias: `"family-param_size-quant"` (e.g. `"qwen3.5-2b-4bit"`).
     pub alias: &'static str,
     /// Full HuggingFace repo id (e.g. `"mlx-community/Qwen3.5-2B-MLX-4bit"`).
     pub repo_id: &'static str,
@@ -52,7 +52,7 @@ pub fn list() -> &'static [ModelEntry] {
 ///
 /// Accepts:
 ///   * A full repo id (`"mlx-community/Qwen3.5-2B-MLX-4bit"`) — returned as-is.
-///   * A lowercase alias (`"qwen3.5.2b.4bit"`) — looked up in the registry.
+///   * A lowercase alias (`"qwen3.5-2b-4bit"`) — looked up in the registry.
 ///
 /// Returns `None` if the input is not a full repo id (no `/`) and
 /// not a known alias.

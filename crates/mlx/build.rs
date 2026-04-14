@@ -365,7 +365,7 @@ fn generate_model_registry(mlx_dir: &Path) {
                 check_str(repo_id, "repo_id");
                 check_str(arch, "arch");
 
-                let alias = format!("{family}.{param_size}.{quant}");
+                let alias = format!("{family}-{param_size}-{quant}");
                 code.push_str(&format!(
                     "    ModelEntry {{ alias: \"{alias}\", repo_id: \"{repo_id}\", \
                      kind: {kind}, size_mb: {size_mb}, \
