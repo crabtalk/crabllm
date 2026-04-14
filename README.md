@@ -6,14 +6,12 @@ High-performance LLM API gateway in Rust, built by [crabtalk][crabtalk].
 
 ## What It Does
 
-Crabllm sits between your application and LLM providers. It exposes an
-OpenAI-compatible API and routes requests to the configured provider —
-OpenAI, Anthropic, Azure, Ollama, and any OpenAI-compatible service.
+Crabllm sits between your application and LLM providers. It exposes an OpenAI-compatible API and routes requests to the
+configured provider — OpenAI, Anthropic, Azure, Ollama, and any OpenAI-compatible service.
 
 One API format. Many providers. Low overhead.
 
-See the [docs][docs] for [providers][providers], [routing][routing],
-[extensions][extensions], and [configuration][configuration].
+See the [docs][docs] for [providers][providers], [routing][routing], [extensions][extensions], and [configuration][configuration].
 
 
 ## Quick Start
@@ -23,15 +21,14 @@ cargo install crabllm crabctl
 crabllm serve
 ```
 
-First run generates `crabllm.toml` with a fresh admin token and default
-key. Add a provider — no restart needed:
+First run generates `crabllm.toml` with a fresh admin token and default key. Add a provider — no restart needed:
 
 ```bash
 crabctl providers create openai --kind openai --api-key "$OPENAI_API_KEY"
 ```
 
-With `--models` omitted the server auto-populates the list from the
-provider's `/models` endpoint. Send a request using the OpenAI format:
+With `--models` omitted the server auto-populates the list from the provider's `/models` endpoint. Send a 
+request using the OpenAI format:
 
 ```bash
 curl http://127.0.0.1:5632/v1/chat/completions \
@@ -40,15 +37,13 @@ curl http://127.0.0.1:5632/v1/chat/completions \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
-Prefer Docker? See the [Docker chapter][docker] — pull
-`ghcr.io/crabtalk/crabllm:latest`, mount a volume, and manage providers
-the same way with `crabctl`.
+Prefer Docker? See the [Docker chapter][docker] — pull `ghcr.io/crabtalk/crabllm:latest`, mount a volume, 
+and manage providers the same way with `crabctl`.
 
 ## Benchmarks
 
-Gateway overhead measured against a mock LLM server with instant responses.
-Numbers show proxy cost only (gateway latency minus direct baseline).
-See [full results][benchmarks] for all scenarios and memory usage.
+Gateway overhead measured against a mock LLM server with instant responses. Numbers show proxy cost 
+only (gateway latency minus direct baseline). See [full results][benchmarks] for all scenarios and memory usage.
 
 **Streaming P50 overhead (ms) — the metric that matters for LLMs:**
 
