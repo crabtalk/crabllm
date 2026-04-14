@@ -11,7 +11,7 @@ use axum::{
 use crabllm_core::{
     Error, GatewayConfig, Provider, ProviderConfig, ProviderKind, Storage, storage_key,
 };
-use crabllm_provider::ProviderRegistry;
+use crabllm_provider::{HttpClient, ProviderRegistry};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
@@ -64,7 +64,6 @@ pub fn provider_admin_routes<P: Provider + 'static>(
         write_lock: Arc::new(Mutex::new(())),
     };
     Router::new()
-        .route("/v1/admin/providers/reload", post(reload_providers::<P>))
         .route(
             "/v1/admin/providers",
             post(create_provider::<P>).get(list_providers::<P>),
@@ -93,54 +92,13 @@ async fn admin_auth<P: Provider>(
     next.run(request).await
 }
 
-#[derive(Serialize)]
-struct ReloadResponse {
-    status: &'static str,
-    models: usize,
-    providers: usize,
-}
-
-/// POST /v1/admin/providers/reload — re-read config from disk, merge
-/// dynamic providers from storage, and atomically swap the registry.
-async fn reload_providers<P: Provider>(State(state): State<ProviderAdminState<P>>) -> Response {
-    let _guard = state.write_lock.lock().await;
-
-    let mut config = match read_toml_config(&state.config_path).await {
-        Ok(c) => c,
-        Err(r) => return r,
-    };
-    merge_stored_providers(state.storage.as_ref(), &mut config).await;
-
-    let new_registry = match (state.rebuilder)(&config) {
-        Ok(r) => r,
-        Err(e) => {
-            return crate::admin::err_response(
-                StatusCode::BAD_REQUEST,
-                &format!("failed to build registry: {e}"),
-                "invalid_request_error",
-            );
-        }
-    };
-
-    let models = new_registry.model_names().count();
-    let providers = new_registry.provider_count();
-    state.registry.store(Arc::new(new_registry));
-    eprintln!("provider registry reloaded: {models} models, {providers} providers");
-
-    Json(ReloadResponse {
-        status: "ok",
-        models,
-        providers,
-    })
-    .into_response()
-}
-
 // ── CRUD ──
 
 /// Request body for `POST /v1/admin/providers`. Flat shape: a
 /// provider name plus the full `ProviderConfig` inline.
 #[derive(Deserialize)]
-struct CreateProviderRequest {
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub(crate) struct CreateProviderRequest {
     name: String,
     #[serde(default, alias = "standard")]
     kind: ProviderKind,
@@ -189,7 +147,8 @@ impl CreateProviderRequest {
 
 /// Response shape for provider GET — secrets masked.
 #[derive(Serialize)]
-struct ProviderSummary {
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub(crate) struct ProviderSummary {
     name: String,
     kind: ProviderKind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -215,7 +174,7 @@ struct ProviderSummary {
 fn summarize(name: &str, cfg: &ProviderConfig, source: &'static str) -> ProviderSummary {
     ProviderSummary {
         name: name.to_string(),
-        kind: cfg.kind,
+        kind: cfg.kind.clone(),
         api_key_prefix: cfg.api_key.as_deref().map(mask),
         base_url: cfg.base_url.clone(),
         models: cfg.models.clone(),
@@ -312,7 +271,7 @@ async fn create_provider<P: Provider>(
             "invalid_request_error",
         );
     }
-    let (name, config) = body.into_parts();
+    let (name, mut config) = body.into_parts();
 
     let _guard = state.write_lock.lock().await;
 
@@ -345,6 +304,10 @@ async fn create_provider<P: Provider>(
             );
         }
         Ok(None) => {}
+    }
+
+    if let Err(e) = autofill_models(&mut config).await {
+        return crate::admin::err_response(StatusCode::BAD_REQUEST, &e, "invalid_request_error");
     }
 
     if let Err(e) = validate_single(&name, &config) {
@@ -480,7 +443,7 @@ pub async fn merge_stored_providers(storage: &dyn Storage, config: &mut GatewayC
     let pairs = match storage.list(&PREFIX_PROVIDERS).await {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("warning: failed to load stored providers: {e}");
+            tracing::warn!("failed to load stored providers: {e}");
             return;
         }
     };
@@ -490,9 +453,9 @@ pub async fn merge_stored_providers(storage: &dyn Storage, config: &mut GatewayC
         };
         // TOML precedence: log a warning and skip if name already present.
         if config.providers.contains_key(&sp.name) {
-            eprintln!(
-                "warning: dynamic provider '{}' is shadowed by a TOML-managed provider of the same name",
-                sp.name
+            tracing::warn!(
+                name = %sp.name,
+                "dynamic provider shadowed by TOML-managed provider of the same name"
             );
             continue;
         }
@@ -616,6 +579,84 @@ fn from_value_opt<T: for<'de> Deserialize<'de>>(
 
 fn validate_single(name: &str, config: &ProviderConfig) -> Result<(), String> {
     config.validate(name)
+}
+
+/// If `config.models` is empty, query the provider's `GET {base_url}/models`
+/// and populate from the response. Only OpenAI-compatible kinds expose a
+/// standard models endpoint — other kinds error out asking for an explicit
+/// `--models`.
+async fn autofill_models(config: &mut ProviderConfig) -> Result<(), String> {
+    if !config.models.is_empty() {
+        return Ok(());
+    }
+
+    let base_url = match &config.kind {
+        crabllm_core::ProviderKind::Openai => config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com/v1"),
+        crabllm_core::ProviderKind::Ollama => config
+            .base_url
+            .as_deref()
+            .unwrap_or("http://localhost:11434/v1"),
+        crabllm_core::ProviderKind::Custom(_) => config.base_url.as_deref().ok_or_else(|| {
+            "models is empty and base_url is not set; cannot auto-fetch".to_string()
+        })?,
+        other => {
+            return Err(format!(
+                "models is required for kind '{other}' — auto-fetch only supported for \
+                 openai, ollama, and custom kinds"
+            ));
+        }
+    };
+
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let auth = config.api_key.as_ref().map(|k| format!("Bearer {k}"));
+    let mut headers: Vec<(&str, &str)> = Vec::new();
+    if let Some(h) = auth.as_deref() {
+        headers.push(("authorization", h));
+    }
+
+    let client = HttpClient::new();
+    let resp = client
+        .get(&url, &headers)
+        .await
+        .map_err(|e| format!("failed to auto-fetch models from {url}: {e}"))?;
+
+    if !(200..300).contains(&resp.status) {
+        return Err(format!(
+            "{url} returned {}; pass --models explicitly",
+            resp.status
+        ));
+    }
+
+    let body: serde_json::Value =
+        serde_json::from_slice(&resp.body).map_err(|e| format!("invalid JSON from {url}: {e}"))?;
+    let data = body
+        .get("data")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("{url} missing 'data' array; pass --models explicitly"))?;
+
+    let models: Vec<String> = data
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+
+    if models.is_empty() {
+        return Err(format!(
+            "{url} returned no models; pass --models explicitly"
+        ));
+    }
+
+    tracing::info!(
+        kind = %config.kind,
+        base_url,
+        count = models.len(),
+        "auto-fetched models from provider",
+    );
+
+    config.models = models;
+    Ok(())
 }
 
 /// Apply a single-provider mutation: build registry first (on a projected

@@ -102,6 +102,7 @@ fn empty_config() -> GatewayConfig {
         local_models: None,
         admin_token: None,
         shutdown_timeout: 30,
+        openapi: true,
     }
 }
 

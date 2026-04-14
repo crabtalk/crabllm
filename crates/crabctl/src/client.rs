@@ -2,7 +2,7 @@ use crate::{
     error::Error,
     types::{
         AuditRecord, BudgetEntry, CreateKeyRequest, CreateProviderRequest, KeyResponse, KeySummary,
-        ProviderSummary, ReloadResponse, UsageEntry,
+        ProviderSummary, UsageEntry,
     },
 };
 use reqwest::StatusCode;
@@ -82,6 +82,23 @@ impl AdminClient {
         Self::check(resp).await
     }
 
+    /// GET a list endpoint, treating 404 as an empty list. Extension
+    /// endpoints (usage, budget, audit logs) are only mounted when the
+    /// extension is enabled; the CLI should render "no rows" in that
+    /// case, not surface a 404 error to the user.
+    async fn get_list<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<Vec<T>, Error> {
+        let resp = self
+            .client
+            .get(self.url(path))
+            .bearer_auth(&self.token)
+            .send()
+            .await?;
+        if resp.status() == StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        Ok(Self::check(resp).await?.json().await?)
+    }
+
     async fn post_json<T: serde::Serialize>(
         &self,
         path: &str,
@@ -92,16 +109,6 @@ impl AdminClient {
             .post(self.url(path))
             .bearer_auth(&self.token)
             .json(body)
-            .send()
-            .await?;
-        Self::check(resp).await
-    }
-
-    async fn post_empty(&self, path: &str) -> Result<reqwest::Response, Error> {
-        let resp = self
-            .client
-            .post(self.url(path))
-            .bearer_auth(&self.token)
             .send()
             .await?;
         Self::check(resp).await
@@ -167,14 +174,6 @@ impl AdminClient {
 
     // ── Providers ──
 
-    pub async fn reload_providers(&self) -> Result<ReloadResponse, Error> {
-        Ok(self
-            .post_empty("/v1/admin/providers/reload")
-            .await?
-            .json()
-            .await?)
-    }
-
     pub async fn list_providers(&self) -> Result<Vec<ProviderSummary>, Error> {
         Ok(self.get("/v1/admin/providers").await?.json().await?)
     }
@@ -218,13 +217,13 @@ impl AdminClient {
     ) -> Result<Vec<UsageEntry>, Error> {
         let mut path = String::from("/v1/admin/usage");
         append_query(&mut path, &[("name", name), ("model", model)]);
-        Ok(self.get(&path).await?.json().await?)
+        self.get_list(&path).await
     }
 
     // ── Budget ──
 
     pub async fn budget(&self) -> Result<Vec<BudgetEntry>, Error> {
-        Ok(self.get("/v1/budget").await?.json().await?)
+        self.get_list("/v1/budget").await
     }
 
     // ── Logs ──
@@ -251,7 +250,7 @@ impl AdminClient {
                 ("limit", Some(&limit)),
             ],
         );
-        Ok(self.get(&path).await?.json().await?)
+        self.get_list(&path).await
     }
 
     // ── Cache ──

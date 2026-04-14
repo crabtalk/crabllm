@@ -41,6 +41,31 @@ async fn track_active_connections(request: Request, next: middleware::Next) -> R
     response
 }
 
+/// Middleware that logs every incoming HTTP request with method, path,
+/// status, and latency. 2xx/3xx log at `info`, 4xx/5xx at `warn`.
+/// `/health` and `/metrics` log at `debug` so probes don't flood the
+/// default output.
+pub async fn log_request(request: Request, next: middleware::Next) -> Response {
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    let start = std::time::Instant::now();
+
+    let response = next.run(request).await;
+    let status = response.status();
+    let latency_ms = start.elapsed().as_millis() as u64;
+    let is_probe = path == "/health" || path == "/metrics";
+
+    if is_probe {
+        tracing::debug!(%method, path, status = status.as_u16(), latency_ms, "request");
+    } else if status.is_client_error() || status.is_server_error() {
+        tracing::warn!(%method, path, status = status.as_u16(), latency_ms, "request");
+    } else {
+        tracing::info!(%method, path, status = status.as_u16(), latency_ms, "request");
+    }
+
+    response
+}
+
 /// Build the Axum router with all API routes and admin routes.
 pub fn router<S, P>(state: AppState<S, P>, admin_routes: Vec<Router>) -> Router
 where

@@ -134,11 +134,15 @@ enum ProviderCommands {
     Create {
         /// Provider name
         name: String,
-        /// Provider implementation kind
-        #[arg(long, value_enum)]
+        /// Provider implementation kind. Use `openai`, `anthropic`,
+        /// `google`, `bedrock`, `ollama`, `azure` — or any self-defined
+        /// name (requires --base-url, dispatched as OpenAI-compatible).
+        #[arg(long)]
         kind: ProviderKind,
-        /// Models served by this provider (comma-separated)
-        #[arg(long, value_delimiter = ',', required = true)]
+        /// Models served by this provider (comma-separated). If omitted,
+        /// the server auto-fetches from `{base_url}/models` when the
+        /// kind is openai, ollama, or custom.
+        #[arg(long, value_delimiter = ',')]
         models: Vec<String>,
         /// API key
         #[arg(long)]
@@ -172,8 +176,9 @@ enum ProviderCommands {
     Update {
         /// Provider name
         name: String,
-        /// Provider implementation kind
-        #[arg(long, value_enum)]
+        /// Provider implementation kind (see `create --help` for the
+        /// list of known kinds and custom-kind rules).
+        #[arg(long)]
         kind: Option<ProviderKind>,
         /// Models (comma-separated)
         #[arg(long, value_delimiter = ',')]
@@ -211,8 +216,6 @@ enum ProviderCommands {
         /// Provider name
         name: String,
     },
-    /// Reload providers from config file
-    Reload,
 }
 
 #[derive(Subcommand)]
@@ -517,17 +520,6 @@ async fn run_providers(
         ProviderCommands::Delete { name } => {
             client.delete_provider(&name).await?;
             println!("Provider '{name}' deleted.");
-        }
-        ProviderCommands::Reload => {
-            let resp = client.reload_providers().await?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&resp).unwrap());
-                return Ok(());
-            }
-            println!(
-                "Providers reloaded: {} models, {} providers.",
-                resp.models, resp.providers
-            );
         }
     }
     Ok(())

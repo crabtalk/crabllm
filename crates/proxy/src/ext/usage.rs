@@ -115,6 +115,7 @@ pub struct UserUsageQuery {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UsageEntry {
     name: String,
     model: String,

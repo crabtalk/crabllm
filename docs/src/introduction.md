@@ -11,6 +11,8 @@ You send requests in OpenAI format to crabllm. It routes them to the configured
 provider — OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, or
 Ollama — translating the request and response as needed.
 
+The full HTTP API surface is documented interactively at [crabtalk.github.io/crabllm/api](https://crabtalk.github.io/crabllm/api).
+
 Your application talks to one endpoint. Crabllm handles the rest:
 
 - **Provider translation** — Anthropic, Google, and Bedrock have their own API

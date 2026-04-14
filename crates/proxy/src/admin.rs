@@ -92,7 +92,8 @@ pub(crate) fn err_response(status: StatusCode, message: &str, error_type: &str) 
 }
 
 #[derive(Deserialize)]
-struct CreateKeyRequest {
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub(crate) struct CreateKeyRequest {
     name: String,
     #[serde(default = "default_models")]
     models: Vec<String>,
@@ -105,7 +106,8 @@ fn default_models() -> Vec<String> {
 }
 
 #[derive(Serialize)]
-struct KeyResponse {
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub(crate) struct KeyResponse {
     name: String,
     key: String,
     models: Vec<String>,
@@ -114,7 +116,8 @@ struct KeyResponse {
 }
 
 #[derive(Serialize)]
-struct KeySummary {
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub(crate) struct KeySummary {
     name: String,
     key_prefix: String,
     models: Vec<String>,
@@ -500,7 +503,7 @@ pub async fn load_stored_keys(
     let pairs = match storage.list(&PREFIX_KEYS).await {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("warning: failed to load stored keys: {e}");
+            tracing::warn!("failed to load stored keys: {e}");
             return;
         }
     };

@@ -1,3 +1,9 @@
+#[cfg(all(feature = "rustls", feature = "native-tls"))]
+compile_error!("crabllm-provider: features `rustls` and `native-tls` are mutually exclusive");
+
+#[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+compile_error!("crabllm-provider: enable exactly one of `rustls` or `native-tls`");
+
 use bytes::Bytes;
 use crabllm_core::{
     AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
@@ -141,6 +147,13 @@ impl RemoteProvider {
                 region: config.region.clone().unwrap_or_default(),
                 access_key: config.access_key.clone().unwrap_or_default(),
                 secret_key: config.secret_key.clone().unwrap_or_default(),
+            },
+            // Self-defined kind — must be OpenAI-compatible; base_url is
+            // required (enforced by ProviderConfig::validate).
+            ProviderKind::Custom(_) => RemoteProvider::Openai {
+                client,
+                base_url: normalize_base_url(&config.base_url.clone().unwrap_or_default()),
+                api_key: config.api_key.clone().unwrap_or_default(),
             },
         }
     }

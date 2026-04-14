@@ -3,6 +3,7 @@
 [Introduction](introduction.md)
 
 - [Getting Started](getting-started.md)
+- [Running with Docker](docker.md)
 - [Configuration](configuration.md)
 
 # Providers

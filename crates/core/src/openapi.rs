@@ -6,7 +6,7 @@
 
 use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
 
-use crate::{EmbeddingInput, FinishReason, Role, Stop, ToolChoice};
+use crate::{EmbeddingInput, FinishReason, ProviderKind, Role, Stop, ToolChoice};
 
 macro_rules! string_schema {
     ($ty:ty, $desc:expr, $($variant:literal),+ $(,)?) => {
@@ -61,3 +61,7 @@ any_schema!(
     "A string or array of strings where the model should stop"
 );
 any_schema!(EmbeddingInput, "A string or array of strings to embed");
+any_schema!(
+    ProviderKind,
+    "One of: openai, anthropic, google, bedrock, ollama, azure — or any self-defined name (requires base_url, dispatched as OpenAI-compatible)"
+);

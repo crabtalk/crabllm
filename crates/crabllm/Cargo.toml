@@ -10,7 +10,7 @@ keywords = ["llm", "gateway", "proxy", "openai", "anthropic"]
 categories = ["command-line-utilities", "web-programming::http-server"]
 
 [features]
-default = ["rustls"]
+default = ["native-tls", "openapi"]
 native-tls = ["crabllm-proxy/native-tls"]
 rustls = ["crabllm-proxy/rustls"]
 storage-redis = ["crabllm-proxy/storage-redis"]
@@ -34,6 +34,7 @@ bytes.workspace = true
 clap.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 tracing-subscriber.workspace = true
 metrics-exporter-prometheus.workspace = true
 utoipa = { workspace = true, optional = true }
