@@ -1,4 +1,3 @@
-use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 /// Per-key rate limit (mirrors server-side KeyRateLimit).
@@ -70,30 +69,11 @@ pub struct BudgetEntry {
     pub remaining_usd: f64,
 }
 
-/// Provider implementation kind (mirrors server-side ProviderKind).
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, ValueEnum)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderKind {
-    Openai,
-    Anthropic,
-    Google,
-    Bedrock,
-    Ollama,
-    Azure,
-}
-
-impl std::fmt::Display for ProviderKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Openai => "openai",
-            Self::Anthropic => "anthropic",
-            Self::Google => "google",
-            Self::Bedrock => "bedrock",
-            Self::Ollama => "ollama",
-            Self::Azure => "azure",
-        })
-    }
-}
+/// Provider implementation kind — mirrors server-side `ProviderKind`.
+/// Known kinds (openai, anthropic, google, bedrock, ollama, azure) pick
+/// named dispatch paths; any other string is treated by the server as a
+/// self-defined OpenAI-compatible kind and requires `base_url`.
+pub type ProviderKind = String;
 
 /// POST /v1/admin/providers request body.
 #[derive(Serialize)]

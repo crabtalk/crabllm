@@ -134,11 +134,15 @@ enum ProviderCommands {
     Create {
         /// Provider name
         name: String,
-        /// Provider implementation kind
-        #[arg(long, value_enum)]
+        /// Provider implementation kind. Use `openai`, `anthropic`,
+        /// `google`, `bedrock`, `ollama`, `azure` — or any self-defined
+        /// name (requires --base-url, dispatched as OpenAI-compatible).
+        #[arg(long)]
         kind: ProviderKind,
-        /// Models served by this provider (comma-separated)
-        #[arg(long, value_delimiter = ',', required = true)]
+        /// Models served by this provider (comma-separated). If omitted,
+        /// the server auto-fetches from `{base_url}/models` when the
+        /// kind is openai, ollama, or custom.
+        #[arg(long, value_delimiter = ',')]
         models: Vec<String>,
         /// API key
         #[arg(long)]
@@ -172,8 +176,9 @@ enum ProviderCommands {
     Update {
         /// Provider name
         name: String,
-        /// Provider implementation kind
-        #[arg(long, value_enum)]
+        /// Provider implementation kind (see `create --help` for the
+        /// list of known kinds and custom-kind rules).
+        #[arg(long)]
         kind: Option<ProviderKind>,
         /// Models (comma-separated)
         #[arg(long, value_delimiter = ',')]

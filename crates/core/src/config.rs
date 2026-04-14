@@ -61,11 +61,7 @@ pub struct GatewayConfig {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     /// Provider kind determines the dispatch path.
-    #[serde(
-        default,
-        alias = "standard",
-        skip_serializing_if = "ProviderKind::is_default"
-    )]
+    #[serde(default, skip_serializing_if = "ProviderKind::is_default")]
     pub kind: ProviderKind,
     /// API key (supports `${ENV_VAR}` interpolation).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -111,10 +107,12 @@ fn default_listen() -> String {
     "127.0.0.1:5632".to_string()
 }
 
-/// Which provider implementation to use.
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "snake_case")]
+/// Which provider implementation to use. Known variants map to named
+/// dispatch paths. A self-defined name deserializes to [`Custom`], which
+/// dispatches as OpenAI-compatible and requires `base_url` at validation.
+///
+/// [`Custom`]: ProviderKind::Custom
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum ProviderKind {
     #[default]
     Openai,
@@ -123,12 +121,54 @@ pub enum ProviderKind {
     Bedrock,
     Ollama,
     Azure,
+    /// Self-defined kind — any string that doesn't match a known variant.
+    /// Dispatched through the OpenAI-compatible path; `base_url` required.
+    Custom(String),
 }
 
 impl ProviderKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Openai => "openai",
+            Self::Anthropic => "anthropic",
+            Self::Google => "google",
+            Self::Bedrock => "bedrock",
+            Self::Ollama => "ollama",
+            Self::Azure => "azure",
+            Self::Custom(s) => s,
+        }
+    }
+
     /// Returns true if this is the default variant (Openai).
     pub fn is_default(&self) -> bool {
-        *self == Self::Openai
+        matches!(self, Self::Openai)
+    }
+}
+
+impl std::fmt::Display for ProviderKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl serde::Serialize for ProviderKind {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ProviderKind {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            "openai" => Self::Openai,
+            "anthropic" => Self::Anthropic,
+            "google" => Self::Google,
+            "bedrock" => Self::Bedrock,
+            "ollama" => Self::Ollama,
+            "azure" => Self::Azure,
+            _ => Self::Custom(s),
+        })
     }
 }
 
@@ -147,7 +187,7 @@ impl ProviderConfig {
         {
             return ProviderKind::Anthropic;
         }
-        self.kind
+        self.kind.clone()
     }
 
     /// Validate field combinations.
@@ -155,7 +195,7 @@ impl ProviderConfig {
         if self.models.is_empty() {
             return Err(format!("provider '{provider_name}' has no models"));
         }
-        match self.kind {
+        match &self.kind {
             ProviderKind::Bedrock => {
                 if self.region.is_none() {
                     return Err(format!(
@@ -175,6 +215,13 @@ impl ProviderConfig {
             }
             ProviderKind::Ollama => {
                 // Ollama doesn't require api_key or base_url.
+            }
+            ProviderKind::Custom(name) => {
+                if self.base_url.is_none() {
+                    return Err(format!(
+                        "provider '{provider_name}' (custom kind '{name}') requires base_url"
+                    ));
+                }
             }
             _ => {
                 if self.api_key.is_none() && self.base_url.is_none() {

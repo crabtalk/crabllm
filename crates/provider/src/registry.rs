@@ -252,7 +252,7 @@ fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
     fn is_blank(opt: &Option<String>) -> bool {
         opt.as_ref().is_none_or(|s| s.is_empty())
     }
-    match config.kind {
+    match &config.kind {
         ProviderKind::Openai | ProviderKind::Ollama => {
             // Both have a sensible default base_url; nothing to require.
             Ok(())
@@ -260,7 +260,7 @@ fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
         ProviderKind::Anthropic | ProviderKind::Google => {
             if is_blank(&config.api_key) {
                 return Err(Error::Config(format!(
-                    "provider '{name}' ({:?}) requires an api_key",
+                    "provider '{name}' ({}) requires an api_key",
                     config.kind,
                 )));
             }
@@ -270,6 +270,14 @@ fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
             if is_blank(&config.api_key) {
                 return Err(Error::Config(format!(
                     "provider '{name}' (azure) requires an api_key"
+                )));
+            }
+            Ok(())
+        }
+        ProviderKind::Custom(kind_name) => {
+            if is_blank(&config.base_url) {
+                return Err(Error::Config(format!(
+                    "provider '{name}' (custom kind '{kind_name}') requires a base_url"
                 )));
             }
             Ok(())

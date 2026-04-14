@@ -148,6 +148,13 @@ impl RemoteProvider {
                 access_key: config.access_key.clone().unwrap_or_default(),
                 secret_key: config.secret_key.clone().unwrap_or_default(),
             },
+            // Self-defined kind — must be OpenAI-compatible; base_url is
+            // required (enforced by ProviderConfig::validate).
+            ProviderKind::Custom(_) => RemoteProvider::Openai {
+                client,
+                base_url: normalize_base_url(&config.base_url.clone().unwrap_or_default()),
+                api_key: config.api_key.clone().unwrap_or_default(),
+            },
         }
     }
 }

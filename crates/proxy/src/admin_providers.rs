@@ -11,7 +11,7 @@ use axum::{
 use crabllm_core::{
     Error, GatewayConfig, Provider, ProviderConfig, ProviderKind, Storage, storage_key,
 };
-use crabllm_provider::ProviderRegistry;
+use crabllm_provider::{HttpClient, ProviderRegistry};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
@@ -174,7 +174,7 @@ pub(crate) struct ProviderSummary {
 fn summarize(name: &str, cfg: &ProviderConfig, source: &'static str) -> ProviderSummary {
     ProviderSummary {
         name: name.to_string(),
-        kind: cfg.kind,
+        kind: cfg.kind.clone(),
         api_key_prefix: cfg.api_key.as_deref().map(mask),
         base_url: cfg.base_url.clone(),
         models: cfg.models.clone(),
@@ -271,7 +271,7 @@ async fn create_provider<P: Provider>(
             "invalid_request_error",
         );
     }
-    let (name, config) = body.into_parts();
+    let (name, mut config) = body.into_parts();
 
     let _guard = state.write_lock.lock().await;
 
@@ -304,6 +304,10 @@ async fn create_provider<P: Provider>(
             );
         }
         Ok(None) => {}
+    }
+
+    if let Err(e) = autofill_models(&mut config).await {
+        return crate::admin::err_response(StatusCode::BAD_REQUEST, &e, "invalid_request_error");
     }
 
     if let Err(e) = validate_single(&name, &config) {
@@ -575,6 +579,84 @@ fn from_value_opt<T: for<'de> Deserialize<'de>>(
 
 fn validate_single(name: &str, config: &ProviderConfig) -> Result<(), String> {
     config.validate(name)
+}
+
+/// If `config.models` is empty, query the provider's `GET {base_url}/models`
+/// and populate from the response. Only OpenAI-compatible kinds expose a
+/// standard models endpoint — other kinds error out asking for an explicit
+/// `--models`.
+async fn autofill_models(config: &mut ProviderConfig) -> Result<(), String> {
+    if !config.models.is_empty() {
+        return Ok(());
+    }
+
+    let base_url = match &config.kind {
+        crabllm_core::ProviderKind::Openai => config
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com/v1"),
+        crabllm_core::ProviderKind::Ollama => config
+            .base_url
+            .as_deref()
+            .unwrap_or("http://localhost:11434/v1"),
+        crabllm_core::ProviderKind::Custom(_) => config.base_url.as_deref().ok_or_else(|| {
+            "models is empty and base_url is not set; cannot auto-fetch".to_string()
+        })?,
+        other => {
+            return Err(format!(
+                "models is required for kind '{other}' — auto-fetch only supported for \
+                 openai, ollama, and custom kinds"
+            ));
+        }
+    };
+
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let auth = config.api_key.as_ref().map(|k| format!("Bearer {k}"));
+    let mut headers: Vec<(&str, &str)> = Vec::new();
+    if let Some(h) = auth.as_deref() {
+        headers.push(("authorization", h));
+    }
+
+    let client = HttpClient::new();
+    let resp = client
+        .get(&url, &headers)
+        .await
+        .map_err(|e| format!("failed to auto-fetch models from {url}: {e}"))?;
+
+    if !(200..300).contains(&resp.status) {
+        return Err(format!(
+            "{url} returned {}; pass --models explicitly",
+            resp.status
+        ));
+    }
+
+    let body: serde_json::Value =
+        serde_json::from_slice(&resp.body).map_err(|e| format!("invalid JSON from {url}: {e}"))?;
+    let data = body
+        .get("data")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("{url} missing 'data' array; pass --models explicitly"))?;
+
+    let models: Vec<String> = data
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+
+    if models.is_empty() {
+        return Err(format!(
+            "{url} returned no models; pass --models explicitly"
+        ));
+    }
+
+    tracing::info!(
+        kind = %config.kind,
+        base_url,
+        count = models.len(),
+        "auto-fetched models from provider",
+    );
+
+    config.models = models;
+    Ok(())
 }
 
 /// Apply a single-provider mutation: build registry first (on a projected
