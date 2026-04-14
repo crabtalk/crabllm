@@ -404,7 +404,9 @@ async fn run_providers(
                 })
                 .collect();
             print_table(
-                &["NAME", "KIND", "MODELS", "BASE URL", "API KEY", "WEIGHT", "SOURCE"],
+                &[
+                    "NAME", "KIND", "MODELS", "BASE URL", "API KEY", "WEIGHT", "SOURCE",
+                ],
                 &rows,
             );
         }

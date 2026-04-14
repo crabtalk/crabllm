@@ -355,7 +355,11 @@ async fn create_provider<P: Provider>(
         return r;
     }
 
-    (StatusCode::CREATED, Json(summarize(&name, &config, "dynamic"))).into_response()
+    (
+        StatusCode::CREATED,
+        Json(summarize(&name, &config, "dynamic")),
+    )
+        .into_response()
 }
 
 /// PATCH /v1/admin/providers/{name} — partial update of a dynamic provider.
@@ -599,13 +603,15 @@ fn from_value_opt<T: for<'de> Deserialize<'de>>(
     if value.is_null() {
         return Ok(None);
     }
-    serde_json::from_value(value.clone()).map(Some).map_err(|e| {
-        crate::admin::err_response(
-            StatusCode::BAD_REQUEST,
-            &format!("invalid '{field}': {e}"),
-            "invalid_request_error",
-        )
-    })
+    serde_json::from_value(value.clone())
+        .map(Some)
+        .map_err(|e| {
+            crate::admin::err_response(
+                StatusCode::BAD_REQUEST,
+                &format!("invalid '{field}': {e}"),
+                "invalid_request_error",
+            )
+        })
 }
 
 fn validate_single(name: &str, config: &ProviderConfig) -> Result<(), String> {
