@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.15"
+version = "0.0.16"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "High-performance LLM API gateway"
@@ -12,14 +12,14 @@ keywords = ["llm", "gateway", "proxy", "openai", "anthropic"]
 categories = ["web-programming::http-server", "network-programming"]
 
 [workspace.dependencies]
-crabllm-core = { version = "0.0.15", path = "crates/core" }
-crabllm-provider = { version = "0.0.15", path = "crates/provider" }
-crabllm-proxy = { version = "0.0.15", path = "crates/proxy" }
-crabllm-bench = { version = "0.0.15", path = "crates/bench" }
-crabllm = { version = "0.0.15", path = "crates/crabllm" }
-crabllm-llamacpp = { version = "0.0.15", path = "crates/llamacpp" }
-crabllm-mlx = { version = "0.0.15", path = "crates/mlx" }
-crabctl = { version = "0.0.15", path = "crates/crabctl" }
+crabllm-core = { version = "0.0.16", path = "crates/core" }
+crabllm-provider = { version = "0.0.16", path = "crates/provider" }
+crabllm-proxy = { version = "0.0.16", path = "crates/proxy" }
+crabllm-bench = { version = "0.0.16", path = "crates/bench" }
+crabllm = { version = "0.0.16", path = "crates/crabllm" }
+crabllm-llamacpp = { version = "0.0.16", path = "crates/llamacpp" }
+crabllm-mlx = { version = "0.0.16", path = "crates/mlx" }
+crabctl = { version = "0.0.16", path = "crates/crabctl" }
 
 # crates-io
 axum = { version = "0.8", features = ["multipart"] }
