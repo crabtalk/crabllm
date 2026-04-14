@@ -10,8 +10,8 @@ keywords = ["llm", "openai", "anthropic", "gemini", "bedrock"]
 categories = ["web-programming::http-client", "network-programming"]
 
 [features]
-native-tls = []
-rustls = []
+native-tls = ["dep:hyper-tls", "dep:native-tls-crate"]
+rustls = ["dep:hyper-rustls"]
 provider-bedrock = ["hmac", "sha2"]
 
 [dependencies]
@@ -24,7 +24,9 @@ http.workspace = true
 http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
-hyper-rustls.workspace = true
+hyper-rustls = { workspace = true, optional = true }
+hyper-tls = { workspace = true, optional = true }
+native-tls-crate = { workspace = true, optional = true }
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

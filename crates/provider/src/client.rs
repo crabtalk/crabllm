@@ -5,7 +5,10 @@ use http_body_util::{BodyExt, BodyStream, Full};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::pin::Pin;
 
+#[cfg(feature = "rustls")]
 type Connector = hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
+#[cfg(feature = "native-tls")]
+type Connector = hyper_tls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
 type HyperClient = Client<Connector, Full<Bytes>>;
 
 /// Minimal HTTP client for proxy workloads. Wraps hyper-util's pooled
@@ -32,18 +35,34 @@ impl Default for HttpClient {
 }
 
 impl HttpClient {
-    /// Build a new client with TCP_NODELAY, TLS (rustls), and HTTP/2.
+    /// Build a new client with TCP_NODELAY, TLS (rustls or native-tls,
+    /// feature-gated), and HTTP/2.
     pub fn new() -> Self {
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
+        let https = Self::connector();
+        let inner = Client::builder(TokioExecutor::new()).build(https);
+        Self { inner }
+    }
+
+    #[cfg(feature = "rustls")]
+    fn connector() -> Connector {
+        hyper_rustls::HttpsConnectorBuilder::new()
             .with_native_roots()
             .expect("crabllm: failed to load native TLS roots")
             .https_or_http()
             .enable_http1()
             .enable_http2()
-            .build();
+            .build()
+    }
 
-        let inner = Client::builder(TokioExecutor::new()).build(https);
-        Self { inner }
+    #[cfg(feature = "native-tls")]
+    fn connector() -> Connector {
+        let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
+        http.enforce_http(false);
+        let tls = native_tls_crate::TlsConnector::builder()
+            .request_alpns(&["h2", "http/1.1"])
+            .build()
+            .expect("crabllm: failed to build native TLS connector");
+        hyper_tls::HttpsConnector::from((http, tls.into()))
     }
 
     /// POST a body and collect the full response.

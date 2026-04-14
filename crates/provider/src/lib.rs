@@ -1,3 +1,9 @@
+#[cfg(all(feature = "rustls", feature = "native-tls"))]
+compile_error!("crabllm-provider: features `rustls` and `native-tls` are mutually exclusive");
+
+#[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+compile_error!("crabllm-provider: enable exactly one of `rustls` or `native-tls`");
+
 use bytes::Bytes;
 use crabllm_core::{
     AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,

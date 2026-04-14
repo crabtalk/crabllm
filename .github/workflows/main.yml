@@ -11,8 +11,11 @@ concurrency:
 
 jobs:
   build:
-    name: Build
+    name: Build (${{ matrix.tls }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tls: [rustls, native-tls]
     steps:
       - uses: actions/checkout@v4
       - name: Install Toolchain
@@ -21,6 +24,8 @@ jobs:
         uses: arduino/setup-protoc@v3
       - uses: taiki-e/install-action@sccache
       - uses: taiki-e/install-action@nextest
+      - name: Build
+        run: cargo build -p crabllm --no-default-features --features ${{ matrix.tls }}
 
       # - name: Run Tests
       #   run: cargo nextest run --workspace --no-fail-fast --release
