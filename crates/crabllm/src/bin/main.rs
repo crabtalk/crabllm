@@ -55,6 +55,22 @@ enum Commands {
         #[arg(short, long)]
         force: bool,
     },
+    /// Dump the OpenAPI spec (JSON) or a standalone Scalar viewer page (HTML)
+    /// to stdout. Requires the `openapi` feature (default-on).
+    #[cfg(feature = "openapi")]
+    Openapi {
+        /// Output format: `json` for the raw spec, `html` for a self-contained
+        /// Scalar viewer page.
+        #[arg(long, value_enum, default_value = "json")]
+        format: OpenapiFormat,
+    },
+}
+
+#[cfg(feature = "openapi")]
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum OpenapiFormat {
+    Json,
+    Html,
 }
 
 #[tokio::main]
@@ -65,8 +81,25 @@ async fn main() {
     match cli.command {
         Some(Commands::Serve { config, bind }) => serve(config, bind).await,
         Some(Commands::Init { out, force }) => init(out, force),
+        #[cfg(feature = "openapi")]
+        Some(Commands::Openapi { format }) => dump_openapi(format),
         // Default: serve with default config path.
         None => serve(PathBuf::from("crabllm.toml"), None).await,
+    }
+}
+
+#[cfg(feature = "openapi")]
+fn dump_openapi(format: OpenapiFormat) {
+    let spec = crabllm_proxy::openapi::spec();
+    match format {
+        OpenapiFormat::Json => {
+            let out = serde_json::to_string_pretty(&spec).expect("serialize openapi spec");
+            println!("{out}");
+        }
+        OpenapiFormat::Html => {
+            let html = utoipa_scalar::Scalar::new(spec).to_html();
+            print!("{html}");
+        }
     }
 }
 

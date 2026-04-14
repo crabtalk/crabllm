@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "docs/**"
+      - "crates/**/openapi*"
+      - "crates/core/src/types/**"
+      - "crates/proxy/src/admin*.rs"
 
 permissions:
   contents: write
@@ -15,10 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install mdbook
         uses: taiki-e/install-action@mdbook
-      - name: Build
+      - name: Build mdbook
         run: mdbook build docs/
+      - name: Build OpenAPI viewer
+        run: |
+          cargo build -p crabllm --release
+          ./target/release/crabllm openapi --format html > docs/book/api.html
       - name: Deploy
         run: |
           cd docs/book

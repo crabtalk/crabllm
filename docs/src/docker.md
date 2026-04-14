@@ -74,7 +74,7 @@ curl http://127.0.0.1:5632/v1/chat/completions \
   }'
 ```
 
-OpenAPI docs live at `http://127.0.0.1:5632/docs`.
+OpenAPI docs live at `http://127.0.0.1:5632/docs`. An offline snapshot is also hosted at [clearloop.github.io/crabllm/api.html](https://clearloop.github.io/crabllm/api.html).
 
 ## Passing upstream API keys via environment
 
