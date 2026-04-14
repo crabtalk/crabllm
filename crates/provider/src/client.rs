@@ -3,7 +3,11 @@ use crabllm_core::Error;
 use futures::stream::{Stream, StreamExt};
 use http_body_util::{BodyExt, BodyStream, Full};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use std::pin::Pin;
+use std::{pin::Pin, time::Instant};
+
+fn elapsed_ms(start: Instant) -> u64 {
+    start.elapsed().as_millis() as u64
+}
 
 #[cfg(feature = "rustls")]
 type Connector = hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
@@ -76,6 +80,9 @@ impl HttpClient {
             .parse()
             .map_err(|e: http::uri::InvalidUri| Error::Internal(e.to_string()))?;
 
+        let request_bytes = body.len();
+        let start = Instant::now();
+
         let mut builder = http::Request::builder().method(http::Method::POST).uri(uri);
         for &(name, value) in headers {
             builder = builder.header(name, value);
@@ -84,11 +91,16 @@ impl HttpClient {
             .body(Full::new(body))
             .map_err(|e| Error::Internal(e.to_string()))?;
 
-        let resp = self
-            .inner
-            .request(req)
-            .await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        let resp = self.inner.request(req).await.map_err(|e| {
+            tracing::debug!(
+                url,
+                request_bytes,
+                latency_ms = elapsed_ms(start),
+                error = %e,
+                "provider call failed"
+            );
+            Error::Internal(e.to_string())
+        })?;
 
         let status = resp.status().as_u16();
         let content_type = resp
@@ -102,6 +114,15 @@ impl HttpClient {
             .await
             .map_err(|e| Error::Internal(e.to_string()))?
             .to_bytes();
+
+        tracing::debug!(
+            url,
+            status,
+            request_bytes,
+            response_bytes = body.len(),
+            latency_ms = elapsed_ms(start),
+            "provider call"
+        );
 
         Ok(RawResponse {
             status,
@@ -122,6 +143,9 @@ impl HttpClient {
             .parse()
             .map_err(|e: http::uri::InvalidUri| Error::Internal(e.to_string()))?;
 
+        let request_bytes = body.len();
+        let start = Instant::now();
+
         let mut builder = http::Request::builder().method(http::Method::POST).uri(uri);
         for &(name, value) in headers {
             builder = builder.header(name, value);
@@ -130,11 +154,16 @@ impl HttpClient {
             .body(Full::new(body))
             .map_err(|e| Error::Internal(e.to_string()))?;
 
-        let resp = self
-            .inner
-            .request(req)
-            .await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        let resp = self.inner.request(req).await.map_err(|e| {
+            tracing::debug!(
+                url,
+                request_bytes,
+                latency_ms = elapsed_ms(start),
+                error = %e,
+                "provider stream failed"
+            );
+            Error::Internal(e.to_string())
+        })?;
 
         let status = resp.status().as_u16();
         if status >= 400 {
@@ -145,8 +174,25 @@ impl HttpClient {
                 .map_err(|e| Error::Internal(e.to_string()))?
                 .to_bytes();
             let text = String::from_utf8_lossy(&body).into_owned();
+            tracing::debug!(
+                url,
+                status,
+                request_bytes,
+                response_bytes = body.len(),
+                latency_ms = elapsed_ms(start),
+                "provider stream error"
+            );
             return Err(Error::Provider { status, body: text });
         }
+
+        // Latency is time-to-headers, not total stream duration.
+        tracing::debug!(
+            url,
+            status,
+            request_bytes,
+            ttfb_ms = elapsed_ms(start),
+            "provider stream opened"
+        );
 
         Ok(Box::pin(BodyStream::new(resp.into_body()).filter_map(
             |frame| {
