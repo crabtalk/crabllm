@@ -116,6 +116,7 @@ impl crabllm_core::Extension for AuditLogger {
             cost_micros,
             latency_ms: ctx.started_at.elapsed().as_millis() as u64,
             status: 200,
+            error: None,
         });
 
         Box::pin(async {})
@@ -145,6 +146,7 @@ impl crabllm_core::Extension for AuditLogger {
                 cost_micros,
                 latency_ms: ctx.started_at.elapsed().as_millis() as u64,
                 status: 200,
+                error: None,
             });
         }
 
@@ -163,6 +165,7 @@ impl crabllm_core::Extension for AuditLogger {
             cost_micros: 0,
             latency_ms: ctx.started_at.elapsed().as_millis() as u64,
             status: error_status(error),
+            error: Some(error.to_string()),
         });
 
         Box::pin(async {})
@@ -183,6 +186,8 @@ pub struct AuditRecord {
     pub cost_micros: i64,
     pub latency_ms: u64,
     pub status: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Deserialize)]

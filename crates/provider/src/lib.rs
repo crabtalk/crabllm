@@ -18,6 +18,7 @@ mod provider;
 mod registry;
 
 pub use client::{ByteStream, HttpClient};
+pub use provider::schema;
 
 /// Exposed so `crabllm-llamacpp` can reuse the OpenAI-compatible HTTP
 /// helpers against the child llama-server process. Append-only surface —

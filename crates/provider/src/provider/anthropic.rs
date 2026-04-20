@@ -247,7 +247,10 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
         Stop::Multiple(v) => v.clone(),
     });
 
-    let max_tokens = request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
+    let max_tokens = request
+        .anthropic_max_tokens
+        .or(request.max_tokens)
+        .unwrap_or(DEFAULT_MAX_TOKENS);
 
     let thinking = request.thinking.clone().or_else(|| {
         request.extra.get("thinking").and_then(|v| {

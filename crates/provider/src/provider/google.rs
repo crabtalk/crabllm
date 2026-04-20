@@ -10,7 +10,6 @@ use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 // ── Gemini-native request types ──
 
@@ -270,7 +269,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     });
 
     let generation_config = Some(GenerationConfig {
-        max_output_tokens: Some(request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS)),
+        max_output_tokens: request.anthropic_max_tokens.or(request.max_tokens),
         temperature: request.temperature,
         top_p: request.top_p,
         stop_sequences,
