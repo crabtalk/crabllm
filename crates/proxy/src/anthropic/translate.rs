@@ -50,17 +50,6 @@ pub fn to_chat_completion(req: AnthropicRequest) -> ChatCompletionRequest {
         .map(|tools| tools.into_iter().map(convert_tool).collect());
     let tool_choice = req.tool_choice.as_ref().and_then(translate_tool_choice);
 
-    let mut extra = serde_json::Map::new();
-    if let Some(thinking) = req.thinking {
-        extra.insert(
-            "thinking".to_string(),
-            serde_json::json!({
-                "type": thinking.kind,
-                "budget_tokens": thinking.budget_tokens,
-            }),
-        );
-    }
-
     ChatCompletionRequest {
         model: req.model,
         messages,
@@ -76,7 +65,8 @@ pub fn to_chat_completion(req: AnthropicRequest) -> ChatCompletionRequest {
         seed: None,
         user: None,
         reasoning_effort: None,
-        extra,
+        thinking: req.thinking,
+        extra: serde_json::Map::new(),
     }
 }
 

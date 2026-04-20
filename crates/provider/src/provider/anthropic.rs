@@ -249,25 +249,26 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
 
     let max_tokens = request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
 
-    // Derive thinking config from request.extra["thinking"].
-    let thinking = request.extra.get("thinking").and_then(|v| {
-        if v.as_bool() == Some(true) {
-            Some(ThinkingConfig {
-                kind: "enabled".to_string(),
-                budget_tokens: max_tokens.saturating_sub(1),
-            })
-        } else if let Some(obj) = v.as_object() {
-            let budget = obj
-                .get("budget_tokens")
-                .and_then(|b| b.as_u64())
-                .unwrap_or(max_tokens.saturating_sub(1) as u64) as u32;
-            Some(ThinkingConfig {
-                kind: "enabled".to_string(),
-                budget_tokens: budget,
-            })
-        } else {
-            None
-        }
+    let thinking = request.thinking.clone().or_else(|| {
+        request.extra.get("thinking").and_then(|v| {
+            if v.as_bool() == Some(true) {
+                Some(ThinkingConfig {
+                    kind: "enabled".to_string(),
+                    budget_tokens: Some(max_tokens.saturating_sub(1)),
+                })
+            } else if let Some(obj) = v.as_object() {
+                let budget = obj
+                    .get("budget_tokens")
+                    .and_then(|b| b.as_u64())
+                    .map(|b| b as u32);
+                Some(ThinkingConfig {
+                    kind: "enabled".to_string(),
+                    budget_tokens: budget,
+                })
+            } else {
+                None
+            }
+        })
     });
 
     AnthropicRequest {

@@ -170,19 +170,19 @@ impl crabllm_core::Extension for AuditLogger {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct AuditRecord {
-    request_id: String,
-    timestamp: i64,
-    key_name: String,
-    model: String,
-    provider: String,
+pub struct AuditRecord {
+    pub request_id: String,
+    pub timestamp: i64,
+    pub key_name: String,
+    pub model: String,
+    pub provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    prompt_tokens: Option<u32>,
+    pub prompt_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    completion_tokens: Option<u32>,
-    cost_micros: i64,
-    latency_ms: u64,
-    status: u16,
+    pub completion_tokens: Option<u32>,
+    pub cost_micros: i64,
+    pub latency_ms: u64,
+    pub status: u16,
 }
 
 #[derive(Deserialize)]

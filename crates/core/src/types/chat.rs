@@ -188,6 +188,8 @@ pub struct ChatCompletionRequest {
     pub user: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
+    #[serde(skip)]
+    pub thinking: Option<crate::types::anthropic::ThinkingConfig>,
     #[serde(flatten, default)]
     #[serde(skip_serializing_if = "serde_json::Map::is_empty")]
     pub extra: serde_json::Map<String, serde_json::Value>,

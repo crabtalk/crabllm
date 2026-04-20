@@ -13,7 +13,8 @@ pub const DEFAULT_MAX_TOKENS: u32 = 4096;
 pub struct ThinkingConfig {
     #[serde(rename = "type")]
     pub kind: String,
-    pub budget_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

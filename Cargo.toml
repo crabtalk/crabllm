@@ -13,7 +13,7 @@ categories = ["web-programming::http-server", "network-programming"]
 
 [workspace.dependencies]
 crabllm-core = { version = "0.0.16", path = "crates/core" }
-crabllm-provider = { version = "0.0.16", path = "crates/provider" }
+crabllm-provider = { version = "0.0.16", path = "crates/provider", default-features = false }
 crabllm-proxy = { version = "0.0.16", path = "crates/proxy" }
 crabllm-bench = { version = "0.0.16", path = "crates/bench" }
 crabllm = { version = "0.0.16", path = "crates/crabllm" }
