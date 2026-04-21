@@ -67,8 +67,9 @@ def parse_model(repo_id: str) -> tuple[str, str, str] | None:
 
     # Extract quant suffix (e.g., "4bit", "8bit").
     quant_match = re.search(r"-(\d+bit)$", name)
-    # Extract param size (e.g., "2b", "70b", "0.5b", "135m").
-    size_match = re.search(r"-(\d+(?:\.\d+)?[bm])(?=-|$)", name)
+    # Extract param size (e.g., "2b", "70b", "0.5b", "135m", "e2b", "e4b").
+    # The `e` prefix denotes Gemma 3n / Gemma 4 effective-param variants.
+    size_match = re.search(r"-(e?\d+(?:\.\d+)?[bm])(?=-|$)", name)
 
     if not (size_match and quant_match):
         return None

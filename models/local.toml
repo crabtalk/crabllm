@@ -1020,6 +1020,177 @@ size_mb = 6312
 vision = true
 arch = "gemma3"
 
+[models.gemma-3n.e2b.4bit]
+repo_id = "mlx-community/gemma-3n-E2B-4bit"
+size_mb = 3191
+arch = "gemma3n"
+
+[models.gemma-4.31b.4bit]
+repo_id = "mlx-community/gemma-4-31b-4bit"
+size_mb = 10238
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.31b.6bit]
+repo_id = "mlx-community/gemma-4-31b-6bit"
+size_mb = 13898
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.31b.8bit]
+repo_id = "mlx-community/gemma-4-31b-8bit"
+size_mb = 17558
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.e2b.4bit]
+repo_id = "mlx-community/gemma-4-e2b-4bit"
+size_mb = 2309
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.e2b.6bit]
+repo_id = "mlx-community/gemma-4-e2b-6bit"
+size_mb = 2862
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.e2b.8bit]
+repo_id = "mlx-community/gemma-4-e2b-8bit"
+size_mb = 3414
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.e4b.4bit]
+repo_id = "mlx-community/gemma-4-e4b-4bit"
+size_mb = 3188
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.e4b.6bit]
+repo_id = "mlx-community/gemma-4-e4b-6bit"
+size_mb = 4081
+vision = true
+arch = "gemma4"
+
+[models.gemma-4.e4b.8bit]
+repo_id = "mlx-community/gemma-4-e4b-8bit"
+size_mb = 4975
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-a4b.26b.4bit]
+repo_id = "mlx-community/gemma-4-26b-a4b-4bit"
+size_mb = 8738
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-a4b.26b.6bit]
+repo_id = "mlx-community/gemma-4-26b-a4b-6bit"
+size_mb = 11681
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-a4b.26b.8bit]
+repo_id = "mlx-community/gemma-4-26b-a4b-8bit"
+size_mb = 14625
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-a4b-it.26b.4bit]
+repo_id = "mlx-community/gemma-4-26b-a4b-it-4bit"
+size_mb = 8738
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-a4b-it.26b.6bit]
+repo_id = "mlx-community/gemma-4-26b-a4b-it-6bit"
+size_mb = 11681
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-a4b-it.26b.8bit]
+repo_id = "mlx-community/gemma-4-26b-a4b-it-8bit"
+size_mb = 14625
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-a4b-it-heretic.26b.4bit]
+repo_id = "mlx-community/gemma-4-26B-A4B-it-heretic-4bit"
+size_mb = 8738
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.31b.4bit]
+repo_id = "mlx-community/gemma-4-31b-it-4bit"
+size_mb = 10238
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.31b.6bit]
+repo_id = "mlx-community/gemma-4-31b-it-6bit"
+size_mb = 13898
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.31b.8bit]
+repo_id = "mlx-community/gemma-4-31b-it-8bit"
+size_mb = 17558
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.e2b.4bit]
+repo_id = "mlx-community/gemma-4-e2b-it-4bit"
+size_mb = 2309
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.e2b.6bit]
+repo_id = "mlx-community/gemma-4-e2b-it-6bit"
+size_mb = 2862
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.e2b.8bit]
+repo_id = "mlx-community/gemma-4-e2b-it-8bit"
+size_mb = 3414
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.e4b.4bit]
+repo_id = "mlx-community/gemma-4-e4b-it-4bit"
+size_mb = 3188
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.e4b.6bit]
+repo_id = "mlx-community/gemma-4-e4b-it-6bit"
+size_mb = 4081
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it.e4b.8bit]
+repo_id = "mlx-community/gemma-4-e4b-it-8bit"
+size_mb = 4975
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it-obliterated.e4b.8bit]
+repo_id = "mlx-community/gemma-4-E4B-it-OBLITERATED-mlx-8Bit"
+size_mb = 4033
+vision = true
+arch = "gemma4"
+
+[models.gemma-4-it-optiq.e2b.4bit]
+repo_id = "mlx-community/gemma-4-e2b-it-OptiQ-4bit"
+size_mb = 2127
+arch = "gemma4_text"
+
+[models.gemma-4-it-optiq.e4b.4bit]
+repo_id = "mlx-community/gemma-4-e4b-it-OptiQ-4bit"
+size_mb = 3238
+arch = "gemma4_text"
+
 [models.gemma-sea-lion-v3-it.9b.4bit]
 repo_id = "mlx-community/Gemma-SEA-LION-v3-9B-IT-mlx-4bit"
 size_mb = 3306
@@ -1323,6 +1494,21 @@ arch = "gemma3_text"
 repo_id = "mlx-community/Huihui-gemma-3-270m-it-abliterated-8bit"
 size_mb = 143
 arch = "gemma3_text"
+
+[models.huihui-gemma-3n-it-abliterated-lm.e4b.4bit]
+repo_id = "mlx-community/Huihui-gemma-3n-E4B-it-abliterated-lm-4bit"
+size_mb = 2047
+arch = "gemma3n"
+
+[models.huihui-gemma-3n-it-abliterated-lm.e4b.6bit]
+repo_id = "mlx-community/Huihui-gemma-3n-E4B-it-abliterated-lm-6bit"
+size_mb = 2865
+arch = "gemma3n"
+
+[models.huihui-gemma-3n-it-abliterated-lm.e4b.8bit]
+repo_id = "mlx-community/Huihui-gemma-3n-E4B-it-abliterated-lm-8bit"
+size_mb = 3684
+arch = "gemma3n"
 
 [models."huihui-lfm2.5-instruct-abliterated"."1.2b".4bit]
 repo_id = "mlx-community/Huihui-LFM2.5-1.2B-Instruct-abliterated-4bit"
@@ -3391,6 +3577,24 @@ arch = "qwen3_5"
 [models."qwen3.5-reap-a10b".97b.4bit]
 repo_id = "mlx-community/Qwen3.5-REAP-97B-A10B-4bit"
 size_mb = 28840
+vision = true
+arch = "qwen3_5_moe"
+
+[models."qwen3.6-a3b".35b.4bit]
+repo_id = "mlx-community/Qwen3.6-35B-A3B-4bit"
+size_mb = 11188
+vision = true
+arch = "qwen3_5_moe"
+
+[models."qwen3.6-a3b".35b.6bit]
+repo_id = "mlx-community/Qwen3.6-35B-A3B-6bit"
+size_mb = 15317
+vision = true
+arch = "qwen3_5_moe"
+
+[models."qwen3.6-a3b".35b.8bit]
+repo_id = "mlx-community/Qwen3.6-35B-A3B-8bit"
+size_mb = 19446
 vision = true
 arch = "qwen3_5_moe"
 

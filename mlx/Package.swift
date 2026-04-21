@@ -2,7 +2,7 @@
 import PackageDescription
 
 // CrabllmMlx — Swift static library that sits behind the crabllm_mlx.h
-// C ABI. Tracks mlx-swift-lm main (post-2.31.3, breaking 3.x series).
+// C ABI. Tracks mlx-swift-lm 3.x (Gemma 4 support).
 let package = Package(
     name: "CrabllmMlx",
     platforms: [
@@ -17,12 +17,9 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // Pin to 780048f — the latest commit before ec9619b which
-        // introduced a Swift 6 Sendable violation in
-        // Llama3ToolCallParser.swift. Track main once that's fixed.
         .package(
             url: "https://github.com/ml-explore/mlx-swift-lm.git",
-            revision: "780048f"
+            from: "3.31.3"
         ),
         // swift-transformers provides AutoTokenizer, needed by the
         // #huggingFaceTokenizerLoader() macro. mlx-swift-lm 3.x
