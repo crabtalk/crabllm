@@ -284,8 +284,22 @@ func transcribeAudio(data b64: String, format: String) throws -> String {
     try audioData.write(to: tempFile)
     defer { try? FileManager.default.removeItem(at: tempFile) }
 
+    let onDevice = recognizer.supportsOnDeviceRecognition
+
+    // SFSpeechRecognizer delivers callbacks through `recognizer.queue`,
+    // which defaults to `OperationQueue.main`. In a Rust subprocess the
+    // main thread runs tokio — it never services the main operation
+    // queue — so the default wiring hangs forever. Give the recognizer
+    // its own queue so callbacks land on a GCD worker we actually run.
+    let deliveryQueue = OperationQueue()
+    deliveryQueue.maxConcurrentOperationCount = 1
+    recognizer.queue = deliveryQueue
+
     let request = SFSpeechURLRecognitionRequest(url: tempFile)
     request.shouldReportPartialResults = false
+    if onDevice {
+        request.requiresOnDeviceRecognition = true
+    }
 
     let semaphore = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var transcript: String?
@@ -308,10 +322,19 @@ func transcribeAudio(data b64: String, format: String) throws -> String {
         task.cancel()
         throw FFIError.invalidArg("input_audio: transcription exceeded \(Int(audioTranscriptionTimeout))s timeout")
     }
+
     if let error = recognitionError {
         throw FFIError.invalidArg("input_audio: transcription failed: \(error)")
     }
-    return transcript ?? ""
+    let text = transcript ?? ""
+    if text.isEmpty {
+        throw FFIError.invalidArg(
+            "input_audio: no speech detected in the clip. Check mic input "
+            + "and that System Settings → Privacy & Security → Speech "
+            + "Recognition is enabled for CrabDash."
+        )
+    }
+    return text
 }
 
 /// Decode a `data:[<mediatype>];base64,<payload>` URL. Anchors on the
