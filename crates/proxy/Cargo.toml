@@ -10,6 +10,7 @@ keywords = ["llm", "proxy", "openai", "streaming", "gateway"]
 categories = ["web-programming::http-server", "network-programming"]
 
 [features]
+default = ["native-tls"]
 native-tls = ["crabllm-provider/native-tls"]
 rustls = ["crabllm-provider/rustls"]
 storage-redis = ["redis"]

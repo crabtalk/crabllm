@@ -33,3 +33,7 @@ flate2 = { workspace = true }
 tar = { workspace = true }
 zip = { workspace = true }
 dirs = { workspace = true }
+
+[features]
+default = ["native-tls"]
+native-tls = ["crabllm-provider/native-tls"]
