@@ -153,7 +153,7 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let peek: RequestPeek = match serde_json::from_slice(&raw_body) {
+    let peek: RequestPeek = match crabllm_core::json::from_slice(&raw_body) {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -192,7 +192,7 @@ where
     }
 
     // Full deserialization for streaming, extensions, or non-compat providers.
-    let mut request: ChatCompletionRequest = match sonic_rs::from_slice(&raw_body) {
+    let mut request: ChatCompletionRequest = match crabllm_core::json::from_slice(&raw_body) {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -308,11 +308,11 @@ where
 
                     let sse_stream = observed.map(|result| match result {
                         Ok(chunk) => {
-                            let json = sonic_rs::to_string(&chunk).unwrap_or_default();
+                            let json = crabllm_core::json::to_string(&chunk).unwrap_or_default();
                             Ok(Event::default().data(json))
                         }
                         Err(e) => {
-                            let json = serde_json::to_string(&ApiError::new(
+                            let json = crabllm_core::json::to_string(&ApiError::new(
                                 e.to_string(),
                                 "server_error",
                             ))
@@ -445,7 +445,7 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
         .await
         {
             Ok(resp_bytes) => {
-                let (pt, ct) = sonic_rs::from_slice::<UsagePeek>(&resp_bytes)
+                let (pt, ct) = crabllm_core::json::from_slice::<UsagePeek>(&resp_bytes)
                     .ok()
                     .and_then(|p| p.usage)
                     .map(|u| (u.prompt_tokens, u.completion_tokens))

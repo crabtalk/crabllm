@@ -14,7 +14,7 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
@@ -32,7 +32,7 @@ pub async fn chat_completion(
         });
     }
 
-    sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Send an embedding request to an OpenAI-compatible endpoint.
@@ -43,7 +43,7 @@ pub async fn embedding(
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingResponse, Error> {
     let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
@@ -61,7 +61,7 @@ pub async fn embedding(
         });
     }
 
-    sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Forward raw JSON bytes to an OpenAI-compatible chat completions
@@ -102,7 +102,7 @@ pub async fn chat_completion_stream(
     request: &ChatCompletionRequest,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
@@ -150,7 +150,7 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
     api_key: &str,
     request: &T,
 ) -> Result<(Bytes, String), Error> {
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
@@ -241,7 +241,7 @@ pub(crate) fn sse_stream(
                         if data == "[DONE]" {
                             return None;
                         }
-                        let result = match sonic_rs::from_str::<ChatCompletionChunk>(data) {
+                        let result = match crabllm_core::json::from_str::<ChatCompletionChunk>(data) {
                             Ok(chunk) => Ok(chunk),
                             Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
                         };

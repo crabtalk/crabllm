@@ -28,7 +28,7 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     let url = azure_url(base_url, &request.model, "chat/completions", api_version);
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let resp = client
         .post(&url, &headers, body.into())
@@ -43,7 +43,7 @@ pub async fn chat_completion(
         });
     }
 
-    sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Forward raw JSON bytes to an Azure OpenAI chat completions deployment,
@@ -83,7 +83,7 @@ pub async fn embedding(
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingResponse, Error> {
     let url = azure_url(base_url, &request.model, "embeddings", api_version);
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let resp = client
         .post(&url, &headers, body.into())
@@ -98,7 +98,7 @@ pub async fn embedding(
         });
     }
 
-    sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Send an image generation request to an Azure OpenAI deployment.
@@ -138,7 +138,7 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
     api_key: &str,
     request: &T,
 ) -> Result<(Bytes, String), Error> {
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let resp = client
         .post(url, &headers, body.into())
@@ -205,7 +205,7 @@ pub async fn chat_completion_stream(
     request: &ChatCompletionRequest,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let url = azure_url(base_url, &request.model, "chat/completions", api_version);
-    let body = sonic_rs::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 

@@ -184,7 +184,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                     if c.is_object() || c.is_array() {
                         Some(c.clone())
                     } else if let Some(s) = c.as_str() {
-                        serde_json::from_str(s).ok()
+                        crabllm_core::json::from_str(s).ok()
                     } else {
                         None
                     }
@@ -217,7 +217,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                 });
             }
             for tc in tool_calls {
-                let args = serde_json::from_str(&tc.function.arguments)
+                let args = crabllm_core::json::from_str(&tc.function.arguments)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 parts.push(GeminiPart {
                     text: None,
@@ -359,7 +359,7 @@ fn extract_parts(candidate: &GeminiCandidate) -> (String, Vec<ToolCall>) {
                     kind: ToolType::Function,
                     function: FunctionCall {
                         name: fc.name.clone(),
-                        arguments: serde_json::to_string(&fc.args).unwrap_or_default(),
+                        arguments: crabllm_core::json::to_string(&fc.args).unwrap_or_default(),
                     },
                 });
             }
@@ -429,7 +429,7 @@ pub async fn chat_completion(
     let gemini_req = translate_request(request);
     let url = format!("{}/models/{}:generateContent", BASE_URL, request.model);
 
-    let body = sonic_rs::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("x-goog-api-key", api_key),
         ("content-type", "application/json"),
@@ -448,7 +448,7 @@ pub async fn chat_completion(
     }
 
     let gemini_resp: GeminiResponse =
-        sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
 
     Ok(translate_response(gemini_resp, &request.model))
 }
@@ -465,7 +465,7 @@ pub async fn chat_completion_stream(
         BASE_URL, request.model
     );
 
-    let body = sonic_rs::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("x-goog-api-key", api_key),
         ("content-type", "application/json"),
@@ -510,7 +510,7 @@ fn gemini_sse_stream(
                         }
                     };
 
-                    let gemini_resp: GeminiResponse = match serde_json::from_str(data) {
+                    let gemini_resp: GeminiResponse = match crabllm_core::json::from_str(data) {
                         Ok(r) => r,
                         Err(_) => {
                             buffer.advance(newline_pos + 1);

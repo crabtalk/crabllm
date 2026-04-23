@@ -115,7 +115,7 @@ fn assistant_from_blocks(blocks: Vec<AnthropicContentBlock>) -> Message {
                     kind: ToolType::Function,
                     function: FunctionCall {
                         name,
-                        arguments: serde_json::to_string(&input).unwrap_or_else(|_| "{}".into()),
+                        arguments: crabllm_core::json::to_string(&input).unwrap_or_else(|_| "{}".into()),
                     },
                 });
             }
@@ -347,7 +347,7 @@ fn message_to_blocks(msg: Message) -> Vec<AnthropicContentBlock> {
 
     if let Some(tool_calls) = msg.tool_calls {
         for tc in tool_calls {
-            let input = serde_json::from_str(&tc.function.arguments)
+            let input = crabllm_core::json::from_str(&tc.function.arguments)
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             blocks.push(AnthropicContentBlock::ToolUse {
                 id: tc.id,

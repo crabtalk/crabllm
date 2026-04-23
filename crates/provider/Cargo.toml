@@ -25,6 +25,9 @@ http2 = ["reqwest?/http2"]
 native-tls = ["dep:hyper-tls", "dep:native-tls", "reqwest?/native-tls"]
 rustls = ["dep:hyper-rustls", "reqwest?/rustls"]
 
+# JSON — opt-in to SIMD-accelerated sonic-rs; default is serde_json.
+sonic = ["crabllm-core/sonic"]
+
 provider-bedrock = ["hmac", "sha2"]
 
 [dependencies]
@@ -36,7 +39,6 @@ futures.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sonic-rs.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

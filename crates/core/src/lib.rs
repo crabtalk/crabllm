@@ -20,6 +20,7 @@ pub use types::{
 mod config;
 mod error;
 mod extension;
+pub mod json;
 mod model_info;
 #[cfg(feature = "openapi")]
 mod openapi;

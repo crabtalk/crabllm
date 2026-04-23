@@ -51,7 +51,7 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let peek: AnthropicPeek = match serde_json::from_slice(&raw_body) {
+    let peek: AnthropicPeek = match crabllm_core::json::from_slice(&raw_body) {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -88,7 +88,7 @@ where
 
     // Full deserialization + translation for streaming, extensions, or
     // non-Anthropic upstreams.
-    let anthropic_req: crabllm_core::AnthropicRequest = match serde_json::from_slice(&raw_body) {
+    let anthropic_req: crabllm_core::AnthropicRequest = match crabllm_core::json::from_slice(&raw_body) {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -193,7 +193,7 @@ where
                     let sse_stream = anthropic_events.map(|result| match result {
                         Ok(event) => {
                             let name = event.event_name();
-                            let json = serde_json::to_string(&event).unwrap_or_default();
+                            let json = crabllm_core::json::to_string(&event).unwrap_or_default();
                             Ok::<_, std::convert::Infallible>(
                                 Event::default().event(name).data(json),
                             )
@@ -201,7 +201,7 @@ where
                         Err(e) => {
                             // Anthropic documents `api_error` / `overloaded_error`
                             // rather than `server_error` in the enum.
-                            let json = serde_json::to_string(&serde_json::json!({
+                            let json = crabllm_core::json::to_string(&serde_json::json!({
                                 "type": "error",
                                 "error": {
                                     "type": "api_error",
@@ -372,7 +372,7 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         .await
         {
             Ok(resp_bytes) => {
-                let (pt, ct) = sonic_rs::from_slice::<AnthropicUsagePeek>(&resp_bytes)
+                let (pt, ct) = crabllm_core::json::from_slice::<AnthropicUsagePeek>(&resp_bytes)
                     .ok()
                     .and_then(|p| p.usage)
                     .map(|u| (u.input_tokens, u.output_tokens))

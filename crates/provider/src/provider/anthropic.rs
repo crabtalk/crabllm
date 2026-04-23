@@ -125,7 +125,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                 });
             }
             for tc in tool_calls {
-                let input = serde_json::from_str(&tc.function.arguments)
+                let input = crabllm_core::json::from_str(&tc.function.arguments)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 blocks.push(AnthropicContentBlock::ToolUse {
                     id: tc.id.clone(),
@@ -329,7 +329,7 @@ fn translate_response(resp: AnthropicResponse) -> ChatCompletionResponse {
                     kind: ToolType::Function,
                     function: FunctionCall {
                         name,
-                        arguments: serde_json::to_string(&input).unwrap_or_default(),
+                        arguments: crabllm_core::json::to_string(&input).unwrap_or_default(),
                     },
                 });
             }
@@ -443,7 +443,7 @@ pub async fn chat_completion(
     let anthropic_req = translate_request(request);
     let url = format!("{BASE_URL}/messages");
 
-    let body = sonic_rs::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
         ("anthropic-version", "2023-06-01"),
@@ -469,7 +469,7 @@ pub async fn chat_completion(
     }
 
     let anthropic_resp: AnthropicResponse =
-        sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
 
     Ok(translate_response(anthropic_resp))
 }
@@ -484,7 +484,7 @@ pub async fn chat_completion_stream(
     anthropic_req.stream = Some(true);
     let url = format!("{BASE_URL}/messages");
 
-    let body = sonic_rs::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
         ("anthropic-version", "2023-06-01"),
@@ -556,7 +556,7 @@ fn anthropic_sse_stream(
                         }
                     };
 
-                    let event: SseEvent = match serde_json::from_str(data) {
+                    let event: SseEvent = match crabllm_core::json::from_str(data) {
                         Ok(e) => e,
                         Err(_) => {
                             buffer.advance(newline_pos + 1);

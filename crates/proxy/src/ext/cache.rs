@@ -101,7 +101,7 @@ impl crabllm_core::Extension for Cache {
                 return None;
             }
 
-            serde_json::from_slice(&data[8..]).ok()
+            crabllm_core::json::from_slice(&data[8..]).ok()
         })
     }
 
@@ -116,7 +116,7 @@ impl crabllm_core::Extension for Cache {
         }
 
         let key = Self::cache_key(request);
-        let Ok(json) = serde_json::to_vec(response) else {
+        let Ok(json) = crabllm_core::json::to_vec(response) else {
             return Box::pin(async {});
         };
 

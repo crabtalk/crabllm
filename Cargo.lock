@@ -530,6 +530,7 @@ dependencies = [
  "futures-core",
  "serde",
  "serde_json",
+ "sonic-rs",
  "toml",
  "utoipa",
 ]
@@ -596,7 +597,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "sonic-rs",
  "tokio",
  "tracing",
 ]
@@ -618,7 +618,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "sonic-rs",
  "sqlx",
  "tokio",
  "toml",

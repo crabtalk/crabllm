@@ -205,7 +205,7 @@ fn translate_request(request: &ChatCompletionRequest) -> ConverseRequest {
                 blocks.push(ContentBlock::Text(s.to_string()));
             }
             for tc in tool_calls {
-                let input = serde_json::from_str(&tc.function.arguments)
+                let input = crabllm_core::json::from_str(&tc.function.arguments)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 blocks.push(ContentBlock::ToolUse {
                     tool_use_id: tc.id.clone(),
@@ -310,7 +310,7 @@ fn translate_response(resp: ConverseResponse, model: &str) -> ChatCompletionResp
                         kind: ToolType::Function,
                         function: FunctionCall {
                             name: name.clone(),
-                            arguments: serde_json::to_string(input).unwrap_or_default(),
+                            arguments: crabllm_core::json::to_string(input).unwrap_or_default(),
                         },
                     });
                 }
@@ -373,7 +373,7 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     let bedrock_req = translate_request(request);
-    let body = serde_json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
     let url = format!(
         "{BASE_URL}.{region}.amazonaws.com/model/{}/converse",
         request.model
@@ -398,7 +398,7 @@ pub async fn chat_completion(
     }
 
     let bedrock_resp: ConverseResponse =
-        sonic_rs::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
 
     Ok(translate_response(bedrock_resp, &request.model))
 }
@@ -526,7 +526,7 @@ pub async fn chat_completion_stream(
     model: &str,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let bedrock_req = translate_request(request);
-    let body = serde_json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
     let url = format!(
         "{BASE_URL}.{region}.amazonaws.com/model/{}/converse-stream",
         request.model
@@ -570,7 +570,7 @@ fn bedrock_event_stream(
                         continue;
                     }
 
-                    let event: StreamEvent = match serde_json::from_slice(&payload) {
+                    let event: StreamEvent = match crabllm_core::json::from_slice(&payload) {
                         Ok(e) => e,
                         Err(_) => continue,
                     };
