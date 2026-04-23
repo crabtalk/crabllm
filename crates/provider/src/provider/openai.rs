@@ -241,7 +241,8 @@ pub(crate) fn sse_stream(
                         if data == "[DONE]" {
                             return None;
                         }
-                        let result = match crabllm_core::json::from_str::<ChatCompletionChunk>(data) {
+                        let result = match crabllm_core::json::from_str::<ChatCompletionChunk>(data)
+                        {
                             Ok(chunk) => Ok(chunk),
                             Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
                         };

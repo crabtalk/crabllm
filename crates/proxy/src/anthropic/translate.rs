@@ -115,7 +115,8 @@ fn assistant_from_blocks(blocks: Vec<AnthropicContentBlock>) -> Message {
                     kind: ToolType::Function,
                     function: FunctionCall {
                         name,
-                        arguments: crabllm_core::json::to_string(&input).unwrap_or_else(|_| "{}".into()),
+                        arguments: crabllm_core::json::to_string(&input)
+                            .unwrap_or_else(|_| "{}".into()),
                     },
                 });
             }

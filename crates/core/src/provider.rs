@@ -93,8 +93,8 @@ pub trait Provider: Send + Sync {
         raw_body: Bytes,
     ) -> impl Future<Output = Result<Bytes, Error>> + Send {
         async move {
-            let request: ChatCompletionRequest = crate::json::from_slice(&raw_body)
-                .map_err(|e| Error::Internal(e.to_string()))?;
+            let request: ChatCompletionRequest =
+                crate::json::from_slice(&raw_body).map_err(|e| Error::Internal(e.to_string()))?;
             let resp = self.chat_completion(&request).await?;
             Ok(Bytes::from(
                 crate::json::to_vec(&resp).map_err(|e| Error::Internal(e.to_string()))?,

@@ -51,8 +51,18 @@ impl HttpClient {
             .bytes()
             .await
             .map_err(|e| Error::Internal(e.to_string()))?;
-        tracing::debug!(url, status, response_bytes = body.len(), latency_ms = start.elapsed().as_millis() as u64, "provider GET");
-        Ok(RawResponse { status, body, content_type })
+        tracing::debug!(
+            url,
+            status,
+            response_bytes = body.len(),
+            latency_ms = start.elapsed().as_millis() as u64,
+            "provider GET"
+        );
+        Ok(RawResponse {
+            status,
+            body,
+            content_type,
+        })
     }
 
     pub async fn post(
@@ -81,8 +91,19 @@ impl HttpClient {
             .bytes()
             .await
             .map_err(|e| Error::Internal(e.to_string()))?;
-        tracing::debug!(url, status, request_bytes, response_bytes = body.len(), latency_ms = start.elapsed().as_millis() as u64, "provider call");
-        Ok(RawResponse { status, body, content_type })
+        tracing::debug!(
+            url,
+            status,
+            request_bytes,
+            response_bytes = body.len(),
+            latency_ms = start.elapsed().as_millis() as u64,
+            "provider call"
+        );
+        Ok(RawResponse {
+            status,
+            body,
+            content_type,
+        })
     }
 
     pub async fn post_stream(
@@ -108,10 +129,23 @@ impl HttpClient {
                 .await
                 .map_err(|e| Error::Internal(e.to_string()))?;
             let text = String::from_utf8_lossy(&body).into_owned();
-            tracing::debug!(url, status, request_bytes, response_bytes = body.len(), latency_ms = start.elapsed().as_millis() as u64, "provider stream error");
+            tracing::debug!(
+                url,
+                status,
+                request_bytes,
+                response_bytes = body.len(),
+                latency_ms = start.elapsed().as_millis() as u64,
+                "provider stream error"
+            );
             return Err(Error::Provider { status, body: text });
         }
-        tracing::debug!(url, status, request_bytes, ttfb_ms = start.elapsed().as_millis() as u64, "provider stream opened");
+        tracing::debug!(
+            url,
+            status,
+            request_bytes,
+            ttfb_ms = start.elapsed().as_millis() as u64,
+            "provider stream opened"
+        );
         let stream = resp
             .bytes_stream()
             .map(|r| r.map_err(std::io::Error::other));

@@ -88,16 +88,17 @@ where
 
     // Full deserialization + translation for streaming, extensions, or
     // non-Anthropic upstreams.
-    let anthropic_req: crabllm_core::AnthropicRequest = match crabllm_core::json::from_slice(&raw_body) {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError::new(e.to_string(), "invalid_request_error")),
-            )
-                .into_response();
-        }
-    };
+    let anthropic_req: crabllm_core::AnthropicRequest =
+        match crabllm_core::json::from_slice(&raw_body) {
+            Ok(r) => r,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiError::new(e.to_string(), "invalid_request_error")),
+                )
+                    .into_response();
+            }
+        };
     let mut request = to_chat_completion(anthropic_req);
 
     let provider_name = registry

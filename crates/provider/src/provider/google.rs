@@ -429,7 +429,8 @@ pub async fn chat_completion(
     let gemini_req = translate_request(request);
     let url = format!("{}/models/{}:generateContent", BASE_URL, request.model);
 
-    let body = crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body =
+        crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("x-goog-api-key", api_key),
         ("content-type", "application/json"),
@@ -465,7 +466,8 @@ pub async fn chat_completion_stream(
         BASE_URL, request.model
     );
 
-    let body = crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body =
+        crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
     let headers = [
         ("x-goog-api-key", api_key),
         ("content-type", "application/json"),

@@ -373,7 +373,8 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     let bedrock_req = translate_request(request);
-    let body = crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body =
+        crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
     let url = format!(
         "{BASE_URL}.{region}.amazonaws.com/model/{}/converse",
         request.model
@@ -526,7 +527,8 @@ pub async fn chat_completion_stream(
     model: &str,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let bedrock_req = translate_request(request);
-    let body = crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body =
+        crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
     let url = format!(
         "{BASE_URL}.{region}.amazonaws.com/model/{}/converse-stream",
         request.model

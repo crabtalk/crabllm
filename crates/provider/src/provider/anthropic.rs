@@ -443,7 +443,8 @@ pub async fn chat_completion(
     let anthropic_req = translate_request(request);
     let url = format!("{BASE_URL}/messages");
 
-    let body = crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body =
+        crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
         ("anthropic-version", "2023-06-01"),
@@ -484,7 +485,8 @@ pub async fn chat_completion_stream(
     anthropic_req.stream = Some(true);
     let url = format!("{BASE_URL}/messages");
 
-    let body = crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
+    let body =
+        crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
         ("anthropic-version", "2023-06-01"),
