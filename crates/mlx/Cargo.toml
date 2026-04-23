@@ -7,6 +7,7 @@ repository.workspace = true
 description = "MLX local inference provider for the crabllm LLM gateway (macOS + iOS)"
 keywords = ["llm", "mlx", "apple", "local", "inference"]
 categories = ["api-bindings"]
+publish = false
 
 # Rust crate directory is `crates/mlx` but the crate name keeps the
 # `crabllm-` prefix for workspace consistency. The Swift static library
