@@ -66,13 +66,16 @@ pub async fn log_request(request: Request, next: middleware::Next) -> Response {
     response
 }
 
-/// Build the Axum router with all API routes and admin routes.
-pub fn router<S, P>(state: AppState<S, P>, admin_routes: Vec<Router>) -> Router
+/// Build the bare API route tree (`/v1/*`) bound to `state`, with **no
+/// auth, observability, or admin layers**. Embedders use this when they
+/// want to install their own auth or observability middleware instead of
+/// the defaults in [`router`]. Standalone callers should prefer [`router`].
+pub fn routes<S, P>(state: AppState<S, P>) -> Router
 where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let mut app = Router::<AppState<S, P>>::new()
+    Router::<AppState<S, P>>::new()
         .route(
             "/v1/chat/completions",
             post(handlers::chat_completions::<S, P>),
@@ -90,12 +93,23 @@ where
         )
         .route("/v1/models", get(handlers::models::<S, P>))
         .route("/v1/usage", get(handlers::usage::<S, P>))
+        .with_state(state)
+}
+
+/// Build the Axum router with all API routes, the built-in auth middleware,
+/// active-connection tracking, `/health`, and merged admin routes. This is
+/// the batteries-included shape used by the standalone gateway binary.
+pub fn router<S, P>(state: AppState<S, P>, admin_routes: Vec<Router>) -> Router
+where
+    S: Storage + 'static,
+    P: Provider + 'static,
+{
+    let mut app = routes(state.clone())
         .layer(middleware::from_fn_with_state(
-            state.clone(),
+            state,
             auth::auth::<S, P>,
         ))
-        .layer(middleware::from_fn(track_active_connections))
-        .with_state(state);
+        .layer(middleware::from_fn(track_active_connections));
 
     // Health check — outside auth middleware so load balancers can probe it.
     app = app.route(
