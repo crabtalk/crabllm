@@ -31,13 +31,13 @@ impl UsageTracker {
     /// Record token usage for a given key and model.
     async fn record(
         &self,
-        key_name: &str,
+        principal: &str,
         model: &str,
         prompt_tokens: u32,
         completion_tokens: u32,
     ) {
-        let prompt_suffix = format!("{key_name}:{model}:p");
-        let completion_suffix = format!("{key_name}:{model}:c");
+        let prompt_suffix = format!("{principal}:{model}:p");
+        let completion_suffix = format!("{principal}:{model}:c");
 
         let _ = self
             .storage
@@ -71,8 +71,8 @@ impl crabllm_core::Extension for UsageTracker {
         _request: &ChatCompletionRequest,
         response: &ChatCompletionResponse,
     ) -> BoxFuture<'_, ()> {
-        let key_name = ctx
-            .key_name
+        let principal = ctx
+            .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
@@ -80,15 +80,15 @@ impl crabllm_core::Extension for UsageTracker {
 
         Box::pin(async move {
             if let Some(u) = usage {
-                self.record(&key_name, &model, u.prompt_tokens, u.completion_tokens)
+                self.record(&principal, &model, u.prompt_tokens, u.completion_tokens)
                     .await;
             }
         })
     }
 
     fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
-        let key_name = ctx
-            .key_name
+        let principal = ctx
+            .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
@@ -96,7 +96,7 @@ impl crabllm_core::Extension for UsageTracker {
 
         Box::pin(async move {
             if let Some(u) = usage {
-                self.record(&key_name, &model, u.prompt_tokens, u.completion_tokens)
+                self.record(&principal, &model, u.prompt_tokens, u.completion_tokens)
                     .await;
             }
         })
@@ -123,7 +123,7 @@ pub struct UsageEntry {
     completion_tokens: i64,
 }
 
-/// Query usage data from storage, filtered by optional key name and model.
+/// Query usage data from storage, filtered by optional principal and model.
 pub async fn query_usage(
     storage: &dyn Storage,
     name_filter: Option<&str>,
@@ -140,16 +140,16 @@ pub async fn query_usage(
             Err(_) => continue,
         };
 
-        // suffix format: "{key_name}:{model}:{p|c}"
+        // suffix format: "{principal}:{model}:{p|c}"
         let Some((rest, kind)) = suffix.rsplit_once(':') else {
             continue;
         };
-        let Some((key_name, model)) = rest.split_once(':') else {
+        let Some((principal, model)) = rest.split_once(':') else {
             continue;
         };
 
         if let Some(filter) = name_filter
-            && key_name != filter
+            && principal != filter
         {
             continue;
         }
@@ -166,7 +166,7 @@ pub async fn query_usage(
             .unwrap_or(0);
 
         let entry = entries
-            .entry((key_name.to_string(), model.to_string()))
+            .entry((principal.to_string(), model.to_string()))
             .or_insert((0, 0));
 
         match kind {

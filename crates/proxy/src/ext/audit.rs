@@ -108,7 +108,7 @@ impl crabllm_core::Extension for AuditLogger {
         self.write_record(AuditRecord {
             request_id: ctx.request_id.clone(),
             timestamp: now_millis(),
-            key_name: ctx.key_name.clone().unwrap_or_default(),
+            principal: ctx.principal.clone().unwrap_or_default(),
             model: ctx.model.clone(),
             provider: ctx.provider.clone(),
             prompt_tokens: prompt,
@@ -138,7 +138,7 @@ impl crabllm_core::Extension for AuditLogger {
             self.write_record(AuditRecord {
                 request_id: ctx.request_id.clone(),
                 timestamp: now_millis(),
-                key_name: ctx.key_name.clone().unwrap_or_default(),
+                principal: ctx.principal.clone().unwrap_or_default(),
                 model: ctx.model.clone(),
                 provider: ctx.provider.clone(),
                 prompt_tokens: Some(usage.prompt_tokens),
@@ -157,7 +157,7 @@ impl crabllm_core::Extension for AuditLogger {
         self.write_record(AuditRecord {
             request_id: ctx.request_id.clone(),
             timestamp: now_millis(),
-            key_name: ctx.key_name.clone().unwrap_or_default(),
+            principal: ctx.principal.clone().unwrap_or_default(),
             model: ctx.model.clone(),
             provider: ctx.provider.clone(),
             prompt_tokens: None,
@@ -176,7 +176,7 @@ impl crabllm_core::Extension for AuditLogger {
 pub struct AuditRecord {
     pub request_id: String,
     pub timestamp: i64,
-    pub key_name: String,
+    pub principal: String,
     pub model: String,
     pub provider: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -233,7 +233,7 @@ async fn logs_handler(
         .filter_map(|(_k, v)| serde_json::from_slice(&v).ok())
         .filter(|r: &AuditRecord| {
             if let Some(ref key) = query.key
-                && &r.key_name != key
+                && &r.principal != key
             {
                 return false;
             }

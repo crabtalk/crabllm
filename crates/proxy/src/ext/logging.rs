@@ -35,7 +35,7 @@ impl crabllm_core::Extension for RequestLogger {
         tracing::info!(
             model = %ctx.model,
             provider = %ctx.provider,
-            key = ctx.key_name.as_deref().unwrap_or("-"),
+            key = ctx.principal.as_deref().unwrap_or("-"),
             stream = ctx.is_stream,
             latency_ms = latency.as_millis() as u64,
             prompt_tokens = prompt,
@@ -52,7 +52,7 @@ impl crabllm_core::Extension for RequestLogger {
         tracing::warn!(
             model = %ctx.model,
             provider = %ctx.provider,
-            key = ctx.key_name.as_deref().unwrap_or("-"),
+            key = ctx.principal.as_deref().unwrap_or("-"),
             stream = ctx.is_stream,
             latency_ms = latency.as_millis() as u64,
             error = %error,

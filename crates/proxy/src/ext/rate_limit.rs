@@ -47,12 +47,12 @@ impl RateLimit {
     /// Look up per-key rate limit from storage. Returns the per-key
     /// override merged with global defaults, or the global defaults
     /// if the key has no override.
-    async fn limits_for(&self, key_name: &str) -> (u64, Option<u64>) {
-        if key_name == "__global" {
+    async fn limits_for(&self, principal: &str) -> (u64, Option<u64>) {
+        if principal == "__global" {
             return (self.requests_per_minute, self.tokens_per_minute);
         }
 
-        let skey = storage_key(&PREFIX_KEYS, key_name.as_bytes());
+        let skey = storage_key(&PREFIX_KEYS, principal.as_bytes());
         let rl = self
             .storage
             .get(&skey)
@@ -93,14 +93,14 @@ impl crabllm_core::Extension for RateLimit {
     }
 
     fn on_request(&self, ctx: &RequestContext) -> BoxFuture<'_, Result<(), ExtensionError>> {
-        let key_name = ctx.key_name.as_deref().unwrap_or("__global").to_string();
+        let principal = ctx.principal.as_deref().unwrap_or("__global").to_string();
 
         Box::pin(async move {
-            let (rpm_limit, tpm_limit) = self.limits_for(&key_name).await;
+            let (rpm_limit, tpm_limit) = self.limits_for(&principal).await;
             let minute = current_minute();
 
             // Check RPM.
-            let rpm_suffix = format!("{key_name}:{minute}");
+            let rpm_suffix = format!("{principal}:{minute}");
             let rpm_key = self.storage_key(rpm_suffix.as_bytes());
             let count = self
                 .storage
@@ -118,7 +118,7 @@ impl crabllm_core::Extension for RateLimit {
 
             // Check TPM.
             if let Some(limit) = tpm_limit {
-                let tpm_suffix = format!("{key_name}:tpm:{minute}");
+                let tpm_suffix = format!("{principal}:tpm:{minute}");
                 let tpm_key = self.storage_key(tpm_suffix.as_bytes());
                 let tokens = self
                     .storage
@@ -158,9 +158,9 @@ impl crabllm_core::Extension for RateLimit {
         // Always record TPM — per-key overrides may enable TPM even when
         // the global config has no tokens_per_minute. The actual limit
         // check happens in on_request(); here we just track the counter.
-        let key_name = ctx.key_name.as_deref().unwrap_or("__global");
+        let principal = ctx.principal.as_deref().unwrap_or("__global");
         let minute = current_minute();
-        let tpm_suffix = format!("{key_name}:tpm:{minute}");
+        let tpm_suffix = format!("{principal}:tpm:{minute}");
         let tpm_key = self.storage_key(tpm_suffix.as_bytes());
 
         Box::pin(async move {
@@ -179,9 +179,9 @@ impl crabllm_core::Extension for RateLimit {
             return Box::pin(async {});
         }
 
-        let key_name = ctx.key_name.as_deref().unwrap_or("__global");
+        let principal = ctx.principal.as_deref().unwrap_or("__global");
         let minute = current_minute();
-        let tpm_suffix = format!("{key_name}:tpm:{minute}");
+        let tpm_suffix = format!("{principal}:tpm:{minute}");
         let tpm_key = self.storage_key(tpm_suffix.as_bytes());
 
         Box::pin(async move {

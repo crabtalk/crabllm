@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 pub struct UsageEvent {
     pub timestamp: SystemTime,
     pub request_id: String,
-    pub key_name: Option<String>,
+    pub principal: Option<String>,
     pub model: String,
     pub provider: String,
     /// Logical endpoint: `"chat.completions"`, `"embeddings"`,

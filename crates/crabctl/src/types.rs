@@ -124,7 +124,7 @@ pub struct ProviderSummary {
 pub struct AuditRecord {
     pub request_id: String,
     pub timestamp: i64,
-    pub key_name: String,
+    pub principal: String,
     pub model: String,
     pub provider: String,
     pub prompt_tokens: Option<u32>,

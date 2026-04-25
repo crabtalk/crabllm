@@ -10,7 +10,9 @@ pub struct RequestContext {
     pub request_id: String,
     pub model: String,
     pub provider: String,
-    pub key_name: Option<String>,
+    /// Opaque identity token attached by the authentication layer. Treat as
+    /// opaque — do not parse, sanitize, or display without intentional formatting.
+    pub principal: Option<String>,
     pub is_stream: bool,
     pub started_at: Instant,
 }

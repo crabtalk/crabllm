@@ -633,7 +633,7 @@ async fn run_logs(
             vec![
                 r.timestamp.to_string(),
                 r.request_id.clone(),
-                r.key_name.clone(),
+                r.principal.clone(),
                 r.model.clone(),
                 r.provider.clone(),
                 tokens,

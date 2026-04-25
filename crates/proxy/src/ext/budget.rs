@@ -33,14 +33,14 @@ impl Budget {
 
         let mut key_budgets = HashMap::new();
         if let Some(keys_table) = config.get("keys").and_then(|v| v.as_object()) {
-            for (key_name, key_config) in keys_table {
+            for (principal, key_config) in keys_table {
                 let budget = key_config
                     .get("budget")
                     .and_then(|v| v.as_f64())
                     .ok_or(format!(
-                        "budget: key '{key_name}' missing or invalid 'budget'"
+                        "budget: key '{principal}' missing or invalid 'budget'"
                     ))?;
-                key_budgets.insert(key_name.clone(), (budget * 1_000_000.0) as i64);
+                key_budgets.insert(principal.clone(), (budget * 1_000_000.0) as i64);
             }
         }
 
@@ -52,9 +52,9 @@ impl Budget {
         })
     }
 
-    fn budget_for_key(&self, key_name: &str) -> i64 {
+    fn budget_for_key(&self, principal: &str) -> i64 {
         self.key_budgets
-            .get(key_name)
+            .get(principal)
             .copied()
             .unwrap_or(self.default_budget_micros)
     }
@@ -96,7 +96,7 @@ impl Budget {
 
     async fn record_cost(
         &self,
-        key_name: &str,
+        principal: &str,
         model: &str,
         provider: &str,
         prompt: u32,
@@ -104,7 +104,7 @@ impl Budget {
     ) {
         let micros = self.cost_micros(model, provider, prompt, completion);
         if micros > 0 {
-            let key = storage_key(&PREFIX_BUDGET, key_name.as_bytes());
+            let key = storage_key(&PREFIX_BUDGET, principal.as_bytes());
             let _ = self.storage.increment(&key, micros).await;
         }
     }
@@ -120,14 +120,14 @@ impl crabllm_core::Extension for Budget {
     }
 
     fn on_request(&self, ctx: &RequestContext) -> BoxFuture<'_, Result<(), ExtensionError>> {
-        let key_name = ctx
-            .key_name
+        let principal = ctx
+            .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
-        let budget = self.budget_for_key(&key_name);
+        let budget = self.budget_for_key(&principal);
 
         Box::pin(async move {
-            let key = storage_key(&PREFIX_BUDGET, key_name.as_bytes());
+            let key = storage_key(&PREFIX_BUDGET, principal.as_bytes());
             let spent = self.storage.increment(&key, 0).await.unwrap_or(0);
 
             if spent >= budget {
@@ -148,8 +148,8 @@ impl crabllm_core::Extension for Budget {
         _request: &ChatCompletionRequest,
         response: &ChatCompletionResponse,
     ) -> BoxFuture<'_, ()> {
-        let key_name = ctx
-            .key_name
+        let principal = ctx
+            .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
@@ -159,7 +159,7 @@ impl crabllm_core::Extension for Budget {
         Box::pin(async move {
             if let Some(u) = usage {
                 self.record_cost(
-                    &key_name,
+                    &principal,
                     &model,
                     &provider,
                     u.prompt_tokens,
@@ -171,8 +171,8 @@ impl crabllm_core::Extension for Budget {
     }
 
     fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
-        let key_name = ctx
-            .key_name
+        let principal = ctx
+            .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
@@ -182,7 +182,7 @@ impl crabllm_core::Extension for Budget {
         Box::pin(async move {
             if let Some(u) = usage {
                 self.record_cost(
-                    &key_name,
+                    &principal,
                     &model,
                     &provider,
                     u.prompt_tokens,

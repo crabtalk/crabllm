@@ -7,7 +7,7 @@ use axum::{
 };
 use crabllm_core::{Prefix, Provider, Storage};
 
-pub use auth::KeyName;
+pub use auth::Principal;
 pub use state::{AppState, UsageEvent};
 
 // Storage table prefixes. Each 4-byte prefix namespaces a logical table
@@ -25,7 +25,7 @@ pub mod admin_providers;
 pub mod anthropic;
 pub mod auth;
 pub mod ext;
-pub(crate) mod handlers;
+pub mod handlers;
 #[cfg(feature = "openapi")]
 pub mod openapi;
 mod state;

@@ -1,4 +1,4 @@
-use crate::{AppState, auth::KeyName, state::UsageEvent};
+use crate::{AppState, auth::Principal, state::UsageEvent};
 use axum::{
     Extension, Json,
     extract::{Multipart, State},
@@ -77,7 +77,7 @@ pub(crate) fn emit_usage<S: Storage, P: Provider>(
     let _ = tx.send(UsageEvent {
         timestamp: SystemTime::now(),
         request_id: ctx.request_id.clone(),
-        key_name: ctx.key_name.clone(),
+        principal: ctx.principal.clone(),
         model: ctx.model.clone(),
         provider: ctx.provider.clone(),
         endpoint,
@@ -92,10 +92,10 @@ pub(crate) fn emit_usage<S: Storage, P: Provider>(
 /// GET /v1/usage — user-facing, auto-scoped to the caller's key.
 pub(crate) async fn usage<S: Storage + 'static, P: Provider + 'static>(
     State(state): State<AppState<S, P>>,
-    Extension(KeyName(key_name)): Extension<KeyName>,
+    Extension(Principal(principal)): Extension<Principal>,
     query: axum::extract::Query<crate::ext::usage::UserUsageQuery>,
 ) -> Json<Vec<crate::ext::usage::UsageEntry>> {
-    let name = key_name.as_deref().unwrap_or("__global");
+    let name = principal.as_deref().unwrap_or("__global");
     crate::ext::usage::query_usage(
         state.storage.as_ref() as &dyn Storage,
         Some(name),
@@ -146,7 +146,7 @@ pub(crate) struct UsagePeek {
 /// POST /v1/chat/completions
 pub async fn chat_completions<S, P>(
     State(state): State<AppState<S, P>>,
-    Extension(key_name): Extension<KeyName>,
+    Extension(principal): Extension<Principal>,
     raw_body: axum::body::Bytes,
 ) -> Response
 where
@@ -188,7 +188,7 @@ where
         && state.extensions.is_empty()
         && deployments.iter().all(|d| d.provider.is_openai_compat())
     {
-        return handle_raw_proxy(&state, key_name, &model, &deployments, raw_body).await;
+        return handle_raw_proxy(&state, principal, &model, &deployments, raw_body).await;
     }
 
     // Full deserialization for streaming, extensions, or non-compat providers.
@@ -212,7 +212,7 @@ where
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream,
         started_at: Instant::now(),
     };
@@ -414,7 +414,7 @@ where
 /// response bytes directly. Metrics use lightweight `UsagePeek` extraction.
 async fn handle_raw_proxy<S: Storage, P: Provider>(
     state: &AppState<S, P>,
-    key_name: KeyName,
+    principal: Principal,
     model: &str,
     deployments: &[&Deployment<P>],
     raw_body: axum::body::Bytes,
@@ -429,7 +429,7 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.to_string(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -482,7 +482,7 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
 /// POST /v1/embeddings
 pub async fn embeddings<S, P>(
     State(state): State<AppState<S, P>>,
-    Extension(key_name): Extension<KeyName>,
+    Extension(principal): Extension<Principal>,
     Json(request): Json<EmbeddingRequest>,
 ) -> Response
 where
@@ -514,7 +514,7 @@ where
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -635,7 +635,7 @@ fn is_anthropic_client(headers: &HeaderMap) -> bool {
 /// POST /v1/images/generations
 pub async fn image_generations<S, P>(
     State(state): State<AppState<S, P>>,
-    Extension(key_name): Extension<KeyName>,
+    Extension(principal): Extension<Principal>,
     Json(request): Json<ImageRequest>,
 ) -> Response
 where
@@ -667,7 +667,7 @@ where
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -713,7 +713,7 @@ where
 /// POST /v1/audio/speech
 pub async fn audio_speech<S, P>(
     State(state): State<AppState<S, P>>,
-    Extension(key_name): Extension<KeyName>,
+    Extension(principal): Extension<Principal>,
     Json(request): Json<AudioSpeechRequest>,
 ) -> Response
 where
@@ -745,7 +745,7 @@ where
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -791,7 +791,7 @@ where
 /// POST /v1/audio/transcriptions
 pub async fn audio_transcriptions<S, P>(
     State(state): State<AppState<S, P>>,
-    Extension(key_name): Extension<KeyName>,
+    Extension(principal): Extension<Principal>,
     mut multipart: Multipart,
 ) -> Response
 where
@@ -872,7 +872,7 @@ where
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream: false,
         started_at: Instant::now(),
     };

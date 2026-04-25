@@ -8,7 +8,7 @@
 use crate::{
     AppState,
     anthropic::{from_chat_completion, to_anthropic_sse, to_chat_completion},
-    auth::KeyName,
+    auth::Principal,
     handlers::{
         emit_usage, emit_usage_error, error_response, error_status, record_duration, record_tokens,
         try_chat_with_retries, try_stream_with_retries,
@@ -44,7 +44,7 @@ struct AnthropicPeek {
 /// POST /v1/messages
 pub async fn messages<S, P>(
     State(state): State<AppState<S, P>>,
-    Extension(key_name): Extension<KeyName>,
+    Extension(principal): Extension<Principal>,
     raw_body: axum::body::Bytes,
 ) -> Response
 where
@@ -83,7 +83,7 @@ where
         && state.extensions.is_empty()
         && deployments.iter().all(|d| d.provider.is_anthropic_compat())
     {
-        return handle_raw_anthropic(&state, key_name, &model, &deployments, raw_body).await;
+        return handle_raw_anthropic(&state, principal, &model, &deployments, raw_body).await;
     }
 
     // Full deserialization + translation for streaming, extensions, or
@@ -110,7 +110,7 @@ where
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream,
         started_at: Instant::now(),
     };
@@ -330,7 +330,7 @@ where
 /// Non-streaming raw byte proxy for Anthropic-compatible providers.
 async fn handle_raw_anthropic<S: Storage, P: Provider>(
     state: &AppState<S, P>,
-    key_name: KeyName,
+    principal: Principal,
     model: &str,
     deployments: &[&crabllm_provider::Deployment<P>],
     raw_body: axum::body::Bytes,
@@ -359,7 +359,7 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.to_string(),
         provider: provider_name,
-        key_name: key_name.0,
+        principal: principal.0,
         is_stream: false,
         started_at: Instant::now(),
     };

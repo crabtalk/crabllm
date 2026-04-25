@@ -8,13 +8,17 @@ use axum::{
 };
 use crabllm_core::{ApiError, Provider, Storage};
 
-/// Wrapper for the authenticated key name, inserted into request extensions.
+/// Opaque identity token attached by the authentication layer, inserted into
+/// request extensions. Standalone deployments populate this from the configured
+/// key name; embedders providing their own auth populate it with whatever
+/// caller identifier they need to attribute work against. Treat as opaque —
+/// do not parse, sanitize, or display without intentional formatting.
 #[derive(Clone, Debug)]
-pub struct KeyName(pub Option<String>);
+pub struct Principal(pub Option<String>);
 
 /// Auth middleware: validates Bearer token against configured virtual keys.
 /// Skips auth only when no admin_token is configured AND key_map is empty.
-/// Inserts `KeyName` into request extensions for downstream handlers.
+/// Inserts `Principal` into request extensions for downstream handlers.
 pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
     State(state): State<AppState<S, P>>,
     mut request: Request,
@@ -28,7 +32,7 @@ pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
             .unwrap_or_else(|e| e.into_inner())
             .is_empty()
     {
-        request.extensions_mut().insert(KeyName(None));
+        request.extensions_mut().insert(Principal(None));
         return next.run(request).await;
     }
 
@@ -55,14 +59,14 @@ pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
         }
     };
 
-    let key_name = state
+    let principal = state
         .key_map
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .get(token)
         .cloned();
 
-    let Some(key_name) = key_name else {
+    let Some(principal) = principal else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(ApiError::new("invalid API key", "authentication_error")),
@@ -70,7 +74,7 @@ pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
             .into_response();
     };
 
-    request.extensions_mut().insert(KeyName(Some(key_name)));
+    request.extensions_mut().insert(Principal(Some(principal)));
 
     next.run(request).await
 }
