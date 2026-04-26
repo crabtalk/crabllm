@@ -47,3 +47,30 @@ pub trait Storage: Send + Sync {
     /// Delete a key. No-op if the key does not exist.
     fn delete(&self, key: &[u8]) -> BoxFuture<'_, Result<(), Error>>;
 }
+
+/// Empty storage backend. Every method returns an error. Use as the `S`
+/// parameter in `AppState<S, P>` when embedding the gateway with no
+/// extensions configured — anything that does call into storage is a
+/// misconfiguration that should fail loudly rather than silently drop
+/// data or report fake "not found" reads.
+impl Storage for () {
+    fn get(&self, _key: &[u8]) -> BoxFuture<'_, Result<Option<Vec<u8>>, Error>> {
+        Box::pin(async { Err(Error::Internal("storage not configured".into())) })
+    }
+
+    fn set(&self, _key: &[u8], _value: Vec<u8>) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async { Err(Error::Internal("storage not configured".into())) })
+    }
+
+    fn increment(&self, _key: &[u8], _delta: i64) -> BoxFuture<'_, Result<i64, Error>> {
+        Box::pin(async { Err(Error::Internal("storage not configured".into())) })
+    }
+
+    fn list(&self, _prefix: &Prefix) -> BoxFuture<'_, Result<KvPairs, Error>> {
+        Box::pin(async { Err(Error::Internal("storage not configured".into())) })
+    }
+
+    fn delete(&self, _key: &[u8]) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async { Err(Error::Internal("storage not configured".into())) })
+    }
+}
