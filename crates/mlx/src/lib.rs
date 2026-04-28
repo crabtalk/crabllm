@@ -31,6 +31,8 @@ mod pool;
 mod provider;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod session;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod tool_parser;
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use pool::MlxPool;

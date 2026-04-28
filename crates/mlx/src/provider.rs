@@ -22,6 +22,7 @@ use crabllm_core::{
 };
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
+    fs,
     path::{Path, PathBuf},
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -120,6 +121,9 @@ impl Provider for MlxProvider {
         let model_dir_str = model_dir.to_string_lossy().to_string();
         let messages_json = serialize_messages(&request.messages)?;
         let tools_json = serialize_tools(request)?;
+        if tools_json.is_some() {
+            ensure_tool_calling_supported(&model_dir, &request.model)?;
+        }
         let options = request_options(request);
         let model_name = request.model.clone();
         let pool = Arc::clone(&self.pool);
@@ -136,7 +140,19 @@ impl Provider for MlxProvider {
         .await
         .map_err(|e| Error::Internal(format!("mlx: generate task panicked: {e}")))??;
 
-        let tool_calls = parse_tool_calls(output.tool_calls_json.as_deref())?;
+        let mut tool_calls = parse_tool_calls(output.tool_calls_json.as_deref())?;
+        // B1: gemma-3/4 emit tool calls as raw text because mlx-swift-lm
+        // 3.31.3 ships the wrong tags / model_type match. Recover them
+        // here when the request asked for tools but nothing structured
+        // came back. See tool_parser.rs.
+        let mut text = output.text;
+        if request.tools.is_some() && tool_calls.is_empty() {
+            let (cleaned, extracted) = crate::tool_parser::extract_gemma_tool_calls(&text);
+            if !extracted.is_empty() {
+                text = cleaned;
+                tool_calls = extracted;
+            }
+        }
         let finish_reason = if tool_calls.is_empty() {
             FinishReason::Stop
         } else {
@@ -152,7 +168,7 @@ impl Provider for MlxProvider {
                 index: 0,
                 message: Message {
                     role: Role::Assistant,
-                    content: Some(serde_json::Value::String(output.text)),
+                    content: Some(serde_json::Value::String(text)),
                     tool_calls: if tool_calls.is_empty() {
                         None
                     } else {
@@ -186,6 +202,9 @@ impl Provider for MlxProvider {
         let model_dir_str = model_dir.to_string_lossy().to_string();
         let messages_json = serialize_messages(&request.messages)?;
         let tools_json = serialize_tools(request)?;
+        if tools_json.is_some() {
+            ensure_tool_calling_supported(&model_dir, &request.model)?;
+        }
         let options = request_options(request);
         let model_name = request.model.clone();
         let pool = Arc::clone(&self.pool);
@@ -200,6 +219,12 @@ impl Provider for MlxProvider {
         let id_c = id.clone();
         let model_c = model_name.clone();
         let tx_c = tx.clone();
+        // When tools are requested, buffer text on the server side so
+        // we can recover gemma-format tool calls (B1) at end-of-stream.
+        // Tool-using turns are short and atomic, so the loss of
+        // token-level streaming is acceptable. Without tools, stream
+        // chunks straight through.
+        let buffer_for_tools = tools_json.is_some();
 
         tokio::task::spawn_blocking(move || {
             let req = GenerateRequest {
@@ -208,20 +233,40 @@ impl Provider for MlxProvider {
                 options,
                 cancel_flag: None,
             };
+            let mut buffered = String::new();
             let result = pool.generate_stream(&model_dir_str, &req, |chunk| {
+                if buffer_for_tools {
+                    buffered.push_str(chunk);
+                    return false;
+                }
                 let delta = make_content_chunk(&id_c, created, &model_c, chunk);
                 tx_c.unbounded_send(Ok(delta)).is_err()
             });
 
             match result {
                 Ok(out) => {
-                    let tool_calls = match parse_tool_calls(out.tool_calls_json.as_deref()) {
+                    let mut tool_calls = match parse_tool_calls(out.tool_calls_json.as_deref()) {
                         Ok(tc) => tc,
                         Err(e) => {
                             let _ = tx_c.unbounded_send(Err(e));
                             return;
                         }
                     };
+                    if buffer_for_tools {
+                        let mut text = std::mem::take(&mut buffered);
+                        if tool_calls.is_empty() {
+                            let (cleaned, extracted) =
+                                crate::tool_parser::extract_gemma_tool_calls(&text);
+                            if !extracted.is_empty() {
+                                text = cleaned;
+                                tool_calls = extracted;
+                            }
+                        }
+                        if !text.is_empty() {
+                            let delta = make_content_chunk(&id_c, created, &model_c, &text);
+                            let _ = tx_c.unbounded_send(Ok(delta));
+                        }
+                    }
                     let final_c = make_final_chunk(
                         &id_c,
                         created,
@@ -244,6 +289,75 @@ impl Provider for MlxProvider {
 }
 
 // ---------- shared helpers (copied from model.rs, which is being deleted) ----------
+
+/// Reject tool-augmented requests against models whose chat template
+/// has no tool slot. Without this guard, mlx-swift-lm renders the
+/// prompt as if `tools` were never passed, the model immediately
+/// emits EOS, and the caller sees a silent zero-token "success".
+///
+/// Detection reads the on-disk chat template (either a standalone
+/// `chat_template.json` or the `chat_template` field inside
+/// `tokenizer_config.json`) and looks for a `tools` reference. The
+/// check is conservative — if we can't read the file we let the
+/// request through rather than block legitimate work.
+fn ensure_tool_calling_supported(model_dir: &Path, model_name: &str) -> Result<(), Error> {
+    let Some(template) = read_chat_template(model_dir) else {
+        return Ok(());
+    };
+    if chat_template_supports_tools(&template) {
+        return Ok(());
+    }
+    Err(Error::Internal(format!(
+        "model '{model_name}' does not support tool calling — \
+         retry without tools or pick a tool-capable model"
+    )))
+}
+
+/// Load the chat template as a single JSON value (string or array of
+/// `{name, template}` entries). Returns `None` when no template file
+/// is present or readable — let the request fall through.
+///
+/// Looks in three places, in HuggingFace's order of precedence:
+///   1. `chat_template.jinja` — modern raw-Jinja sidecar (gemma-3+,
+///      llama-3.1+, qwen-3, etc. all ship this way).
+///   2. `chat_template.json` — `{ "chat_template": <string|array> }`
+///      legacy sidecar.
+///   3. `tokenizer_config.json` — embedded `chat_template` field used
+///      by older repos.
+fn read_chat_template(model_dir: &Path) -> Option<serde_json::Value> {
+    if let Ok(s) = fs::read_to_string(model_dir.join("chat_template.jinja")) {
+        return Some(serde_json::Value::String(s));
+    }
+    if let Ok(bytes) = fs::read(model_dir.join("chat_template.json")) {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(t) = v.get("chat_template").cloned() {
+                return Some(t);
+            }
+            return Some(v);
+        }
+    }
+    let bytes = fs::read(model_dir.join("tokenizer_config.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    v.get("chat_template").cloned()
+}
+
+/// Heuristic mirror of HuggingFace's "supports tool calling" check:
+/// a template advertises tool support if it is the array form with a
+/// `tool_use` entry, or a literal Jinja string that references the
+/// `tools` variable.
+fn chat_template_supports_tools(template: &serde_json::Value) -> bool {
+    match template {
+        serde_json::Value::String(s) => s.contains("tools"),
+        serde_json::Value::Array(items) => items.iter().any(|item| {
+            item.get("name").and_then(|n| n.as_str()) == Some("tool_use")
+                || item
+                    .get("template")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| t.contains("tools"))
+        }),
+        _ => false,
+    }
+}
 
 fn request_options(request: &ChatCompletionRequest) -> GenerateOptions {
     GenerateOptions {

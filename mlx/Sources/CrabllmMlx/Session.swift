@@ -431,6 +431,19 @@ func runGenerationWithContainer(
             if stoppedByCaller { break }
         }
 
+        // Belt-and-suspenders: a non-empty user prompt must produce a
+        // non-zero prompt token count. If we got here with zero, the
+        // chat-template render likely silently dropped the input
+        // (e.g. an unsupported feature like tools or system messages
+        // on a template that doesn't slot them in). Surface it as an
+        // explicit error rather than returning success-with-zero-output.
+        if !stoppedByCaller && !decoded.lastPrompt.isEmpty && promptTokens == 0 {
+            throw FFIError.generate(
+                "model produced zero prompt tokens despite non-empty input — "
+                + "likely an unsupported chat-template feature (tools, system message, etc.)"
+            )
+        }
+
         let toolCallsJson: String?
         if toolCalls.isEmpty {
             toolCallsJson = nil
