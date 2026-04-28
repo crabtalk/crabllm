@@ -11,6 +11,51 @@ use serde::{Deserialize, Serialize};
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
+// Gemini 2.5+ thinking models attach a `thoughtSignature` (base64) to
+// each `functionCall` part. Subsequent turns must echo that signature
+// back or the API returns 400. Since crabllm presents the OpenAI shape
+// to downstream callers — no provider-specific fields, no SDK
+// cooperation — we encode the signature into the synthetic
+// `tool_call.id` so it round-trips for free. Same approach as LiteLLM
+// (`__thought__` separator) and Bifrost (`_ts_` separator). Pick the
+// LiteLLM separator: collision-resistant against well-formed tool ids.
+//
+// See: https://ai.google.dev/gemini-api/docs/thought-signatures
+const THOUGHT_SIGNATURE_SEPARATOR: &str = "__thought__";
+
+/// Sentinel asking Gemini to skip signature validation. Required for
+/// gemini-3+ when no real signature is available (e.g. fresh
+/// conversation, or the previous turn predated this feature). Mirrors
+/// LiteLLM's "dummy signature" / Bifrost's `skip_thought_signature_validator`.
+const SKIP_VALIDATOR_SIGNATURE: &str = "skip_thought_signature_validator";
+
+fn encode_signature_into_id(base_id: &str, signature: Option<&str>) -> String {
+    match signature {
+        Some(sig) if !sig.is_empty() => {
+            format!("{base_id}{THOUGHT_SIGNATURE_SEPARATOR}{sig}")
+        }
+        _ => base_id.to_string(),
+    }
+}
+
+fn extract_signature_from_id(tool_call_id: &str) -> Option<&str> {
+    tool_call_id
+        .split_once(THOUGHT_SIGNATURE_SEPARATOR)
+        .map(|(_, sig)| sig)
+}
+
+fn is_gemini_3_or_newer(model: &str) -> bool {
+    // "gemini-3", "gemini-3-pro", "gemini-3.5-...", and any later major
+    // version. Match the prefix only — variant suffixes aren't relevant.
+    let m = model.to_ascii_lowercase();
+    let Some(rest) = m.strip_prefix("gemini-") else {
+        return false;
+    };
+    // Read leading digits; a major version >= 3 means signature-required.
+    let major_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    major_str.parse::<u32>().map(|n| n >= 3).unwrap_or(false)
+}
+
 // ── Gemini-native request types ──
 
 #[derive(Serialize)]
@@ -48,6 +93,10 @@ struct GeminiPart {
     function_call: Option<GeminiFunctionCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     function_response: Option<GeminiFunctionResponse>,
+    /// Gemini 2.5+ thinking-model marker for `functionCall` parts —
+    /// must be echoed back unchanged on follow-up turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thought_signature: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -163,6 +212,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                     text: Some(s.to_string()),
                     function_call: None,
                     function_response: None,
+                    thought_signature: None,
                 });
             }
         } else if msg.role == Role::Tool {
@@ -199,6 +249,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                         name,
                         response: response_val,
                     }),
+                    thought_signature: None,
                 }],
             });
         } else if msg.role == Role::Assistant
@@ -214,11 +265,18 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                     text: Some(s.to_string()),
                     function_call: None,
                     function_response: None,
+                    thought_signature: None,
                 });
             }
+            let needs_skip_sentinel = is_gemini_3_or_newer(&request.model);
             for tc in tool_calls {
                 let args = crabllm_core::json::from_str(&tc.function.arguments)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
+                let signature = extract_signature_from_id(&tc.id)
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        needs_skip_sentinel.then(|| SKIP_VALIDATOR_SIGNATURE.to_string())
+                    });
                 parts.push(GeminiPart {
                     text: None,
                     function_call: Some(GeminiFunctionCall {
@@ -226,6 +284,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                         args,
                     }),
                     function_response: None,
+                    thought_signature: signature,
                 });
             }
             contents.push(GeminiContent {
@@ -249,6 +308,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                     text: Some(text),
                     function_call: None,
                     function_response: None,
+                    thought_signature: None,
                 }],
             });
         }
@@ -353,9 +413,11 @@ fn extract_parts(candidate: &GeminiCandidate) -> (String, Vec<ToolCall>) {
                 text.push_str(t);
             }
             if let Some(fc) = &part.function_call {
+                let base_id = format!("call_{i}");
+                let id = encode_signature_into_id(&base_id, part.thought_signature.as_deref());
                 tool_calls.push(ToolCall {
                     index: None,
-                    id: format!("call_{i}"),
+                    id,
                     kind: ToolType::Function,
                     function: FunctionCall {
                         name: fc.name.clone(),
