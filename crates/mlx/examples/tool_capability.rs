@@ -7,8 +7,8 @@
 //!
 //!   cargo run -p crabllm-mlx --example tool_capability
 //!
-//! Default model is `gemma-4-it-e2b-4bit`, which exercises the B1
-//! gemma-format parser in `crates/mlx/src/tool_parser.rs` (workaround
+//! Default model is `gemma-4-it-e2b-4bit`, which exercises the
+//! gemma-only patches in `crates/mlx/src/gemma_patch.rs` (workaround
 //! for mlx-swift-lm 3.31.3's broken GemmaFunctionParser, upstream
 //! PR #215). Pass a different alias / repo id as the first arg.
 

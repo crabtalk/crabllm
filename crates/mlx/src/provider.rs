@@ -119,10 +119,17 @@ impl Provider for MlxProvider {
     ) -> Result<ChatCompletionResponse, Error> {
         let model_dir = self.resolve_model_dir(&request.model)?;
         let model_dir_str = model_dir.to_string_lossy().to_string();
-        let messages_json = serialize_messages(&request.messages)?;
-        let tools_json = serialize_tools(request)?;
+        let mut messages_json = serialize_messages(&request.messages)?;
+        let mut tools_json = serialize_tools(request)?;
         if tools_json.is_some() {
             ensure_tool_calling_supported(&model_dir, &request.model)?;
+        }
+        let is_gemma = crate::gemma_patch::is_gemma_model(&model_dir);
+        if is_gemma {
+            messages_json = crate::gemma_patch::preprocess_messages_json(&messages_json)?;
+            tools_json = tools_json
+                .map(|t| crate::gemma_patch::preprocess_tools_json(&t))
+                .transpose()?;
         }
         let options = request_options(request);
         let model_name = request.model.clone();
@@ -141,13 +148,13 @@ impl Provider for MlxProvider {
         .map_err(|e| Error::Internal(format!("mlx: generate task panicked: {e}")))??;
 
         let mut tool_calls = parse_tool_calls(output.tool_calls_json.as_deref())?;
-        // B1: gemma-3/4 emit tool calls as raw text because mlx-swift-lm
+        // gemma-3/4 emit tool calls as raw text because mlx-swift-lm
         // 3.31.3 ships the wrong tags / model_type match. Recover them
         // here when the request asked for tools but nothing structured
-        // came back. See tool_parser.rs.
+        // came back. See `gemma_patch`.
         let mut text = output.text;
-        if request.tools.is_some() && tool_calls.is_empty() {
-            let (cleaned, extracted) = crate::tool_parser::extract_gemma_tool_calls(&text);
+        if is_gemma && request.tools.is_some() && tool_calls.is_empty() {
+            let (cleaned, extracted) = crate::gemma_patch::extract_gemma_tool_calls(&text);
             if !extracted.is_empty() {
                 text = cleaned;
                 tool_calls = extracted;
@@ -200,10 +207,17 @@ impl Provider for MlxProvider {
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
         let model_dir = self.resolve_model_dir(&request.model)?;
         let model_dir_str = model_dir.to_string_lossy().to_string();
-        let messages_json = serialize_messages(&request.messages)?;
-        let tools_json = serialize_tools(request)?;
+        let mut messages_json = serialize_messages(&request.messages)?;
+        let mut tools_json = serialize_tools(request)?;
         if tools_json.is_some() {
             ensure_tool_calling_supported(&model_dir, &request.model)?;
+        }
+        let is_gemma = crate::gemma_patch::is_gemma_model(&model_dir);
+        if is_gemma {
+            messages_json = crate::gemma_patch::preprocess_messages_json(&messages_json)?;
+            tools_json = tools_json
+                .map(|t| crate::gemma_patch::preprocess_tools_json(&t))
+                .transpose()?;
         }
         let options = request_options(request);
         let model_name = request.model.clone();
@@ -219,12 +233,13 @@ impl Provider for MlxProvider {
         let id_c = id.clone();
         let model_c = model_name.clone();
         let tx_c = tx.clone();
-        // When tools are requested, buffer text on the server side so
-        // we can recover gemma-format tool calls (B1) at end-of-stream.
+        // Gemma's stale parser leaks tool calls as raw text, so when
+        // tools are requested for a gemma model we buffer the whole
+        // stream and recover them at end-of-stream (see `gemma_patch`).
         // Tool-using turns are short and atomic, so the loss of
-        // token-level streaming is acceptable. Without tools, stream
+        // token-level streaming is acceptable. Other models stream
         // chunks straight through.
-        let buffer_for_tools = tools_json.is_some();
+        let buffer_for_tools = is_gemma && tools_json.is_some();
 
         tokio::task::spawn_blocking(move || {
             let req = GenerateRequest {
@@ -256,7 +271,7 @@ impl Provider for MlxProvider {
                         let mut text = std::mem::take(&mut buffered);
                         if tool_calls.is_empty() {
                             let (cleaned, extracted) =
-                                crate::tool_parser::extract_gemma_tool_calls(&text);
+                                crate::gemma_patch::extract_gemma_tool_calls(&text);
                             if !extracted.is_empty() {
                                 text = cleaned;
                                 tool_calls = extracted;

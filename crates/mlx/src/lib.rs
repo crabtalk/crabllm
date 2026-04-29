@@ -32,7 +32,7 @@ mod provider;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod session;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-mod tool_parser;
+mod gemma_patch;
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use pool::MlxPool;

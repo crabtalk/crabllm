@@ -96,21 +96,7 @@ func decodeMessages(_ json: String) throws -> DecodedMessages {
         let parsed = try parseContent(msg["content"])
         switch msg["role"] as? String {
         case "assistant":
-            // Re-synthesize prior tool_calls into the assistant's
-            // content text so multi-turn tool conversations render
-            // faithfully. mlx-swift-lm's `Chat.Message.assistant`
-            // takes only `text + images`, so the gemma chat template's
-            // `message['tool_calls']` branch never fires for replayed
-            // history. Mirror `crates/mlx/src/tool_parser.rs` in
-            // reverse: emit `<|tool_call>call:NAME{...}<tool_call|>`
-            // as raw text the template will pass through verbatim, so
-            // the model sees its own prior output the same way it
-            // generated it.
-            var text = parsed.text
-            if let toolCalls = msg["tool_calls"] as? [[String: Any]], !toolCalls.isEmpty {
-                text += formatGemmaToolCalls(toolCalls)
-            }
-            history.append(.assistant(text, images: parsed.images))
+            history.append(.assistant(parsed.text, images: parsed.images))
         case "system":
             history.append(.system(parsed.text, images: parsed.images))
         case "tool":
@@ -371,132 +357,6 @@ func decodeDataURL(_ urlStr: String) throws -> UserInput.Image {
     return .ciImage(image)
 }
 
-// MARK: - Tool call synthesis
-
-/// Render an OpenAI `tool_calls` array as gemma-format inline text:
-/// `<|tool_call>call:NAME{key:value,...}<tool_call|>` per call. Used to
-/// replay assistant tool-call turns through `Chat.Message.assistant`,
-/// which has no tool_calls field of its own. Mirrors the parser at
-/// `crates/mlx/src/tool_parser.rs`.
-///
-/// Arguments arrive as a JSON-encoded string (per OpenAI's wire shape).
-/// Parse into a dict and emit each entry; bail to passthrough if the
-/// JSON isn't an object so we never crash on malformed input.
-func formatGemmaToolCalls(_ toolCalls: [[String: Any]]) -> String {
-    var out = ""
-    for call in toolCalls {
-        guard let function = call["function"] as? [String: Any],
-              let name = function["name"] as? String else {
-            continue
-        }
-        out += "<|tool_call>call:\(name){"
-        let argsString = function["arguments"] as? String ?? ""
-        let argsObj: [String: Any] = {
-            guard let data = argsString.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { return [:] }
-            return parsed
-        }()
-        var first = true
-        // Sort keys for stable output — matches the Jinja template's
-        // `dictsort` filter and means re-renders are byte-identical
-        // across runs.
-        for key in argsObj.keys.sorted() {
-            if !first { out += "," }
-            first = false
-            out += "\(key):\(formatGemmaArgValue(argsObj[key] ?? NSNull()))"
-        }
-        out += "}<tool_call|>"
-    }
-    return out
-}
-
-/// Format a single argument value in gemma style. Strings are wrapped
-/// with the `<|"|>` escape sentinel so commas/braces inside text don't
-/// terminate the value parse on the receiving end. Numbers, bools,
-/// null, and nested arrays/objects are emitted as JSON literals.
-private func formatGemmaArgValue(_ value: Any) -> String {
-    if let s = value as? String {
-        return "<|\"|>\(s)<|\"|>"
-    }
-    guard JSONSerialization.isValidJSONObject([value])
-        || (value is NSNumber) || (value is NSNull),
-          let data = try? JSONSerialization.data(
-              withJSONObject: value,
-              options: [.fragmentsAllowed]
-          ),
-          let s = String(data: data, encoding: .utf8)
-    else {
-        return "null"
-    }
-    return s
-}
-
-// MARK: - JSON Schema preprocessing
-
-/// Gemma's `chat_template.jinja` applies `| upper` directly to a
-/// schema's `type` value inside its `format_function_declaration`
-/// macro. Jinja's upper filter requires a string, so when a tool
-/// parameter declares the standard nullable idiom
-/// `"type": ["string", "null"]` the renderer crashes and the FFI
-/// surfaces a 0/0-token failure. Walk the schema tree and replace
-/// each union `type` with its first non-null member, attaching
-/// `nullable: true` when `null` was a member of the union. Unions
-/// of two non-null types are truncated to the first member — rare
-/// in the wild and worth tracking separately rather than fixing in
-/// passing.
-func flattenSchemaUnionTypes(_ schema: inout [String: Any]) {
-    if let arr = schema["type"] as? [Any] {
-        let strs = arr.compactMap { $0 as? String }
-        let hasNull = strs.contains("null")
-        if let chosen = strs.first(where: { $0 != "null" }) {
-            schema["type"] = chosen
-            if hasNull && schema["nullable"] == nil {
-                schema["nullable"] = true
-            }
-        } else if hasNull {
-            schema["type"] = "null"
-        }
-    }
-    for (key, value) in schema {
-        if var child = value as? [String: Any] {
-            flattenSchemaUnionTypes(&child)
-            schema[key] = child
-        } else if let arr = value as? [Any] {
-            schema[key] = arr.map { item -> Any in
-                guard var sub = item as? [String: Any] else { return item }
-                flattenSchemaUnionTypes(&sub)
-                return sub
-            }
-        }
-    }
-}
-
-/// `JSONSerialization` decodes JSON `null` into `NSNull`, which bridges
-/// to `Optional<Any>` when mlx-swift-lm's Jinja value coercer reaches
-/// it inside gemma's `chat_template.jinja`. The coercer rejects that
-/// type with `Cannot convert value of type Optional<Any> to Jinja
-/// Value` and the FFI surfaces a 0/0-token failure. Real-world schemas
-/// routinely carry `"default": null`, `"description": null`, etc.,
-/// so walk the tree and drop any key whose value is JSON `null`.
-func stripSchemaNullValues(_ schema: inout [String: Any]) {
-    for key in Array(schema.keys) {
-        let value = schema[key]
-        if value is NSNull {
-            schema.removeValue(forKey: key)
-        } else if var child = value as? [String: Any] {
-            stripSchemaNullValues(&child)
-            schema[key] = child
-        } else if let arr = value as? [Any] {
-            schema[key] = arr.map { item -> Any in
-                guard var sub = item as? [String: Any] else { return item }
-                stripSchemaNullValues(&sub)
-                return sub
-            }
-        }
-    }
-}
-
 // MARK: - Tool parsing
 
 /// Decode the Rust-supplied tools JSON into `[ToolSpec]`. `ToolSpec`
@@ -516,10 +376,5 @@ func decodeTools(_ json: String?) throws -> [ToolSpec]? {
     guard let array = obj as? [[String: Any]] else {
         throw FFIError.invalidArg("tools_json must be an array of objects")
     }
-    return array.map { tool in
-        var t = tool
-        flattenSchemaUnionTypes(&t)
-        stripSchemaNullValues(&t)
-        return t as ToolSpec
-    }
+    return array.map { $0 as ToolSpec }
 }
