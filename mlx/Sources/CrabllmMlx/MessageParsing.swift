@@ -357,6 +357,46 @@ func decodeDataURL(_ urlStr: String) throws -> UserInput.Image {
     return .ciImage(image)
 }
 
+// MARK: - JSON Schema preprocessing
+
+/// Gemma's `chat_template.jinja` applies `| upper` directly to a
+/// schema's `type` value inside its `format_function_declaration`
+/// macro. Jinja's upper filter requires a string, so when a tool
+/// parameter declares the standard nullable idiom
+/// `"type": ["string", "null"]` the renderer crashes and the FFI
+/// surfaces a 0/0-token failure. Walk the schema tree and replace
+/// each union `type` with its first non-null member, attaching
+/// `nullable: true` when `null` was a member of the union. Unions
+/// of two non-null types are truncated to the first member — rare
+/// in the wild and worth tracking separately rather than fixing in
+/// passing.
+func flattenSchemaUnionTypes(_ schema: inout [String: Any]) {
+    if let arr = schema["type"] as? [Any] {
+        let strs = arr.compactMap { $0 as? String }
+        let hasNull = strs.contains("null")
+        if let chosen = strs.first(where: { $0 != "null" }) {
+            schema["type"] = chosen
+            if hasNull && schema["nullable"] == nil {
+                schema["nullable"] = true
+            }
+        } else if hasNull {
+            schema["type"] = "null"
+        }
+    }
+    for (key, value) in schema {
+        if var child = value as? [String: Any] {
+            flattenSchemaUnionTypes(&child)
+            schema[key] = child
+        } else if let arr = value as? [Any] {
+            schema[key] = arr.map { item -> Any in
+                guard var sub = item as? [String: Any] else { return item }
+                flattenSchemaUnionTypes(&sub)
+                return sub
+            }
+        }
+    }
+}
+
 // MARK: - Tool parsing
 
 /// Decode the Rust-supplied tools JSON into `[ToolSpec]`. `ToolSpec`
@@ -376,5 +416,9 @@ func decodeTools(_ json: String?) throws -> [ToolSpec]? {
     guard let array = obj as? [[String: Any]] else {
         throw FFIError.invalidArg("tools_json must be an array of objects")
     }
-    return array.map { $0 as ToolSpec }
+    return array.map { tool in
+        var t = tool
+        flattenSchemaUnionTypes(&t)
+        return t as ToolSpec
+    }
 }
