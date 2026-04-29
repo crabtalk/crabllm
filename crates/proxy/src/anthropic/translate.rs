@@ -55,7 +55,14 @@ pub fn to_chat_completion(req: AnthropicRequest) -> ChatCompletionRequest {
         messages,
         temperature: req.temperature,
         top_p: req.top_p,
-        max_tokens: None,
+        // Populate both fields. The Anthropic-direct upstream reads
+        // `anthropic_max_tokens` (preserves the request-required
+        // semantics on the way back out); every OpenAI-shape provider
+        // reads `max_tokens`. Dropping the latter meant Anthropic-
+        // translated requests reached non-Anthropic providers with no
+        // explicit budget — fine for hosted APIs that have their own
+        // defaults, brittle for local providers.
+        max_tokens: Some(req.max_tokens),
         stream: req.stream,
         stop,
         tools,
