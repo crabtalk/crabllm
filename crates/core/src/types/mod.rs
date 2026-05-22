@@ -1,6 +1,7 @@
 pub use anthropic::{
-    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicRequest, AnthropicResponse,
-    AnthropicSystem, AnthropicTool, AnthropicUsage, DEFAULT_MAX_TOKENS, ThinkingConfig,
+    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicMessages, AnthropicRequest,
+    AnthropicResponse, AnthropicSystem, AnthropicTool, AnthropicUsage, DEFAULT_MAX_TOKENS,
+    ThinkingConfig,
 };
 pub use audio::AudioSpeechRequest;
 pub use embedding::{

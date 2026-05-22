@@ -8,8 +8,9 @@ pub use model_info::ModelInfo;
 pub use provider::{BoxStream, ByteStream, Provider};
 pub use storage::{BoxFuture, KvPairs, PREFIX_LEN, Prefix, Storage, storage_key};
 pub use types::{
-    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicRequest, AnthropicResponse,
-    AnthropicSystem, AnthropicTool, AnthropicUsage, AudioSpeechRequest, ChatCompletionChunk,
+    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicMessages, AnthropicRequest,
+    AnthropicResponse, AnthropicSystem, AnthropicTool, AnthropicUsage, AudioSpeechRequest,
+    ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, CompletionTokensDetails,
     ContentBlock, DEFAULT_MAX_TOKENS, Delta, Embedding, EmbeddingInput, EmbeddingRequest,
     EmbeddingResponse, EmbeddingUsage, FinishReason, FunctionCall, FunctionCallDelta, FunctionDef,
