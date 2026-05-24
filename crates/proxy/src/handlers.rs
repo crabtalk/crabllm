@@ -657,7 +657,7 @@ where
                 created: 0,
                 owned_by: "crabllm".to_string(),
                 context_length: info.and_then(|i| i.context_length),
-                pricing: info.and_then(|i| i.pricing),
+                pricing: info.and_then(|i| i.pricing.clone()),
                 vision: info.and_then(|i| i.vision),
             }
         })

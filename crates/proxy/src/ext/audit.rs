@@ -33,19 +33,12 @@ impl AuditLogger {
             .with_state(self.storage.clone())
     }
 
-    fn cost_micros(
-        &self,
-        model: &str,
-        provider: &str,
-        prompt: u32,
-        completion: u32,
-        cache_hit: u32,
-    ) -> i64 {
+    fn cost_micros(&self, model: &str, provider: &str, usage: &crabllm_core::Usage) -> i64 {
         let qualified = format!("{provider}/{model}");
         self.models
             .get(qualified.as_str())
             .or_else(|| self.models.get(model))
-            .map(|info| (info.cost(prompt, completion, cache_hit) * 1_000_000.0).round() as i64)
+            .map(|info| (info.cost(usage) * 1_000_000.0).round() as i64)
             .unwrap_or(0)
     }
 
@@ -101,24 +94,25 @@ impl crabllm_core::Extension for AuditLogger {
         _request: &ChatCompletionRequest,
         response: &ChatCompletionResponse,
     ) -> BoxFuture<'_, ()> {
-        let (prompt, completion, cache_hit) = response
-            .usage
-            .as_ref()
-            .map(|u| {
-                (
-                    Some(u.prompt_tokens),
-                    Some(u.completion_tokens),
-                    u.prompt_cache_hit_tokens,
-                )
-            })
-            .unwrap_or((None, None, None));
-
-        let cost_micros = match (prompt, completion) {
-            (Some(p), Some(c)) => {
-                self.cost_micros(&ctx.model, &ctx.provider, p, c, cache_hit.unwrap_or(0))
-            }
-            _ => 0,
+        let Some(wire) = response.usage.as_ref() else {
+            self.write_record(AuditRecord {
+                request_id: ctx.request_id.clone(),
+                timestamp: now_millis(),
+                principal: ctx.principal.clone().unwrap_or_default(),
+                model: ctx.model.clone(),
+                provider: ctx.provider.clone(),
+                prompt_tokens: None,
+                completion_tokens: None,
+                cache_hit_tokens: None,
+                cost_micros: 0,
+                latency_ms: ctx.started_at.elapsed().as_millis() as u64,
+                status: 200,
+                error: None,
+            });
+            return Box::pin(async {});
         };
+        let usage = crabllm_core::Usage::from(wire);
+        let cost_micros = self.cost_micros(&ctx.model, &ctx.provider, &usage);
 
         self.write_record(AuditRecord {
             request_id: ctx.request_id.clone(),
@@ -126,9 +120,13 @@ impl crabllm_core::Extension for AuditLogger {
             principal: ctx.principal.clone().unwrap_or_default(),
             model: ctx.model.clone(),
             provider: ctx.provider.clone(),
-            prompt_tokens: prompt,
-            completion_tokens: completion,
-            cache_hit_tokens: cache_hit,
+            prompt_tokens: Some(usage.prompt_tokens()),
+            completion_tokens: Some(usage.completion_tokens()),
+            cache_hit_tokens: if usage.cache_read_tokens > 0 {
+                Some(usage.cache_read_tokens)
+            } else {
+                None
+            },
             cost_micros,
             latency_ms: ctx.started_at.elapsed().as_millis() as u64,
             status: 200,
@@ -139,15 +137,9 @@ impl crabllm_core::Extension for AuditLogger {
     }
 
     fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
-        if let Some(ref usage) = chunk.usage {
-            let cache_hit = usage.prompt_cache_hit_tokens.unwrap_or(0);
-            let cost_micros = self.cost_micros(
-                &ctx.model,
-                &ctx.provider,
-                usage.prompt_tokens,
-                usage.completion_tokens,
-                cache_hit,
-            );
+        if let Some(ref wire) = chunk.usage {
+            let usage = crabllm_core::Usage::from(wire);
+            let cost_micros = self.cost_micros(&ctx.model, &ctx.provider, &usage);
 
             self.write_record(AuditRecord {
                 request_id: ctx.request_id.clone(),
@@ -155,9 +147,13 @@ impl crabllm_core::Extension for AuditLogger {
                 principal: ctx.principal.clone().unwrap_or_default(),
                 model: ctx.model.clone(),
                 provider: ctx.provider.clone(),
-                prompt_tokens: Some(usage.prompt_tokens),
-                completion_tokens: Some(usage.completion_tokens),
-                cache_hit_tokens: usage.prompt_cache_hit_tokens,
+                prompt_tokens: Some(usage.prompt_tokens()),
+                completion_tokens: Some(usage.completion_tokens()),
+                cache_hit_tokens: if usage.cache_read_tokens > 0 {
+                    Some(usage.cache_read_tokens)
+                } else {
+                    None
+                },
                 cost_micros,
                 latency_ms: ctx.started_at.elapsed().as_millis() as u64,
                 status: 200,

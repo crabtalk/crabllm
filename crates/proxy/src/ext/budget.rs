@@ -59,14 +59,7 @@ impl Budget {
             .unwrap_or(self.default_budget_micros)
     }
 
-    fn cost_micros(
-        &self,
-        model: &str,
-        provider: &str,
-        prompt_tokens: u32,
-        completion_tokens: u32,
-        cache_hit_tokens: u32,
-    ) -> i64 {
+    fn cost_micros(&self, model: &str, provider: &str, usage: &crabllm_core::Usage) -> i64 {
         let qualified = format!("{provider}/{model}");
         let info = self
             .models
@@ -75,7 +68,7 @@ impl Budget {
         let Some(info) = info else {
             return 0;
         };
-        (info.cost(prompt_tokens, completion_tokens, cache_hit_tokens) * 1_000_000.0).round() as i64
+        (info.cost(usage) * 1_000_000.0).round() as i64
     }
 
     pub fn admin_routes(&self) -> Router {
@@ -99,11 +92,9 @@ impl Budget {
         principal: &str,
         model: &str,
         provider: &str,
-        prompt: u32,
-        completion: u32,
-        cache_hit: u32,
+        usage: &crabllm_core::Usage,
     ) {
-        let micros = self.cost_micros(model, provider, prompt, completion, cache_hit);
+        let micros = self.cost_micros(model, provider, usage);
         if micros > 0 {
             let key = storage_key(&PREFIX_BUDGET, principal.as_bytes());
             let _ = self.storage.increment(&key, micros).await;
@@ -159,15 +150,9 @@ impl crabllm_core::Extension for Budget {
 
         Box::pin(async move {
             if let Some(u) = usage {
-                self.record_cost(
-                    &principal,
-                    &model,
-                    &provider,
-                    u.prompt_tokens,
-                    u.completion_tokens,
-                    u.prompt_cache_hit_tokens.unwrap_or(0),
-                )
-                .await;
+                let canonical = crabllm_core::Usage::from(&u);
+                self.record_cost(&principal, &model, &provider, &canonical)
+                    .await;
             }
         })
     }
@@ -183,15 +168,9 @@ impl crabllm_core::Extension for Budget {
 
         Box::pin(async move {
             if let Some(u) = usage {
-                self.record_cost(
-                    &principal,
-                    &model,
-                    &provider,
-                    u.prompt_tokens,
-                    u.completion_tokens,
-                    u.prompt_cache_hit_tokens.unwrap_or(0),
-                )
-                .await;
+                let canonical = crabllm_core::Usage::from(&u);
+                self.record_cost(&principal, &model, &provider, &canonical)
+                    .await;
             }
         })
     }

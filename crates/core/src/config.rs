@@ -1,18 +1,54 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-/// Per-model token pricing configuration.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+/// Per-model token pricing. One rate per usage axis. Secondary rates are
+/// `Option<f64>` so "absent" means *fall back to the coarser bucket* rather
+/// than *free* — see [`crate::ModelInfo::cost`] for the fallback chain.
+///
+/// Field names use the canonical "input/output" vocabulary; legacy
+/// "prompt/completion/cache_hit" names are accepted via serde aliases so
+/// existing configs and the generated `models/cloud.toml` continue to load.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PricingConfig {
-    /// Cost per million prompt tokens in USD.
-    pub prompt_cost_per_million: f64,
-    /// Cost per million completion tokens in USD.
-    pub completion_cost_per_million: f64,
-    /// Cost per million cache-hit prompt tokens in USD.
-    /// When `None`, cache hits are priced at the regular prompt rate.
+    /// Cost per million uncached input tokens in USD.
+    #[serde(alias = "prompt_cost_per_million")]
+    pub input_cost_per_million: f64,
+    /// Cost per million output tokens in USD.
+    #[serde(alias = "completion_cost_per_million")]
+    pub output_cost_per_million: f64,
+
+    /// Cost per million cache-read input tokens in USD.
+    /// `None` → falls back to `input_cost_per_million`.
+    #[serde(
+        alias = "cache_hit_cost_per_million",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cache_read_cost_per_million: Option<f64>,
+    /// Cost per million cache-write input tokens in USD (Anthropic charges
+    /// ~1.25× of base input for this). `None` → falls back to
+    /// `input_cost_per_million`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_hit_cost_per_million: Option<f64>,
+    pub cache_write_cost_per_million: Option<f64>,
+    /// Cost per million reasoning output tokens in USD.
+    /// `None` → falls back to `output_cost_per_million`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_cost_per_million: Option<f64>,
+    /// Cost per million audio input tokens in USD.
+    /// `None` → falls back to `input_cost_per_million`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_input_cost_per_million: Option<f64>,
+    /// Cost per million audio output tokens in USD.
+    /// `None` → falls back to `output_cost_per_million`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_output_cost_per_million: Option<f64>,
+
+    /// Per-call cost in USD for upstream-side tools like web search. Keyed by
+    /// tool name (must match the names crabllm reports in
+    /// [`crate::Usage::server_tool_calls`]).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub server_tool_cost_per_call: BTreeMap<String, f64>,
 }
 
 /// Top-level gateway configuration, loaded from TOML.

@@ -1,4 +1,4 @@
-use crate::PricingConfig;
+use crate::{PricingConfig, Usage};
 use serde::{Deserialize, Serialize};
 
 /// Per-model metadata: context window and token pricing.
@@ -11,7 +11,7 @@ pub struct ModelInfo {
     /// Maximum context window in tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_length: Option<u32>,
-    /// Token pricing (input + output cost per million tokens).
+    /// Token pricing (per-axis costs per million tokens).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<PricingConfig>,
     /// Whether the model accepts image/video input.
@@ -20,19 +20,38 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
-    /// Compute cost in USD for the given token counts. Returns 0.0 if
-    /// pricing is not set.
-    pub fn cost(&self, prompt_tokens: u32, completion_tokens: u32, cache_hit_tokens: u32) -> f64 {
+    /// Compute cost in USD for the given usage. Returns 0.0 when pricing is
+    /// unset.
+    ///
+    /// Each axis is priced independently. Secondary rates fall back to the
+    /// next-coarser bucket when unset:
+    /// - `cache_read`, `cache_write`, `audio_input` → `input_cost_per_million`
+    /// - `reasoning`, `audio_output` → `output_cost_per_million`
+    ///
+    /// `None` never means "free" — that would silently zero out billing on any
+    /// axis where pricing data is incomplete.
+    pub fn cost(&self, u: &Usage) -> f64 {
         let Some(ref p) = self.pricing else {
             return 0.0;
         };
-        let cache_hit_rate = p
-            .cache_hit_cost_per_million
-            .unwrap_or(p.prompt_cost_per_million);
-        let non_cached = prompt_tokens.saturating_sub(cache_hit_tokens);
-        (non_cached as f64 * p.prompt_cost_per_million
-            + cache_hit_tokens as f64 * cache_hit_rate
-            + completion_tokens as f64 * p.completion_cost_per_million)
-            / 1_000_000.0
+        let input_rate = p.input_cost_per_million;
+        let output_rate = p.output_cost_per_million;
+        let cache_read_rate = p.cache_read_cost_per_million.unwrap_or(input_rate);
+        let cache_write_rate = p.cache_write_cost_per_million.unwrap_or(input_rate);
+        let reasoning_rate = p.reasoning_cost_per_million.unwrap_or(output_rate);
+
+        let tokens = u.input_tokens as f64 * input_rate
+            + u.cache_read_tokens as f64 * cache_read_rate
+            + u.cache_write_tokens as f64 * cache_write_rate
+            + u.output_tokens as f64 * output_rate
+            + u.reasoning_tokens as f64 * reasoning_rate;
+        let mut total = tokens / 1_000_000.0;
+
+        for (tool, calls) in &u.server_tool_calls {
+            if let Some(rate) = p.server_tool_cost_per_call.get(tool) {
+                total += *calls as f64 * rate;
+            }
+        }
+        total
     }
 }
