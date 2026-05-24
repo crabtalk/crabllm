@@ -1,6 +1,6 @@
 pub use request::{ChatCompletionRequest, FunctionDef, Stop, Tool, ToolChoice};
 pub use response::{
-    ChatCompletionResponse, Choice, CompletionTokensDetails, FunctionCall, ToolCall, Usage,
+    ChatCompletionResponse, Choice, CompletionTokensDetails, FunctionCall, OpenAiUsage, ToolCall,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use stream::{ChatCompletionChunk, ChunkChoice, Delta, FunctionCallDelta, ToolCallDelta};

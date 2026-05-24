@@ -11,7 +11,8 @@ use axum::{
 };
 use crabllm_core::{
     BoxFuture, BoxStream, ChatCompletionRequest, ChatCompletionResponse, Choice, ContentBlock,
-    Error, FinishReason, GatewayConfig, KvPairs, Message, Prefix, Provider, Role, Storage, Usage,
+    Error, FinishReason, GatewayConfig, KvPairs, Message, OpenAiUsage, Prefix, Provider, Role,
+    Storage,
 };
 use crabllm_provider::{Deployment, ProviderRegistry};
 use crabllm_proxy::{AppState, UsageEvent, router};
@@ -44,7 +45,7 @@ impl Provider for FakeProvider {
                 finish_reason: Some(FinishReason::Stop),
                 logprobs: None,
             }],
-            usage: Some(Usage {
+            usage: Some(OpenAiUsage {
                 prompt_tokens: 11,
                 completion_tokens: 22,
                 total_tokens: 33,

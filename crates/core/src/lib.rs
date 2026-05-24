@@ -16,10 +16,11 @@ pub use types::{
     EmbeddingResponse, EmbeddingUsage, FinishReason, FunctionCall, FunctionCallDelta, FunctionDef,
     GeminiCandidate, GeminiContent, GeminiFinishReason, GeminiFunctionCall, GeminiFunctionDecl,
     GeminiFunctionResponse, GeminiPart, GeminiRequest, GeminiResponse, GeminiRole, GeminiToolDef,
-    GeminiUsage, GenerationConfig, ImageRequest, Message, Model, ModelList, MultipartField, Role,
-    Stop, ThinkingConfig, Tool, ToolCall, ToolCallDelta, ToolChoice, ToolResultContent, ToolType,
-    Usage,
+    GeminiUsage, GenerationConfig, ImageRequest, Message, Model, ModelList, MultipartField,
+    OpenAiUsage, Role, Stop, ThinkingConfig, Tool, ToolCall, ToolCallDelta, ToolChoice,
+    ToolResultContent, ToolType,
 };
+pub use usage::Usage;
 
 mod config;
 mod convert;
@@ -32,3 +33,4 @@ mod openapi;
 mod provider;
 mod storage;
 mod types;
+mod usage;

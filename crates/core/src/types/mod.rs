@@ -18,8 +18,8 @@ pub use multipart::MultipartField;
 pub use openai::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,
     CompletionTokensDetails, ContentBlock, Delta, FinishReason, FunctionCall, FunctionCallDelta,
-    FunctionDef, Message, Role, Stop, Tool, ToolCall, ToolCallDelta, ToolChoice, ToolResultContent,
-    ToolType, Usage,
+    FunctionDef, Message, OpenAiUsage, Role, Stop, Tool, ToolCall, ToolCallDelta, ToolChoice,
+    ToolResultContent, ToolType,
 };
 
 mod anthropic;

@@ -1,4 +1,4 @@
-use crate::types::openai::{FinishReason, Role, ToolType, Usage};
+use crate::types::openai::{FinishReason, OpenAiUsage, Role, ToolType};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -10,7 +10,7 @@ pub struct ChatCompletionChunk {
     pub model: String,
     pub choices: Vec<ChunkChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
+    pub usage: Option<OpenAiUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_fingerprint: Option<String>,
 }

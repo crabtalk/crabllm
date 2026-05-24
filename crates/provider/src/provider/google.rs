@@ -6,7 +6,7 @@ use crabllm_core::{
     ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, Delta, Error, FunctionCallDelta,
     GeminiCandidate, GeminiContent, GeminiFunctionCall, GeminiFunctionDecl, GeminiFunctionResponse,
     GeminiPart, GeminiRequest, GeminiResponse, GeminiRole, GeminiToolDef, GenerationConfig,
-    Message, Provider, Role, ToolCallDelta, ToolResultContent, Usage,
+    Message, OpenAiUsage, Provider, Role, ToolCallDelta, ToolResultContent, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 
@@ -355,7 +355,10 @@ fn translate_response(resp: GeminiResponse, model: &str) -> ChatCompletionRespon
             finish_reason,
             logprobs: None,
         }],
-        usage: resp.usage_metadata.map(Usage::from),
+        usage: resp
+            .usage_metadata
+            .as_ref()
+            .map(|u| OpenAiUsage::from(&Usage::from(u))),
         system_fingerprint: None,
     }
 }
@@ -534,7 +537,10 @@ fn gemini_sse_stream(
                             finish_reason,
                             logprobs: None,
                         }],
-                        usage: gemini_resp.usage_metadata.map(Usage::from),
+                        usage: gemini_resp
+                            .usage_metadata
+                            .as_ref()
+                            .map(|u| OpenAiUsage::from(&Usage::from(u))),
                         system_fingerprint: None,
                     };
                     return Some((Ok(chunk), (byte_stream, buffer, model, chunk_idx)));

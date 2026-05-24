@@ -4,7 +4,7 @@ use crate::{
     ContentBlock, DEFAULT_MAX_TOKENS, Error, FinishReason, FunctionDef, GeminiCandidate,
     GeminiContent, GeminiFinishReason, GeminiFunctionCall, GeminiPart, GeminiRequest,
     GeminiResponse, GeminiRole, GeminiUsage, GenerationConfig, Message, Role, Stop, Tool,
-    ToolChoice, ToolResultContent, ToolType,
+    ToolChoice, ToolResultContent, ToolType, Usage,
 };
 use std::collections::{HashMap, VecDeque};
 
@@ -111,12 +111,7 @@ impl TryFrom<ChatCompletionResponse> for AnthropicResponse {
             content,
             stop_reason,
             stop_sequence: None,
-            usage: AnthropicUsage {
-                input_tokens: usage.prompt_tokens,
-                output_tokens: usage.completion_tokens,
-                cache_read_input_tokens: usage.prompt_cache_hit_tokens,
-                cache_creation_input_tokens: usage.prompt_cache_miss_tokens,
-            },
+            usage: AnthropicUsage::from(&Usage::from(&usage)),
         })
     }
 }
@@ -357,11 +352,7 @@ impl TryFrom<AnthropicResponse> for GeminiResponse {
 
         Ok(GeminiResponse {
             candidates: vec![candidate],
-            usage_metadata: Some(GeminiUsage {
-                prompt_token_count: resp.usage.input_tokens,
-                candidates_token_count: resp.usage.output_tokens,
-                total_token_count: resp.usage.input_tokens + resp.usage.output_tokens,
-            }),
+            usage_metadata: Some(GeminiUsage::from(&Usage::from(&resp.usage))),
         })
     }
 }

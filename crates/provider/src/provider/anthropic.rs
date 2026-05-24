@@ -5,8 +5,8 @@ use crabllm_core::{
     AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicResponse, AnthropicSystem,
     AnthropicTool, AnthropicUsage, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
     ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, DEFAULT_MAX_TOKENS, Delta, Error,
-    FinishReason, FunctionCallDelta, Message, Provider, Role, Stop, ThinkingConfig, ToolCallDelta,
-    ToolChoice, ToolType, Usage,
+    FinishReason, FunctionCallDelta, Message, OpenAiUsage, Provider, Role, Stop, ThinkingConfig,
+    ToolCallDelta, ToolChoice, ToolType, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::Deserialize;
@@ -307,24 +307,8 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
     }
 }
 
-// Anthropic's `input_tokens` is the *uncached* new portion of the prompt;
-// `cache_read_input_tokens` and `cache_creation_input_tokens` are separate,
-// additive components. OpenAI's `prompt_tokens` is the total prompt size
-// (cached + uncached), so the three components must be summed to preserve the
-// invariant `prompt_cache_hit_tokens <= prompt_tokens` that downstream billing
-// relies on.
-fn map_usage(u: &AnthropicUsage) -> Usage {
-    let prompt_tokens = u.input_tokens
-        + u.cache_read_input_tokens.unwrap_or(0)
-        + u.cache_creation_input_tokens.unwrap_or(0);
-    Usage {
-        prompt_tokens,
-        completion_tokens: u.output_tokens,
-        total_tokens: prompt_tokens + u.output_tokens,
-        completion_tokens_details: None,
-        prompt_cache_hit_tokens: u.cache_read_input_tokens,
-        prompt_cache_miss_tokens: u.cache_creation_input_tokens,
-    }
+fn map_usage(u: &AnthropicUsage) -> OpenAiUsage {
+    OpenAiUsage::from(&Usage::from(u))
 }
 
 fn map_stop_reason(stop_reason: &Option<String>) -> Option<FinishReason> {
@@ -763,18 +747,18 @@ pub(crate) fn anthropic_sse_stream(
                                     logprobs: None,
                                 }],
                                 usage: event.usage.map(|u| {
-                                    let prompt_tokens = state.input_tokens
-                                        + state.cache_read_input_tokens.unwrap_or(0)
-                                        + state.cache_creation_input_tokens.unwrap_or(0);
-                                    Usage {
-                                        prompt_tokens,
-                                        completion_tokens: u.output_tokens,
-                                        total_tokens: prompt_tokens + u.output_tokens,
-                                        completion_tokens_details: None,
-                                        prompt_cache_hit_tokens: state.cache_read_input_tokens,
-                                        prompt_cache_miss_tokens: state
-                                            .cache_creation_input_tokens,
-                                    }
+                                    OpenAiUsage::from(&Usage {
+                                        input_tokens: state.input_tokens,
+                                        cache_read_tokens: state
+                                            .cache_read_input_tokens
+                                            .unwrap_or(0),
+                                        cache_write_tokens: state
+                                            .cache_creation_input_tokens
+                                            .unwrap_or(0),
+                                        output_tokens: u.output_tokens,
+                                        reasoning_tokens: 0,
+                                        server_tool_calls: Default::default(),
+                                    })
                                 }),
                                 system_fingerprint: None,
                             };

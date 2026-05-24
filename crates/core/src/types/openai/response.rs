@@ -1,3 +1,4 @@
+use crate::Usage;
 use crate::types::openai::{FinishReason, Message, ToolType};
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +11,7 @@ pub struct ChatCompletionResponse {
     pub model: String,
     pub choices: Vec<Choice>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
+    pub usage: Option<OpenAiUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_fingerprint: Option<String>,
 }
@@ -48,9 +49,13 @@ impl ChatCompletionResponse {
     }
 }
 
+/// OpenAI wire-format usage. Field semantics follow OpenAI/DeepSeek-openai
+/// convention: `prompt_tokens` is the total prompt including cache,
+/// `prompt_cache_hit_tokens` is a subset. Convert to canonical [`Usage`] for
+/// any internal billing or metering use.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct Usage {
+pub struct OpenAiUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
@@ -60,6 +65,58 @@ pub struct Usage {
     pub prompt_cache_hit_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_cache_miss_tokens: Option<u32>,
+}
+
+impl From<&Usage> for OpenAiUsage {
+    fn from(u: &Usage) -> Self {
+        Self {
+            prompt_tokens: u.prompt_tokens(),
+            completion_tokens: u.completion_tokens(),
+            total_tokens: u.total_tokens(),
+            completion_tokens_details: if u.reasoning_tokens > 0 {
+                Some(CompletionTokensDetails {
+                    reasoning_tokens: Some(u.reasoning_tokens),
+                })
+            } else {
+                None
+            },
+            prompt_cache_hit_tokens: if u.cache_read_tokens > 0 {
+                Some(u.cache_read_tokens)
+            } else {
+                None
+            },
+            // `prompt_cache_miss_tokens` is semantically ambiguous on the
+            // OpenAI wire (some providers mean "uncached input," some mean
+            // "cache writes"). We never emit it — canonical [`Usage`] carries
+            // the unambiguous components.
+            prompt_cache_miss_tokens: None,
+        }
+    }
+}
+
+impl From<&OpenAiUsage> for Usage {
+    fn from(u: &OpenAiUsage) -> Self {
+        // OpenAI's `prompt_tokens` is the total prompt (cached + uncached).
+        // `prompt_cache_hit_tokens` is the cached subset. `cache_write` is not
+        // expressible on this wire — OpenAI doesn't separately price cache
+        // writes — so we leave it zero. Reasoning lives in completion details.
+        let cache_read = u.prompt_cache_hit_tokens.unwrap_or(0);
+        let input = u.prompt_tokens.saturating_sub(cache_read);
+        let reasoning = u
+            .completion_tokens_details
+            .as_ref()
+            .and_then(|d| d.reasoning_tokens)
+            .unwrap_or(0);
+        let output = u.completion_tokens.saturating_sub(reasoning);
+        Self {
+            input_tokens: input,
+            cache_read_tokens: cache_read,
+            cache_write_tokens: 0,
+            output_tokens: output,
+            reasoning_tokens: reasoning,
+            server_tool_calls: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

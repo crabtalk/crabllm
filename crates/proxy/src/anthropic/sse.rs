@@ -18,7 +18,8 @@
 //! sum these two into a final `Usage`, so the totals are correct.
 
 use crabllm_core::{
-    AnthropicContentBlock, AnthropicResponse, AnthropicUsage, ChatCompletionChunk, Error, Usage,
+    AnthropicContentBlock, AnthropicResponse, AnthropicUsage, ChatCompletionChunk, Error,
+    OpenAiUsage,
 };
 use futures::{Stream, StreamExt, stream};
 use serde::Serialize;
@@ -117,7 +118,7 @@ struct AdapterState {
     next_index: u32,
     pending: VecDeque<AnthropicSseEvent>,
     deferred_error: Option<Error>,
-    latest_usage: Option<Usage>,
+    latest_usage: Option<OpenAiUsage>,
     stop_reason: Option<String>,
 }
 
@@ -349,13 +350,8 @@ fn empty_usage() -> AnthropicUsage {
     }
 }
 
-fn usage_to_anthropic(u: Usage) -> AnthropicUsage {
-    AnthropicUsage {
-        input_tokens: u.prompt_tokens,
-        output_tokens: u.completion_tokens,
-        cache_read_input_tokens: u.prompt_cache_hit_tokens,
-        cache_creation_input_tokens: u.prompt_cache_miss_tokens,
-    }
+fn usage_to_anthropic(u: OpenAiUsage) -> AnthropicUsage {
+    AnthropicUsage::from(&crabllm_core::Usage::from(&u))
 }
 
 fn finish_reason_to_stop(reason: &crabllm_core::FinishReason) -> String {

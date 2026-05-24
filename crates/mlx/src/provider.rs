@@ -18,7 +18,7 @@ use crate::{
 use crabllm_core::{
     BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
     ChunkChoice, ContentBlock, Delta, Error, FinishReason, FunctionCall, FunctionCallDelta,
-    Message, Provider, Role, ToolCall, ToolCallDelta, ToolType, Usage,
+    Message, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta, ToolType,
 };
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
@@ -195,7 +195,7 @@ impl Provider for MlxProvider {
                 finish_reason: Some(finish_reason),
                 logprobs: None,
             }],
-            usage: Some(Usage {
+            usage: Some(OpenAiUsage {
                 prompt_tokens: output.prompt_tokens,
                 completion_tokens: output.completion_tokens,
                 total_tokens: output.prompt_tokens + output.completion_tokens,
@@ -535,7 +535,7 @@ fn make_final_chunk(
             finish_reason: Some(finish_reason),
             logprobs: None,
         }],
-        usage: Some(Usage {
+        usage: Some(OpenAiUsage {
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,

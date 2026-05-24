@@ -158,10 +158,12 @@ struct RequestPeek {
     stream: Option<bool>,
 }
 
-/// Lightweight struct to extract usage from raw response bytes.
+/// Lightweight struct to extract usage from raw response bytes. The bytes
+/// are OpenAI wire shape, so we parse them as [`OpenAiUsage`] and convert at
+/// the metering boundary if canonical semantics are needed.
 #[derive(serde::Deserialize)]
 pub(crate) struct UsagePeek {
-    pub usage: Option<crabllm_core::Usage>,
+    pub usage: Option<crabllm_core::OpenAiUsage>,
 }
 
 /// POST /v1/chat/completions
