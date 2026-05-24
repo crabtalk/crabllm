@@ -307,11 +307,20 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
     }
 }
 
+// Anthropic's `input_tokens` is the *uncached* new portion of the prompt;
+// `cache_read_input_tokens` and `cache_creation_input_tokens` are separate,
+// additive components. OpenAI's `prompt_tokens` is the total prompt size
+// (cached + uncached), so the three components must be summed to preserve the
+// invariant `prompt_cache_hit_tokens <= prompt_tokens` that downstream billing
+// relies on.
 fn map_usage(u: &AnthropicUsage) -> Usage {
+    let prompt_tokens = u.input_tokens
+        + u.cache_read_input_tokens.unwrap_or(0)
+        + u.cache_creation_input_tokens.unwrap_or(0);
     Usage {
-        prompt_tokens: u.input_tokens,
+        prompt_tokens,
         completion_tokens: u.output_tokens,
-        total_tokens: u.input_tokens + u.output_tokens,
+        total_tokens: prompt_tokens + u.output_tokens,
         completion_tokens_details: None,
         prompt_cache_hit_tokens: u.cache_read_input_tokens,
         prompt_cache_miss_tokens: u.cache_creation_input_tokens,
@@ -753,13 +762,19 @@ pub(crate) fn anthropic_sse_stream(
                                     finish_reason,
                                     logprobs: None,
                                 }],
-                                usage: event.usage.map(|u| Usage {
-                                    prompt_tokens: state.input_tokens,
-                                    completion_tokens: u.output_tokens,
-                                    total_tokens: state.input_tokens + u.output_tokens,
-                                    completion_tokens_details: None,
-                                    prompt_cache_hit_tokens: state.cache_read_input_tokens,
-                                    prompt_cache_miss_tokens: state.cache_creation_input_tokens,
+                                usage: event.usage.map(|u| {
+                                    let prompt_tokens = state.input_tokens
+                                        + state.cache_read_input_tokens.unwrap_or(0)
+                                        + state.cache_creation_input_tokens.unwrap_or(0);
+                                    Usage {
+                                        prompt_tokens,
+                                        completion_tokens: u.output_tokens,
+                                        total_tokens: prompt_tokens + u.output_tokens,
+                                        completion_tokens_details: None,
+                                        prompt_cache_hit_tokens: state.cache_read_input_tokens,
+                                        prompt_cache_miss_tokens: state
+                                            .cache_creation_input_tokens,
+                                    }
                                 }),
                                 system_fingerprint: None,
                             };

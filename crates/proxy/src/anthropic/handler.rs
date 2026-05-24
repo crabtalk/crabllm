@@ -626,16 +626,25 @@ fn peek_anthropic_usage(
 
     match event_name {
         "message_start" => {
+            // Anthropic's `input_tokens` is only the uncached portion;
+            // cache reads/creates are additive separate fields. Sum them so
+            // `tokens_in` carries the OpenAI-style total prompt size, keeping
+            // `cache_hit <= tokens_in` for downstream billing.
             if let Some(usage) = val.pointer("/message/usage") {
-                if let Some(n) = usage.get("input_tokens").and_then(|v| v.as_u64()) {
-                    tokens_in.store(n as u32, Ordering::Relaxed);
-                }
-                if let Some(n) = usage
+                let input = usage
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let cache_read = usage
                     .get("cache_read_input_tokens")
                     .and_then(|v| v.as_u64())
-                {
-                    cache_hit.store(n as u32, Ordering::Relaxed);
-                }
+                    .unwrap_or(0);
+                let cache_create = usage
+                    .get("cache_creation_input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                tokens_in.store((input + cache_read + cache_create) as u32, Ordering::Relaxed);
+                cache_hit.store(cache_read as u32, Ordering::Relaxed);
             }
         }
         "message_delta" => {
