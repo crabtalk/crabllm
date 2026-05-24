@@ -28,6 +28,7 @@ crabllm-provider.workspace = true
 # crates-io
 arc-swap.workspace = true
 axum.workspace = true
+parking_lot.workspace = true
 bytes.workspace = true
 dashmap.workspace = true
 futures.workspace = true

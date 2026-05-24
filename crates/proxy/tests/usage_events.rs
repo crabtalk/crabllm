@@ -169,9 +169,9 @@ async fn chat_completion_emits_one_usage_event() {
     assert_eq!(event.endpoint, "chat.completions");
     assert_eq!(event.model, "fake-model");
     assert_eq!(event.provider, "fake");
-    assert_eq!(event.tokens_in, 11);
-    assert_eq!(event.tokens_out, 22);
-    assert_eq!(event.cache_hit_tokens, 0);
+    assert_eq!(event.usage.prompt_tokens(), 11);
+    assert_eq!(event.usage.completion_tokens(), 22);
+    assert_eq!(event.usage.cache_read_tokens, 0);
     assert_eq!(event.status, 200);
     assert!(event.error.is_none());
 

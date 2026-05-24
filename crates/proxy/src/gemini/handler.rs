@@ -123,12 +123,12 @@ where
             .await
             {
                 Ok(resp_bytes) => {
-                    let (pt, ct) = peek_usage(&resp_bytes);
-                    if pt > 0 || ct > 0 {
-                        record_tokens(&ctx, pt, ct);
+                    let usage = peek_usage(&resp_bytes);
+                    if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
+                        record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                     }
                     record_duration(&ctx, "2xx");
-                    emit_usage(state, &ctx, ENDPOINT, RequestOutcome::ok(pt, ct, 0));
+                    emit_usage(state, &ctx, ENDPOINT, RequestOutcome::ok(usage));
                     return (
                         [(axum::http::header::CONTENT_TYPE, "application/json")],
                         resp_bytes,
@@ -165,16 +165,16 @@ where
         .await
         {
             Ok(resp) => {
-                let (pt, ct) = resp
+                let usage = resp
                     .usage_metadata
                     .as_ref()
-                    .map(|u| (u.prompt_token_count, u.candidates_token_count))
-                    .unwrap_or((0, 0));
-                if pt > 0 || ct > 0 {
-                    record_tokens(&ctx, pt, ct);
+                    .map(crabllm_core::Usage::from)
+                    .unwrap_or_default();
+                if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
+                    record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                 }
                 record_duration(&ctx, "2xx");
-                emit_usage(state, &ctx, ENDPOINT, RequestOutcome::ok(pt, ct, 0));
+                emit_usage(state, &ctx, ENDPOINT, RequestOutcome::ok(usage));
                 return Json(resp).into_response();
             }
             Err(e) => {
@@ -256,22 +256,16 @@ where
     error_response(e)
 }
 
-fn peek_usage(body: &[u8]) -> (u32, u32) {
+fn peek_usage(body: &[u8]) -> crabllm_core::Usage {
     #[derive(serde::Deserialize)]
     struct Peek {
         #[serde(rename = "usageMetadata")]
-        usage_metadata: Option<UsageFields>,
-    }
-    #[derive(serde::Deserialize)]
-    struct UsageFields {
-        #[serde(rename = "promptTokenCount", default)]
-        prompt_token_count: u32,
-        #[serde(rename = "candidatesTokenCount", default)]
-        candidates_token_count: u32,
+        usage_metadata: Option<crabllm_core::GeminiUsage>,
     }
     crabllm_core::json::from_slice::<Peek>(body)
         .ok()
         .and_then(|p| p.usage_metadata)
-        .map(|u| (u.prompt_token_count, u.candidates_token_count))
-        .unwrap_or((0, 0))
+        .as_ref()
+        .map(crabllm_core::Usage::from)
+        .unwrap_or_default()
 }

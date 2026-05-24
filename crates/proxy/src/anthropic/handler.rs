@@ -27,9 +27,10 @@ use axum::{
 use bytes::{Buf, BytesMut};
 use crabllm_core::{ApiError, Provider, RequestContext, Storage};
 use futures::StreamExt;
+use parking_lot::Mutex;
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::Instant;
 
@@ -157,42 +158,32 @@ where
                     let extensions = state.extensions.clone();
                     let ctx = Arc::new(ctx);
                     let errored = Arc::new(AtomicBool::new(false));
-                    let tokens_in = Arc::new(AtomicU32::new(0));
-                    let tokens_out = Arc::new(AtomicU32::new(0));
-                    let cache_hit = Arc::new(AtomicU32::new(0));
+                    let usage: Arc<Mutex<crabllm_core::Usage>> =
+                        Arc::new(Mutex::new(crabllm_core::Usage::default()));
                     let first_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
                     let ctx_done = ctx.clone();
                     let errored_done = errored.clone();
-                    let tokens_in_done = tokens_in.clone();
-                    let tokens_out_done = tokens_out.clone();
-                    let cache_hit_done = cache_hit.clone();
+                    let usage_done = usage.clone();
                     let first_error_done = first_error.clone();
 
                     let observed = stream.then(move |result| {
                         let extensions = extensions.clone();
                         let ctx = ctx.clone();
                         let errored = errored.clone();
-                        let tokens_in = tokens_in.clone();
-                        let tokens_out = tokens_out.clone();
-                        let cache_hit = cache_hit.clone();
+                        let usage = usage.clone();
                         let first_error = first_error.clone();
                         async move {
                             match &result {
                                 Ok(chunk) => {
-                                    if let Some(ref usage) = chunk.usage {
+                                    if let Some(ref wire) = chunk.usage {
+                                        let canonical = crabllm_core::Usage::from(wire);
                                         record_tokens(
                                             &ctx,
-                                            usage.prompt_tokens,
-                                            usage.completion_tokens,
+                                            canonical.prompt_tokens(),
+                                            canonical.completion_tokens(),
                                         );
-                                        tokens_in.store(usage.prompt_tokens, Ordering::Relaxed);
-                                        tokens_out
-                                            .store(usage.completion_tokens, Ordering::Relaxed);
-                                        cache_hit.store(
-                                            usage.prompt_cache_hit_tokens.unwrap_or(0),
-                                            Ordering::Relaxed,
-                                        );
+                                        *usage.lock() = canonical;
                                     }
                                     for ext in extensions.iter() {
                                         ext.on_chunk(&ctx, chunk).await;
@@ -201,7 +192,7 @@ where
                                 Err(error) => {
                                     errored.store(true, Ordering::Relaxed);
                                     {
-                                        let mut slot = first_error.lock().unwrap();
+                                        let mut slot = first_error.lock();
                                         if slot.is_none() {
                                             *slot = Some(error.to_string());
                                         }
@@ -244,9 +235,7 @@ where
                             Some((
                                 state.clone(),
                                 ctx_done,
-                                tokens_in_done,
-                                tokens_out_done,
-                                cache_hit_done,
+                                usage_done,
                                 errored_done,
                                 first_error_done,
                             )),
@@ -255,19 +244,18 @@ where
                             match inner.next().await {
                                 Some(item) => Some((item, (inner, slot))),
                                 None => {
-                                    if let Some((state, ctx, ti, to, ch, er, fe)) = slot.take() {
+                                    if let Some((state, ctx, u, er, fe)) = slot.take() {
                                         let errored = er.load(Ordering::Relaxed);
                                         record_duration(&ctx, if errored { "5xx" } else { "2xx" });
-                                        let error = fe.lock().unwrap().take();
+                                        let error = fe.lock().take();
                                         let status = if errored { 0 } else { 200 };
+                                        let usage = u.lock().clone();
                                         emit_usage(
                                             &state,
                                             &ctx,
                                             ENDPOINT,
                                             RequestOutcome {
-                                                tokens_in: ti.load(Ordering::Relaxed),
-                                                tokens_out: to.load(Ordering::Relaxed),
-                                                cache_hit_tokens: ch.load(Ordering::Relaxed),
+                                                usage,
                                                 status,
                                                 error,
                                             },
@@ -314,22 +302,16 @@ where
     for deployment in &deployments {
         match try_chat_with_retries(deployment, &request).await {
             Ok(resp) => {
-                let (pt, ct, ch) = resp
+                let usage = resp
                     .usage
                     .as_ref()
-                    .map(|u| {
-                        (
-                            u.prompt_tokens,
-                            u.completion_tokens,
-                            u.prompt_cache_hit_tokens.unwrap_or(0),
-                        )
-                    })
-                    .unwrap_or((0, 0, 0));
-                if pt > 0 || ct > 0 {
-                    record_tokens(&ctx, pt, ct);
+                    .map(crabllm_core::Usage::from)
+                    .unwrap_or_default();
+                if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
+                    record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                 }
                 record_duration(&ctx, "2xx");
-                emit_usage(&state, &ctx, ENDPOINT, RequestOutcome::ok(pt, ct, ch));
+                emit_usage(&state, &ctx, ENDPOINT, RequestOutcome::ok(usage));
                 for ext in state.extensions.iter() {
                     ext.on_response(&ctx, &request, &resp).await;
                 }
@@ -371,16 +353,7 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
 
     #[derive(serde::Deserialize)]
     struct AnthropicUsagePeek {
-        usage: Option<AnthropicUsageFields>,
-    }
-    #[derive(serde::Deserialize)]
-    struct AnthropicUsageFields {
-        #[serde(default)]
-        input_tokens: u32,
-        #[serde(default)]
-        output_tokens: u32,
-        #[serde(default)]
-        cache_read_input_tokens: Option<u32>,
+        usage: Option<crabllm_core::AnthropicUsage>,
     }
 
     let registry = state.registry();
@@ -407,23 +380,17 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         .await
         {
             Ok(resp_bytes) => {
-                let (pt, ct, ch) =
-                    crabllm_core::json::from_slice::<AnthropicUsagePeek>(&resp_bytes)
-                        .ok()
-                        .and_then(|p| p.usage)
-                        .map(|u| {
-                            (
-                                u.input_tokens,
-                                u.output_tokens,
-                                u.cache_read_input_tokens.unwrap_or(0),
-                            )
-                        })
-                        .unwrap_or((0, 0, 0));
-                if pt > 0 || ct > 0 {
-                    record_tokens(&ctx, pt, ct);
+                let usage = crabllm_core::json::from_slice::<AnthropicUsagePeek>(&resp_bytes)
+                    .ok()
+                    .and_then(|p| p.usage)
+                    .as_ref()
+                    .map(crabllm_core::Usage::from)
+                    .unwrap_or_default();
+                if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
+                    record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                 }
                 record_duration(&ctx, "2xx");
-                emit_usage(state, &ctx, ENDPOINT, RequestOutcome::ok(pt, ct, ch));
+                emit_usage(state, &ctx, ENDPOINT, RequestOutcome::ok(usage));
                 return (
                     [(axum::http::header::CONTENT_TYPE, "application/json")],
                     resp_bytes,
@@ -458,16 +425,13 @@ fn raw_anthropic_stream_response<S: Storage + 'static, P: Provider + 'static>(
     ctx: RequestContext,
 ) -> Response {
     let ctx = Arc::new(ctx);
-    let tokens_in = Arc::new(AtomicU32::new(0));
-    let tokens_out = Arc::new(AtomicU32::new(0));
-    let cache_hit = Arc::new(AtomicU32::new(0));
+    let usage: Arc<Mutex<crabllm_core::Usage>> =
+        Arc::new(Mutex::new(crabllm_core::Usage::default()));
     let errored = Arc::new(AtomicBool::new(false));
     let first_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     let ctx_c = ctx.clone();
-    let tokens_in_c = tokens_in.clone();
-    let tokens_out_c = tokens_out.clone();
-    let cache_hit_c = cache_hit.clone();
+    let usage_c = usage.clone();
     let errored_c = errored.clone();
     let first_error_c = first_error.clone();
 
@@ -475,26 +439,17 @@ fn raw_anthropic_stream_response<S: Storage + 'static, P: Provider + 'static>(
 
     let sse_stream = events.map(move |result| match result {
         Ok((event_name, data)) => {
-            peek_anthropic_usage(
-                &event_name,
-                &data,
-                &tokens_in_c,
-                &tokens_out_c,
-                &cache_hit_c,
-            );
-            if tokens_in_c.load(Ordering::Relaxed) > 0 || tokens_out_c.load(Ordering::Relaxed) > 0 {
-                record_tokens(
-                    &ctx_c,
-                    tokens_in_c.load(Ordering::Relaxed),
-                    tokens_out_c.load(Ordering::Relaxed),
-                );
+            peek_anthropic_usage(&event_name, &data, &usage_c);
+            let snapshot = usage_c.lock().clone();
+            if snapshot.prompt_tokens() > 0 || snapshot.completion_tokens() > 0 {
+                record_tokens(&ctx_c, snapshot.prompt_tokens(), snapshot.completion_tokens());
             }
             Ok::<_, std::convert::Infallible>(Event::default().event(event_name).data(data))
         }
         Err(e) => {
             errored_c.store(true, Ordering::Relaxed);
             {
-                let mut slot = first_error_c.lock().unwrap();
+                let mut slot = first_error_c.lock();
                 if slot.is_none() {
                     *slot = Some(e.to_string());
                 }
@@ -515,33 +470,24 @@ fn raw_anthropic_stream_response<S: Storage + 'static, P: Provider + 'static>(
     let finalized = futures::stream::unfold(
         (
             Box::pin(sse_stream),
-            Some((
-                state,
-                ctx,
-                tokens_in,
-                tokens_out,
-                cache_hit,
-                errored,
-                first_error,
-            )),
+            Some((state, ctx, usage, errored, first_error)),
         ),
         |(mut inner, mut slot)| async move {
             match inner.next().await {
                 Some(item) => Some((item, (inner, slot))),
                 None => {
-                    if let Some((state, ctx, ti, to, ch, er, fe)) = slot.take() {
+                    if let Some((state, ctx, u, er, fe)) = slot.take() {
                         let errored = er.load(Ordering::Relaxed);
                         record_duration(&ctx, if errored { "5xx" } else { "2xx" });
-                        let error = fe.lock().unwrap().take();
+                        let error = fe.lock().take();
                         let status = if errored { 0 } else { 200 };
+                        let usage = u.lock().clone();
                         emit_usage(
                             &state,
                             &ctx,
                             ENDPOINT,
                             RequestOutcome {
-                                tokens_in: ti.load(Ordering::Relaxed),
-                                tokens_out: to.load(Ordering::Relaxed),
-                                cache_hit_tokens: ch.load(Ordering::Relaxed),
+                                usage,
                                 status,
                                 error,
                             },
@@ -611,14 +557,11 @@ fn anthropic_raw_sse(
     )
 }
 
-/// Extract usage tokens from Anthropic SSE event data.
-fn peek_anthropic_usage(
-    event_name: &str,
-    data: &str,
-    tokens_in: &AtomicU32,
-    tokens_out: &AtomicU32,
-    cache_hit: &AtomicU32,
-) {
+/// Extract canonical usage axes from raw Anthropic SSE event data. Reads
+/// `message_start.usage` (input + cache_read + cache_create) and
+/// `message_delta.usage` (output_tokens) into the shared snapshot. Subsequent
+/// events overwrite — Anthropic's stream usage is cumulative-to-this-point.
+fn peek_anthropic_usage(event_name: &str, data: &str, usage: &Mutex<crabllm_core::Usage>) {
     let val: serde_json::Value = match serde_json::from_str(data) {
         Ok(v) => v,
         Err(_) => return,
@@ -626,32 +569,27 @@ fn peek_anthropic_usage(
 
     match event_name {
         "message_start" => {
-            // Anthropic's `input_tokens` is only the uncached portion;
-            // cache reads/creates are additive separate fields. Sum them so
-            // `tokens_in` carries the OpenAI-style total prompt size, keeping
-            // `cache_hit <= tokens_in` for downstream billing.
-            if let Some(usage) = val.pointer("/message/usage") {
-                let input = usage
+            if let Some(u) = val.pointer("/message/usage") {
+                let mut snap = usage.lock();
+                snap.input_tokens = u
                     .get("input_tokens")
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let cache_read = usage
+                    .unwrap_or(0) as u32;
+                snap.cache_read_tokens = u
                     .get("cache_read_input_tokens")
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let cache_create = usage
+                    .unwrap_or(0) as u32;
+                snap.cache_write_tokens = u
                     .get("cache_creation_input_tokens")
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                tokens_in.store((input + cache_read + cache_create) as u32, Ordering::Relaxed);
-                cache_hit.store(cache_read as u32, Ordering::Relaxed);
+                    .unwrap_or(0) as u32;
             }
         }
         "message_delta" => {
-            if let Some(usage) = val.get("usage")
-                && let Some(n) = usage.get("output_tokens").and_then(|v| v.as_u64())
+            if let Some(u) = val.get("usage")
+                && let Some(n) = u.get("output_tokens").and_then(|v| v.as_u64())
             {
-                tokens_out.store(n as u32, Ordering::Relaxed);
+                usage.lock().output_tokens = n as u32;
             }
         }
         _ => {}

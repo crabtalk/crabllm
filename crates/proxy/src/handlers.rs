@@ -16,9 +16,10 @@ use crabllm_core::{
 use crabllm_provider::Deployment;
 use futures::StreamExt;
 use rand::Rng;
+use parking_lot::Mutex;
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant, SystemTime};
 
@@ -63,19 +64,15 @@ pub(crate) fn record_tokens(ctx: &RequestContext, prompt: u32, completion: u32) 
 }
 
 pub(crate) struct RequestOutcome {
-    pub tokens_in: u32,
-    pub tokens_out: u32,
-    pub cache_hit_tokens: u32,
+    pub usage: crabllm_core::Usage,
     pub status: u16,
     pub error: Option<String>,
 }
 
 impl RequestOutcome {
-    pub fn ok(tokens_in: u32, tokens_out: u32, cache_hit_tokens: u32) -> Self {
+    pub fn ok(usage: crabllm_core::Usage) -> Self {
         Self {
-            tokens_in,
-            tokens_out,
-            cache_hit_tokens,
+            usage,
             status: 200,
             error: None,
         }
@@ -98,9 +95,7 @@ pub(crate) fn emit_usage<S: Storage, P: Provider>(
         model: ctx.model.clone(),
         provider: ctx.provider.clone(),
         endpoint,
-        tokens_in: outcome.tokens_in,
-        tokens_out: outcome.tokens_out,
-        cache_hit_tokens: outcome.cache_hit_tokens,
+        usage: outcome.usage,
         duration_ms: ctx.started_at.elapsed().as_millis() as u64,
         status: outcome.status,
         error: outcome.error,
@@ -141,9 +136,7 @@ pub(crate) fn emit_usage_error<S: Storage, P: Provider>(
         ctx,
         endpoint,
         RequestOutcome {
-            tokens_in: 0,
-            tokens_out: 0,
-            cache_hit_tokens: 0,
+            usage: crabllm_core::Usage::default(),
             status: http_status_from_error(e),
             error: Some(e.to_string()),
         },
@@ -275,16 +268,13 @@ where
                     // poll ordering. No cross-thread visibility problem
                     // exists; the atomics only provide interior
                     // mutability across closure clones.
-                    let tokens_in = Arc::new(AtomicU32::new(0));
-                    let tokens_out = Arc::new(AtomicU32::new(0));
-                    let cache_hit = Arc::new(AtomicU32::new(0));
+                    let usage: Arc<Mutex<crabllm_core::Usage>> =
+                        Arc::new(Mutex::new(crabllm_core::Usage::default()));
                     let first_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
                     let ctx_done = ctx.clone();
                     let errored_done = errored.clone();
-                    let tokens_in_done = tokens_in.clone();
-                    let tokens_out_done = tokens_out.clone();
-                    let cache_hit_done = cache_hit.clone();
+                    let usage_done = usage.clone();
                     let first_error_done = first_error.clone();
                     let state_done = state.clone();
 
@@ -292,28 +282,21 @@ where
                         let extensions = extensions.clone();
                         let ctx = ctx.clone();
                         let errored = errored.clone();
-                        let tokens_in = tokens_in.clone();
-                        let tokens_out = tokens_out.clone();
-                        let cache_hit = cache_hit.clone();
+                        let usage = usage.clone();
                         let first_error = first_error.clone();
                         async move {
                             match &result {
                                 Ok(chunk) => {
                                     // Token usage arrives in the final chunk when
                                     // the provider supports stream_options.include_usage.
-                                    if let Some(ref usage) = chunk.usage {
+                                    if let Some(ref wire) = chunk.usage {
+                                        let canonical = crabllm_core::Usage::from(wire);
                                         record_tokens(
                                             &ctx,
-                                            usage.prompt_tokens,
-                                            usage.completion_tokens,
+                                            canonical.prompt_tokens(),
+                                            canonical.completion_tokens(),
                                         );
-                                        tokens_in.store(usage.prompt_tokens, Ordering::Relaxed);
-                                        tokens_out
-                                            .store(usage.completion_tokens, Ordering::Relaxed);
-                                        cache_hit.store(
-                                            usage.prompt_cache_hit_tokens.unwrap_or(0),
-                                            Ordering::Relaxed,
-                                        );
+                                        *usage.lock() = canonical;
                                     }
                                     for ext in extensions.iter() {
                                         ext.on_chunk(&ctx, chunk).await;
@@ -322,7 +305,7 @@ where
                                 Err(error) => {
                                     errored.store(true, Ordering::Relaxed);
                                     {
-                                        let mut slot = first_error.lock().unwrap();
+                                        let mut slot = first_error.lock();
                                         if slot.is_none() {
                                             *slot = Some(error.to_string());
                                         }
@@ -364,16 +347,15 @@ where
                     let done = futures::stream::once(async move {
                         let errored = errored_done.load(Ordering::Relaxed);
                         record_duration(&ctx_done, if errored { "5xx" } else { "2xx" });
-                        let error = first_error_done.lock().unwrap().take();
+                        let error = first_error_done.lock().take();
                         let status = if errored { 0 } else { 200 };
+                        let usage = usage_done.lock().clone();
                         emit_usage(
                             &state_done,
                             &ctx_done,
                             "chat.completions",
                             RequestOutcome {
-                                tokens_in: tokens_in_done.load(Ordering::Relaxed),
-                                tokens_out: tokens_out_done.load(Ordering::Relaxed),
-                                cache_hit_tokens: cache_hit_done.load(Ordering::Relaxed),
+                                usage,
                                 status,
                                 error,
                             },
@@ -412,26 +394,20 @@ where
         for deployment in &deployments {
             match try_chat_with_retries(deployment, &request).await {
                 Ok(resp) => {
-                    let (pt, ct, ch) = resp
+                    let usage = resp
                         .usage
                         .as_ref()
-                        .map(|u| {
-                            (
-                                u.prompt_tokens,
-                                u.completion_tokens,
-                                u.prompt_cache_hit_tokens.unwrap_or(0),
-                            )
-                        })
-                        .unwrap_or((0, 0, 0));
-                    if pt > 0 || ct > 0 {
-                        record_tokens(&ctx, pt, ct);
+                        .map(crabllm_core::Usage::from)
+                        .unwrap_or_default();
+                    if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
+                        record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                     }
                     record_duration(&ctx, "2xx");
                     emit_usage(
                         &state,
                         &ctx,
                         "chat.completions",
-                        RequestOutcome::ok(pt, ct, ch),
+                        RequestOutcome::ok(usage),
                     );
                     for ext in state.extensions.iter() {
                         ext.on_response(&ctx, &request, &resp).await;
@@ -489,27 +465,17 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
         .await
         {
             Ok(resp_bytes) => {
-                let (pt, ct, ch) = crabllm_core::json::from_slice::<UsagePeek>(&resp_bytes)
+                let usage = crabllm_core::json::from_slice::<UsagePeek>(&resp_bytes)
                     .ok()
                     .and_then(|p| p.usage)
-                    .map(|u| {
-                        (
-                            u.prompt_tokens,
-                            u.completion_tokens,
-                            u.prompt_cache_hit_tokens.unwrap_or(0),
-                        )
-                    })
-                    .unwrap_or((0, 0, 0));
-                if pt > 0 || ct > 0 {
-                    record_tokens(&ctx, pt, ct);
+                    .as_ref()
+                    .map(crabllm_core::Usage::from)
+                    .unwrap_or_default();
+                if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
+                    record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                 }
                 record_duration(&ctx, "2xx");
-                emit_usage(
-                    state,
-                    &ctx,
-                    "chat.completions",
-                    RequestOutcome::ok(pt, ct, ch),
-                );
+                emit_usage(state, &ctx, "chat.completions", RequestOutcome::ok(usage));
                 return (
                     [(axum::http::header::CONTENT_TYPE, "application/json")],
                     resp_bytes,
@@ -594,7 +560,10 @@ where
                     &state,
                     &ctx,
                     "embeddings",
-                    RequestOutcome::ok(resp.usage.prompt_tokens, 0, 0),
+                    RequestOutcome::ok(crabllm_core::Usage {
+                        input_tokens: resp.usage.prompt_tokens,
+                        ..Default::default()
+                    }),
                 );
                 return Json(resp).into_response();
             }
@@ -749,7 +718,7 @@ where
                     &state,
                     &ctx,
                     "images.generations",
-                    RequestOutcome::ok(0, 0, 0),
+                    RequestOutcome::ok(crabllm_core::Usage::default()),
                 );
                 return ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
             }
@@ -828,7 +797,7 @@ where
         {
             Ok((bytes, content_type)) => {
                 record_duration(&ctx, "2xx");
-                emit_usage(&state, &ctx, "audio.speech", RequestOutcome::ok(0, 0, 0));
+                emit_usage(&state, &ctx, "audio.speech", RequestOutcome::ok(crabllm_core::Usage::default()));
                 return ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
             }
             Err(e) => last_err = Some(e),
@@ -960,7 +929,7 @@ where
                     &state,
                     &ctx,
                     "audio.transcriptions",
-                    RequestOutcome::ok(0, 0, 0),
+                    RequestOutcome::ok(crabllm_core::Usage::default()),
                 );
                 return ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
             }
