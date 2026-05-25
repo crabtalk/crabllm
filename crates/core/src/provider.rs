@@ -133,6 +133,27 @@ pub trait Provider: Send + Sync {
         false
     }
 
+    /// Stream a request body directly to an OpenAI-compatible endpoint and
+    /// return the raw SSE response stream. The body is consumed — no retries.
+    fn chat_completion_stream_passthrough(
+        &self,
+        _model: &str,
+        _body_stream: crate::ByteStream,
+    ) -> impl Future<Output = Result<crate::ByteStream, Error>> + Send {
+        async { Err(Error::not_implemented("chat_completion_stream_passthrough")) }
+    }
+
+    /// Stream raw OpenAI SSE bytes from an OpenAI-compatible endpoint.
+    /// The default returns `not_implemented`. OpenAI-compatible providers
+    /// override to forward bytes without deserialization.
+    fn chat_completion_stream_raw(
+        &self,
+        _model: &str,
+        _raw_body: Bytes,
+    ) -> impl Future<Output = Result<crate::ByteStream, Error>> + Send {
+        async { Err(Error::not_implemented("chat_completion_stream_raw")) }
+    }
+
     /// Forward raw OpenAI-format JSON body and return raw response bytes.
     /// The default deserializes, calls [`chat_completion`](Self::chat_completion),
     /// and re-serializes. OpenAI-compatible providers override to skip serde.

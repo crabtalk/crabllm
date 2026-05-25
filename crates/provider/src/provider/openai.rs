@@ -80,6 +80,29 @@ impl Provider for OpenaiProvider {
         true
     }
 
+    async fn chat_completion_stream_passthrough(
+        &self,
+        _model: &str,
+        body_stream: crabllm_core::ByteStream,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let headers = [
+            ("content-type", "application/json"),
+            ("authorization", &format!("Bearer {}", self.api_key)),
+        ];
+        self.client
+            .post_stream_body(&url, &headers, body_stream)
+            .await
+    }
+
+    async fn chat_completion_stream_raw(
+        &self,
+        _model: &str,
+        raw_body: Bytes,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        chat_completion_stream_raw(&self.client, &self.base_url, &self.api_key, raw_body).await
+    }
+
     async fn chat_completion_raw(&self, _model: &str, raw_body: Bytes) -> Result<Bytes, Error> {
         chat_completion_raw(&self.client, &self.base_url, &self.api_key, raw_body).await
     }
@@ -170,6 +193,21 @@ pub async fn chat_completion_raw(
     }
 
     Ok(resp.body)
+}
+
+/// Stream raw SSE bytes from an OpenAI-compatible chat completions endpoint.
+pub async fn chat_completion_stream_raw(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+    raw_body: Bytes,
+) -> Result<ByteStream, Error> {
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let headers = [
+        ("content-type", "application/json"),
+        ("authorization", &format!("Bearer {api_key}")),
+    ];
+    client.post_stream(&url, &headers, raw_body).await
 }
 
 /// Send a streaming chat completion to an OpenAI-compatible endpoint.

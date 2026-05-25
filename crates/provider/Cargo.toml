@@ -11,7 +11,7 @@ categories = ["web-programming::http-client", "network-programming"]
 
 [features]
 default = ["hyper", "native-tls", "http2"]
-hyper = ["dep:hyper", "dep:hyper-util", "dep:http", "dep:http-body-util"]
+hyper = ["dep:hyper", "dep:hyper-util", "dep:http", "dep:http-body", "dep:http-body-util"]
 reqwest = ["dep:reqwest"]
 http2 = [
     "hyper?/http2",
@@ -40,6 +40,7 @@ tracing.workspace = true
 hyper = { workspace = true, optional = true }
 hyper-util = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
+http-body = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
 hyper-rustls = { workspace = true, optional = true }
 hyper-tls = { workspace = true, optional = true }

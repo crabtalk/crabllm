@@ -1,8 +1,7 @@
 use crate::PREFIX_BUDGET;
 use axum::{Json, Router, routing::get};
 use crabllm_core::{
-    BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ExtensionError,
-    ModelInfo, RequestContext, Storage, storage_key,
+    BoxFuture, ExtensionError, ModelInfo, RequestContext, Storage, storage_key,
 };
 use serde::Serialize;
 use std::{collections::HashMap, sync::Arc};
@@ -137,41 +136,43 @@ impl crabllm_core::Extension for Budget {
     fn on_response(
         &self,
         ctx: &RequestContext,
-        _request: &ChatCompletionRequest,
-        response: &ChatCompletionResponse,
+        _raw_request: &[u8],
+        raw_response: &[u8],
     ) -> BoxFuture<'_, ()> {
+        let usage = crabllm_core::Usage::from(raw_response);
+        if usage.total_tokens() == 0 {
+            return Box::pin(async {});
+        }
+
         let principal = ctx
             .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
         let provider = ctx.provider.clone();
-        let usage = response.usage.clone();
 
         Box::pin(async move {
-            if let Some(u) = usage {
-                let canonical = crabllm_core::Usage::from(&u);
-                self.record_cost(&principal, &model, &provider, &canonical)
-                    .await;
-            }
+            self.record_cost(&principal, &model, &provider, &usage)
+                .await;
         })
     }
 
-    fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
+    fn on_chunk(&self, ctx: &RequestContext, raw_chunk: &[u8]) -> BoxFuture<'_, ()> {
+        let usage = crabllm_core::Usage::from(raw_chunk);
+        if usage.total_tokens() == 0 {
+            return Box::pin(async {});
+        }
+
         let principal = ctx
             .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
         let provider = ctx.provider.clone();
-        let usage = chunk.usage.clone();
 
         Box::pin(async move {
-            if let Some(u) = usage {
-                let canonical = crabllm_core::Usage::from(&u);
-                self.record_cost(&principal, &model, &provider, &canonical)
-                    .await;
-            }
+            self.record_cost(&principal, &model, &provider, &usage)
+                .await;
         })
     }
 }

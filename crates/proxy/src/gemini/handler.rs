@@ -128,7 +128,7 @@ where
             .await
             {
                 Ok(resp_bytes) => {
-                    let usage = peek_usage(&resp_bytes);
+                    let usage = crabllm_core::Usage::from(resp_bytes.as_ref());
                     if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
                         record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                     }
@@ -341,16 +341,3 @@ where
     error_response(e)
 }
 
-fn peek_usage(body: &[u8]) -> crabllm_core::Usage {
-    #[derive(serde::Deserialize)]
-    struct Peek {
-        #[serde(rename = "usageMetadata")]
-        usage_metadata: Option<crabllm_core::GeminiUsage>,
-    }
-    crabllm_core::json::from_slice::<Peek>(body)
-        .ok()
-        .and_then(|p| p.usage_metadata)
-        .as_ref()
-        .map(crabllm_core::Usage::from)
-        .unwrap_or_default()
-}

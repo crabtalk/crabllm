@@ -1,9 +1,6 @@
 use crate::PREFIX_USAGE;
 use axum::{Json, Router, extract::Query, routing::get};
-use crabllm_core::{
-    BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, RequestContext,
-    Storage, storage_key,
-};
+use crabllm_core::{BoxFuture, RequestContext, Storage, storage_key};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -79,49 +76,53 @@ impl crabllm_core::Extension for UsageTracker {
     fn on_response(
         &self,
         ctx: &RequestContext,
-        _request: &ChatCompletionRequest,
-        response: &ChatCompletionResponse,
+        _raw_request: &[u8],
+        raw_response: &[u8],
     ) -> BoxFuture<'_, ()> {
+        let usage = crabllm_core::Usage::from(raw_response);
+        if usage.total_tokens() == 0 {
+            return Box::pin(async {});
+        }
+
         let principal = ctx
             .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
-        let usage = response.usage.clone();
 
         Box::pin(async move {
-            if let Some(u) = usage {
-                self.record(
-                    &principal,
-                    &model,
-                    u.prompt_tokens,
-                    u.completion_tokens,
-                    u.prompt_cache_hit_tokens.unwrap_or(0),
-                )
-                .await;
-            }
+            self.record(
+                &principal,
+                &model,
+                usage.prompt_tokens(),
+                usage.completion_tokens(),
+                usage.cache_read_tokens,
+            )
+            .await;
         })
     }
 
-    fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
+    fn on_chunk(&self, ctx: &RequestContext, raw_chunk: &[u8]) -> BoxFuture<'_, ()> {
+        let usage = crabllm_core::Usage::from(raw_chunk);
+        if usage.total_tokens() == 0 {
+            return Box::pin(async {});
+        }
+
         let principal = ctx
             .principal
             .clone()
             .unwrap_or_else(|| "__global".to_string());
         let model = ctx.model.clone();
-        let usage = chunk.usage.clone();
 
         Box::pin(async move {
-            if let Some(u) = usage {
-                self.record(
-                    &principal,
-                    &model,
-                    u.prompt_tokens,
-                    u.completion_tokens,
-                    u.prompt_cache_hit_tokens.unwrap_or(0),
-                )
-                .await;
-            }
+            self.record(
+                &principal,
+                &model,
+                usage.prompt_tokens(),
+                usage.completion_tokens(),
+                usage.cache_read_tokens,
+            )
+            .await;
         })
     }
 }

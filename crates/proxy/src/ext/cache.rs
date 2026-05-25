@@ -1,26 +1,11 @@
 use crate::PREFIX_CACHE;
 use axum::{Router, http::StatusCode, routing::delete};
-use crabllm_core::{
-    BoxFuture, ChatCompletionRequest, ChatCompletionResponse, RequestContext, Storage, storage_key,
-};
+use crabllm_core::{BoxFuture, RequestContext, Storage, storage_key};
 use sha2::{Digest, Sha256};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-
-/// Adapter that feeds bytes directly into a SHA-256 digest (no intermediate buffer).
-struct DigestWriter<'a>(&'a mut Sha256);
-
-impl std::io::Write for DigestWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.update(buf);
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
 
 pub struct Cache {
     storage: Arc<dyn Storage>,
@@ -40,10 +25,9 @@ impl Cache {
         })
     }
 
-    fn cache_key(request: &ChatCompletionRequest) -> Vec<u8> {
+    fn cache_key(raw_request: &[u8]) -> Vec<u8> {
         let mut hasher = Sha256::new();
-        // Write JSON directly into the hasher — no intermediate String allocation.
-        let _ = serde_json::to_writer(DigestWriter(&mut hasher), request);
+        hasher.update(raw_request);
         storage_key(&PREFIX_CACHE, &hasher.finalize())
     }
 
@@ -82,11 +66,8 @@ impl crabllm_core::Extension for Cache {
         PREFIX_CACHE
     }
 
-    fn on_cache_lookup(
-        &self,
-        request: &ChatCompletionRequest,
-    ) -> BoxFuture<'_, Option<ChatCompletionResponse>> {
-        let key = Self::cache_key(request);
+    fn on_cache_lookup(&self, raw_request: &[u8]) -> BoxFuture<'_, Option<Vec<u8>>> {
+        let key = Self::cache_key(raw_request);
         let ttl = self.ttl_seconds;
 
         Box::pin(async move {
@@ -101,28 +82,24 @@ impl crabllm_core::Extension for Cache {
                 return None;
             }
 
-            crabllm_core::json::from_slice(&data[8..]).ok()
+            Some(data[8..].to_vec())
         })
     }
 
     fn on_response(
         &self,
         ctx: &RequestContext,
-        request: &ChatCompletionRequest,
-        response: &ChatCompletionResponse,
+        raw_request: &[u8],
+        raw_response: &[u8],
     ) -> BoxFuture<'_, ()> {
         if ctx.is_stream {
             return Box::pin(async {});
         }
 
-        let key = Self::cache_key(request);
-        let Ok(json) = crabllm_core::json::to_vec(response) else {
-            return Box::pin(async {});
-        };
-
-        let mut value = Vec::with_capacity(8 + json.len());
+        let key = Self::cache_key(raw_request);
+        let mut value = Vec::with_capacity(8 + raw_response.len());
         value.extend_from_slice(&Self::now_secs().to_be_bytes());
-        value.extend_from_slice(&json);
+        value.extend_from_slice(raw_response);
 
         Box::pin(async move {
             let _ = self.storage.set(&key, value).await;

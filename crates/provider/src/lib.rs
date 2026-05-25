@@ -422,6 +422,36 @@ impl Provider for RemoteProvider {
         }
     }
 
+    async fn chat_completion_stream_passthrough(
+        &self,
+        model: &str,
+        body_stream: crabllm_core::ByteStream,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        match self {
+            Self::Openai(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
+            Self::Anthropic(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
+            Self::Deepseek(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
+            Self::Google(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
+            Self::Bedrock(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
+            Self::Azure(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
+        }
+    }
+
+    async fn chat_completion_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        match self {
+            Self::Openai(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Anthropic(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Deepseek(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Google(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Bedrock(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Azure(p) => p.chat_completion_stream_raw(model, raw_body).await,
+        }
+    }
+
     async fn chat_completion_raw(&self, model: &str, raw_body: Bytes) -> Result<Bytes, Error> {
         match self {
             Self::Openai(p) => p.chat_completion_raw(model, raw_body).await,

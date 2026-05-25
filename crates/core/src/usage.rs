@@ -50,3 +50,51 @@ impl Usage {
         self.prompt_tokens() + self.completion_tokens()
     }
 }
+
+mod peek {
+    use crate::types::{AnthropicUsage, GeminiUsage, OpenAiUsage};
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    pub struct OpenAi {
+        pub usage: Option<OpenAiUsage>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct Anthropic {
+        pub usage: Option<AnthropicUsage>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Gemini {
+        pub usage_metadata: Option<GeminiUsage>,
+    }
+}
+
+impl From<&[u8]> for Usage {
+    fn from(raw: &[u8]) -> Self {
+        if let Ok(peek::OpenAi { usage: Some(u) }) = crate::json::from_slice(raw) {
+            if u.prompt_tokens > 0 || u.completion_tokens > 0 {
+                return Usage::from(&u);
+            }
+        }
+
+        if let Ok(peek::Anthropic { usage: Some(u) }) = crate::json::from_slice(raw) {
+            if u.input_tokens > 0 || u.output_tokens > 0 {
+                return Usage::from(&u);
+            }
+        }
+
+        if let Ok(peek::Gemini {
+            usage_metadata: Some(u),
+        }) = crate::json::from_slice(raw)
+        {
+            if u.total_token_count > 0 {
+                return Usage::from(&u);
+            }
+        }
+
+        Usage::default()
+    }
+}

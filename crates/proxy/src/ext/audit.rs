@@ -7,8 +7,7 @@ use axum::{
     routing::get,
 };
 use crabllm_core::{
-    ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
-    ModelInfo, RequestContext, Storage, storage_key,
+    ApiError, BoxFuture, Error, ModelInfo, RequestContext, Storage, storage_key,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::SystemTime};
@@ -91,27 +90,10 @@ impl crabllm_core::Extension for AuditLogger {
     fn on_response(
         &self,
         ctx: &RequestContext,
-        _request: &ChatCompletionRequest,
-        response: &ChatCompletionResponse,
+        _raw_request: &[u8],
+        raw_response: &[u8],
     ) -> BoxFuture<'_, ()> {
-        let Some(wire) = response.usage.as_ref() else {
-            self.write_record(AuditRecord {
-                request_id: ctx.request_id.clone(),
-                timestamp: now_millis(),
-                principal: ctx.principal.clone().unwrap_or_default(),
-                model: ctx.model.clone(),
-                provider: ctx.provider.clone(),
-                prompt_tokens: None,
-                completion_tokens: None,
-                cache_hit_tokens: None,
-                cost_micros: 0,
-                latency_ms: ctx.started_at.elapsed().as_millis() as u64,
-                status: 200,
-                error: None,
-            });
-            return Box::pin(async {});
-        };
-        let usage = crabllm_core::Usage::from(wire);
+        let usage = crabllm_core::Usage::from(raw_response);
         let cost_micros = self.cost_micros(&ctx.model, &ctx.provider, &usage);
 
         self.write_record(AuditRecord {
@@ -120,8 +102,16 @@ impl crabllm_core::Extension for AuditLogger {
             principal: ctx.principal.clone().unwrap_or_default(),
             model: ctx.model.clone(),
             provider: ctx.provider.clone(),
-            prompt_tokens: Some(usage.prompt_tokens()),
-            completion_tokens: Some(usage.completion_tokens()),
+            prompt_tokens: if usage.total_tokens() > 0 {
+                Some(usage.prompt_tokens())
+            } else {
+                None
+            },
+            completion_tokens: if usage.total_tokens() > 0 {
+                Some(usage.completion_tokens())
+            } else {
+                None
+            },
             cache_hit_tokens: if usage.cache_read_tokens > 0 {
                 Some(usage.cache_read_tokens)
             } else {
@@ -136,9 +126,9 @@ impl crabllm_core::Extension for AuditLogger {
         Box::pin(async {})
     }
 
-    fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
-        if let Some(ref wire) = chunk.usage {
-            let usage = crabllm_core::Usage::from(wire);
+    fn on_chunk(&self, ctx: &RequestContext, raw_chunk: &[u8]) -> BoxFuture<'_, ()> {
+        let usage = crabllm_core::Usage::from(raw_chunk);
+        if usage.total_tokens() > 0 {
             let cost_micros = self.cost_micros(&ctx.model, &ctx.provider, &usage);
 
             self.write_record(AuditRecord {

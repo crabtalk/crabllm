@@ -1,7 +1,6 @@
 use crate::{PREFIX_KEYS, PREFIX_RATE_LIMIT};
 use crabllm_core::{
-    BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ExtensionError,
-    KeyConfig, KeyRateLimit, RequestContext, Storage, storage_key,
+    BoxFuture, ExtensionError, KeyConfig, KeyRateLimit, RequestContext, Storage, storage_key,
 };
 use std::{
     sync::Arc,
@@ -142,22 +141,15 @@ impl crabllm_core::Extension for RateLimit {
     fn on_response(
         &self,
         ctx: &RequestContext,
-        _request: &ChatCompletionRequest,
-        response: &ChatCompletionResponse,
+        _raw_request: &[u8],
+        raw_response: &[u8],
     ) -> BoxFuture<'_, ()> {
-        let total_tokens = response
-            .usage
-            .as_ref()
-            .map(|u| u.total_tokens as i64)
-            .unwrap_or(0);
-
+        let usage = crabllm_core::Usage::from(raw_response);
+        let total_tokens = usage.total_tokens() as i64;
         if total_tokens == 0 {
             return Box::pin(async {});
         }
 
-        // Always record TPM — per-key overrides may enable TPM even when
-        // the global config has no tokens_per_minute. The actual limit
-        // check happens in on_request(); here we just track the counter.
         let principal = ctx.principal.as_deref().unwrap_or("__global");
         let minute = current_minute();
         let tpm_suffix = format!("{principal}:tpm:{minute}");
@@ -168,13 +160,9 @@ impl crabllm_core::Extension for RateLimit {
         })
     }
 
-    fn on_chunk(&self, ctx: &RequestContext, chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
-        let total_tokens = chunk
-            .usage
-            .as_ref()
-            .map(|u| u.total_tokens as i64)
-            .unwrap_or(0);
-
+    fn on_chunk(&self, ctx: &RequestContext, raw_chunk: &[u8]) -> BoxFuture<'_, ()> {
+        let usage = crabllm_core::Usage::from(raw_chunk);
+        let total_tokens = usage.total_tokens() as i64;
         if total_tokens == 0 {
             return Box::pin(async {});
         }

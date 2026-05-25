@@ -94,11 +94,9 @@ where
         }
     };
 
-    // Raw byte proxy: non-streaming, no extensions, Anthropic-compatible upstream.
-    if !is_stream
-        && state.extensions.is_empty()
-        && deployments.iter().all(|d| d.provider.is_anthropic_compat())
-    {
+    // Raw byte proxy: non-streaming, Anthropic-compatible upstream.
+    // Extensions receive raw bytes and deserialize only what they need.
+    if !is_stream && deployments.iter().all(|d| d.provider.is_anthropic_compat()) {
         return handle_raw_anthropic(&state, principal, &model, &deployments, raw_body).await;
     }
 
@@ -185,8 +183,12 @@ where
                                         );
                                         *usage.lock() = canonical;
                                     }
-                                    for ext in extensions.iter() {
-                                        ext.on_chunk(&ctx, chunk).await;
+                                    if !extensions.is_empty() {
+                                        let raw = crabllm_core::json::to_vec(chunk)
+                                            .unwrap_or_default();
+                                        for ext in extensions.iter() {
+                                            ext.on_chunk(&ctx, &raw).await;
+                                        }
                                     }
                                 }
                                 Err(error) => {
@@ -285,47 +287,55 @@ where
         return error_response(e);
     }
 
+    // Non-streaming non-compat: deserialization needed for format translation.
+    // Extensions still receive raw bytes.
+    for ext in state.extensions.iter() {
+        if let Some(cached) = ext.on_cache_lookup(&raw_body).await {
+            return (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                cached,
+            )
+                .into_response();
+        }
+    }
+
     let request = match deserialize_request(&raw_body) {
         Ok(r) => r,
         Err(resp) => return resp,
     };
 
-    for ext in state.extensions.iter() {
-        if let Some(cached) = ext.on_cache_lookup(&request).await
-            && let Ok(resp) = from_chat_completion(cached)
-        {
-            return Json(resp).into_response();
-        }
-    }
-
     let mut last_err = None;
     for deployment in &deployments {
         match try_chat_with_retries(deployment, &request).await {
             Ok(resp) => {
-                let usage = resp
-                    .usage
-                    .as_ref()
-                    .map(crabllm_core::Usage::from)
-                    .unwrap_or_default();
-                if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
-                    record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
-                }
-                record_duration(&ctx, "2xx");
-                emit_usage(&state, &ctx, ENDPOINT, RequestOutcome::ok(usage));
-                for ext in state.extensions.iter() {
-                    ext.on_response(&ctx, &request, &resp).await;
-                }
-                return match from_chat_completion(resp) {
-                    Ok(anthropic) => Json(anthropic).into_response(),
+                match from_chat_completion(resp) {
+                    Ok(anthropic) => {
+                        let resp_bytes =
+                            crabllm_core::json::to_vec(&anthropic).unwrap_or_default();
+                        let usage = crabllm_core::Usage::from(resp_bytes.as_slice());
+                        if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
+                            record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
+                        }
+                        record_duration(&ctx, "2xx");
+                        emit_usage(&state, &ctx, ENDPOINT, RequestOutcome::ok(usage));
+                        for ext in state.extensions.iter() {
+                            ext.on_response(&ctx, &raw_body, &resp_bytes).await;
+                        }
+                        return (
+                            [(axum::http::header::CONTENT_TYPE, "application/json")],
+                            resp_bytes,
+                        )
+                            .into_response();
+                    }
                     Err(e) => {
                         for ext in state.extensions.iter() {
                             ext.on_error(&ctx, &e).await;
                         }
                         record_duration(&ctx, error_status(&e));
                         emit_usage_error(&state, &ctx, ENDPOINT, &e);
-                        error_response(e)
+                        return error_response(e);
                     }
-                };
+                }
             }
             Err(e) => last_err = Some(e),
         }
@@ -342,6 +352,7 @@ where
 }
 
 /// Non-streaming raw byte proxy for Anthropic-compatible providers.
+/// Extensions receive raw bytes and deserialize only what they need.
 async fn handle_raw_anthropic<S: Storage, P: Provider>(
     state: &AppState<S, P>,
     principal: Principal,
@@ -350,11 +361,6 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
     raw_body: axum::body::Bytes,
 ) -> Response {
     use crate::handlers::with_timeout;
-
-    #[derive(serde::Deserialize)]
-    struct AnthropicUsagePeek {
-        usage: Option<crabllm_core::AnthropicUsage>,
-    }
 
     let registry = state.registry();
     let provider_name = registry
@@ -371,6 +377,26 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         started_at: Instant::now(),
     };
 
+    for ext in state.extensions.iter() {
+        if let Err(ext_err) = ext.on_request(&ctx).await {
+            return (
+                StatusCode::from_u16(ext_err.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                Json(ext_err.body),
+            )
+                .into_response();
+        }
+    }
+
+    for ext in state.extensions.iter() {
+        if let Some(cached) = ext.on_cache_lookup(&raw_body).await {
+            return (
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                cached,
+            )
+                .into_response();
+        }
+    }
+
     let mut last_err = None;
     for deployment in deployments {
         match with_timeout(
@@ -380,17 +406,15 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         .await
         {
             Ok(resp_bytes) => {
-                let usage = crabllm_core::json::from_slice::<AnthropicUsagePeek>(&resp_bytes)
-                    .ok()
-                    .and_then(|p| p.usage)
-                    .as_ref()
-                    .map(crabllm_core::Usage::from)
-                    .unwrap_or_default();
+                let usage = crabllm_core::Usage::from(resp_bytes.as_ref());
                 if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
                     record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
                 }
                 record_duration(&ctx, "2xx");
                 emit_usage(state, &ctx, ENDPOINT, RequestOutcome::ok(usage));
+                for ext in state.extensions.iter() {
+                    ext.on_response(&ctx, &raw_body, &resp_bytes).await;
+                }
                 return (
                     [(axum::http::header::CONTENT_TYPE, "application/json")],
                     resp_bytes,
@@ -399,6 +423,9 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
             }
             Err(e) => {
                 if !e.is_transient() {
+                    for ext in state.extensions.iter() {
+                        ext.on_error(&ctx, &e).await;
+                    }
                     record_duration(&ctx, error_status(&e));
                     emit_usage_error(state, &ctx, ENDPOINT, &e);
                     return error_response(e);
@@ -410,6 +437,9 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
 
     let e = last_err
         .unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".to_string()));
+    for ext in state.extensions.iter() {
+        ext.on_error(&ctx, &e).await;
+    }
     record_duration(&ctx, error_status(&e));
     emit_usage_error(state, &ctx, ENDPOINT, &e);
     error_response(e)

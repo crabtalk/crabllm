@@ -24,6 +24,7 @@ pub mod admin;
 pub mod admin_providers;
 pub mod anthropic;
 pub mod auth;
+mod body;
 pub mod ext;
 pub mod gemini;
 pub mod handlers;

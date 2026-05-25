@@ -106,6 +106,49 @@ impl HttpClient {
         })
     }
 
+    pub async fn post_stream_body(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body_stream: ByteStream,
+    ) -> Result<ByteStream, Error> {
+        let start = Instant::now();
+        let body = reqwest::Body::wrap_stream(body_stream);
+        let mut req = self.inner.post(url).body(body);
+        for &(name, value) in headers {
+            req = req.header(name, value);
+        }
+        let resp = req.send().await.map_err(|e| {
+            tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream passthrough failed");
+            Error::Internal(e.to_string())
+        })?;
+        let status = resp.status().as_u16();
+        if status >= 400 {
+            let body = resp
+                .bytes()
+                .await
+                .map_err(|e| Error::Internal(e.to_string()))?;
+            let text = String::from_utf8_lossy(&body).into_owned();
+            tracing::debug!(
+                url,
+                status,
+                ttfb_ms = start.elapsed().as_millis() as u64,
+                "provider stream passthrough error"
+            );
+            return Err(Error::Provider { status, body: text });
+        }
+        tracing::debug!(
+            url,
+            status,
+            ttfb_ms = start.elapsed().as_millis() as u64,
+            "provider stream passthrough opened"
+        );
+        let stream = resp
+            .bytes_stream()
+            .map(|r| r.map_err(std::io::Error::other));
+        Ok(Box::pin(stream))
+    }
+
     pub async fn post_stream(
         &self,
         url: &str,

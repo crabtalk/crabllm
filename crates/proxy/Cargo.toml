@@ -30,6 +30,7 @@ arc-swap.workspace = true
 axum.workspace = true
 parking_lot.workspace = true
 bytes.workspace = true
+http-body-util.workspace = true
 dashmap.workspace = true
 futures.workspace = true
 serde_json.workspace = true
