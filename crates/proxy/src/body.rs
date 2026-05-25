@@ -10,6 +10,11 @@ struct Peek {
     stream: Option<bool>,
 }
 
+pub enum ReadError {
+    Io(String),
+    InvalidJson(String),
+}
+
 pub struct RequestBody {
     buf: BytesMut,
     rest: axum::body::Body,
@@ -17,23 +22,38 @@ pub struct RequestBody {
     pub is_stream: bool,
 }
 
+const PREFIX_BUDGET: usize = 64 * 1024;
+
 impl RequestBody {
-    pub async fn read(mut body: axum::body::Body) -> Option<Self> {
+    pub async fn read(mut body: axum::body::Body) -> Result<Self, ReadError> {
         let mut buf = BytesMut::with_capacity(1024);
         loop {
             if let Ok(peek) = crabllm_core::json::from_slice::<Peek>(&buf) {
-                return Some(Self::from_peek(buf, body, peek));
+                return Ok(Self::from_peek(buf, body, peek));
             }
-            let frame = body.frame().await?.ok()?;
+            let Some(frame) = body.frame().await else { break };
+            let frame = frame.map_err(|e| ReadError::Io(e.to_string()))?;
             if let Some(data) = frame.data_ref() {
                 buf.extend_from_slice(data);
             }
-            if buf.len() > 64 * 1024 {
+            if buf.len() > PREFIX_BUDGET {
                 break;
             }
         }
-        let peek = crabllm_core::json::from_slice::<Peek>(&buf).ok()?;
-        Some(Self::from_peek(buf, body, peek))
+
+        if crabllm_core::json::from_slice::<Peek>(&buf).is_err() {
+            let remaining = body
+                .collect()
+                .await
+                .map_err(|e| ReadError::Io(e.to_string()))?
+                .to_bytes();
+            buf.extend_from_slice(&remaining);
+            body = axum::body::Body::empty();
+        }
+
+        let peek = crabllm_core::json::from_slice::<Peek>(&buf)
+            .map_err(|e| ReadError::InvalidJson(e.to_string()))?;
+        Ok(Self::from_peek(buf, body, peek))
     }
 
     fn from_peek(buf: BytesMut, rest: axum::body::Body, peek: Peek) -> Self {
@@ -57,22 +77,34 @@ impl RequestBody {
         Box::pin(prefix_once.chain(rest))
     }
 
-    pub async fn into_bytes(self) -> Option<Bytes> {
-        let remaining = self.rest.collect().await.ok()?.to_bytes();
+    pub async fn into_bytes(self) -> Result<Bytes, ReadError> {
+        let remaining = self
+            .rest
+            .collect()
+            .await
+            .map_err(|e| ReadError::Io(e.to_string()))?
+            .to_bytes();
         let mut full = BytesMut::with_capacity(self.buf.len() + remaining.len());
         full.extend_from_slice(&self.buf);
         full.extend_from_slice(&remaining);
-        Some(full.freeze())
+        Ok(full.freeze())
     }
 }
 
 fn inject_stream_options(prefix: Bytes) -> Bytes {
-    if prefix
-        .windows(b"\"stream_options\"".len())
-        .any(|w| w == b"\"stream_options\"")
-    {
-        return prefix;
+    if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(&prefix) {
+        if let Some(obj) = val.as_object_mut() {
+            obj.insert(
+                "stream_options".to_string(),
+                serde_json::json!({ "include_usage": true }),
+            );
+            if let Ok(out) = serde_json::to_vec(&val) {
+                return Bytes::from(out);
+            }
+        }
     }
+
+    // Truncated prefix — inject after `{` without stripping.
     let Some(brace) = prefix.iter().position(|&b| b == b'{') else {
         return prefix;
     };

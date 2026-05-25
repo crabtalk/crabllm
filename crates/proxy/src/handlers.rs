@@ -143,6 +143,21 @@ pub(crate) fn emit_usage_error<S: Storage, P: Provider>(
     );
 }
 
+fn read_error_response(e: crate::body::ReadError) -> Response {
+    match e {
+        crate::body::ReadError::Io(msg) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError::new(msg, "server_error")),
+        )
+            .into_response(),
+        crate::body::ReadError::InvalidJson(msg) => (
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new(msg, "invalid_request_error")),
+        )
+            .into_response(),
+    }
+}
+
 /// POST /v1/chat/completions
 pub async fn chat_completions<S, P>(
     State(state): State<AppState<S, P>>,
@@ -153,12 +168,9 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let Some(body) = crate::body::RequestBody::read(body).await else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError::new("missing or invalid 'model' field", "invalid_request_error")),
-        )
-            .into_response();
+    let body = match crate::body::RequestBody::read(body).await {
+        Ok(b) => b,
+        Err(e) => return read_error_response(e),
     };
     let registry = state.registry();
     let model = registry.resolve(&body.model).to_string();
@@ -184,12 +196,9 @@ where
     }
 
     // All other paths need the full body buffered.
-    let Some(raw_body) = body.into_bytes().await else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError::new("failed to read request body", "invalid_request_error")),
-        )
-            .into_response();
+    let raw_body = match body.into_bytes().await {
+        Ok(b) => b,
+        Err(e) => return read_error_response(e),
     };
 
     if all_compat {
