@@ -3,7 +3,7 @@ use crate::types::gemini::GeminiContent;
 use crate::types::openai::FinishReason;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiResponse {
     #[serde(default)]
@@ -12,7 +12,7 @@ pub struct GeminiResponse {
     pub usage_metadata: Option<GeminiUsage>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GeminiFinishReason {
     Stop,
@@ -27,7 +27,7 @@ pub enum GeminiFinishReason {
     Other,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiCandidate {
     #[serde(default)]
@@ -40,7 +40,7 @@ pub struct GeminiCandidate {
 /// `prompt_token_count` is the *total* prompt size (includes cached portion);
 /// `cached_content_token_count` is the cached subset. Convert to canonical
 /// [`Usage`] for any internal billing or metering use.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiUsage {
     #[serde(default)]

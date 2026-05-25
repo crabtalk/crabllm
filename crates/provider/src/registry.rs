@@ -402,6 +402,36 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
             .ok_or_else(|| model_not_registered(resolved))?;
         deployment.provider.audio_transcription(model, fields).await
     }
+
+    async fn gemini_generate_content(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        let resolved = self.resolve(model);
+        let deployment = self
+            .dispatch(resolved)
+            .ok_or_else(|| model_not_registered(resolved))?;
+        deployment
+            .provider
+            .gemini_generate_content(model, request)
+            .await
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        let resolved = self.resolve(model);
+        let deployment = self
+            .dispatch(resolved)
+            .ok_or_else(|| model_not_registered(resolved))?;
+        deployment
+            .provider
+            .gemini_generate_content_stream(model, request)
+            .await
+    }
 }
 
 fn model_not_registered(model: &str) -> Error {

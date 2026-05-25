@@ -296,6 +296,54 @@ impl Provider for Dispatch {
         }
     }
 
+    fn is_gemini_compat(&self) -> bool {
+        match self {
+            Self::Remote(p) => p.is_gemini_compat(),
+        }
+    }
+
+    async fn gemini_generate_content(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        match self {
+            Self::Remote(p) => p.gemini_generate_content(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        match self {
+            Self::Remote(p) => p.gemini_generate_content_stream(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<Bytes, Error> {
+        match self {
+            Self::Remote(p) => p.gemini_generate_content_raw(model, raw_body).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<ByteStream, Error> {
+        match self {
+            Self::Remote(p) => {
+                p.gemini_generate_content_stream_raw(model, raw_body).await
+            }
+        }
+    }
+
     async fn chat_completion_raw(&self, model: &str, raw_body: Bytes) -> Result<Bytes, Error> {
         match self {
             Self::Remote(p) => p.chat_completion_raw(model, raw_body).await,

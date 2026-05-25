@@ -484,7 +484,7 @@ dependencies = [
 
 [[package]]
 name = "crabctl"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "clap",
  "dirs",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "arc-swap",
  "axum",
@@ -517,7 +517,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-bench"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "axum",
  "clap",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "bytes",
  "futures-core",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-llamacpp"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "axum",
  "clap",
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-mlx"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "base64",
  "clap",
@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-provider"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-proxy"
-version = "0.0.20"
+version = "0.0.21"
 dependencies = [
  "arc-swap",
  "axum",

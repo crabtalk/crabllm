@@ -53,6 +53,22 @@ impl Provider for GoogleProvider {
         Ok(chunks_to_anthropic_events(chunks).boxed())
     }
 
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        let url = format!("{BASE_URL}/models/{model}:streamGenerateContent?alt=sse");
+        let body =
+            crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+        let headers = [
+            ("x-goog-api-key", self.api_key.as_str()),
+            ("content-type", "application/json"),
+        ];
+        let byte_stream = self.client.post_stream(&url, &headers, body.into()).await?;
+        Ok(gemini_event_stream(byte_stream).boxed())
+    }
+
     fn is_gemini_compat(&self) -> bool {
         true
     }
@@ -421,16 +437,20 @@ pub async fn chat_completion_stream(
     let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 
     let model = model.to_string();
-    Ok(gemini_sse_stream(byte_stream, model))
+    Ok(gemini_responses_to_chunks(gemini_event_stream(byte_stream), model))
 }
 
-fn gemini_sse_stream(
+/// Parse a Gemini SSE byte stream into native `GeminiResponse` items.
+///
+/// Each `data:` line carries a full `GeminiResponse` JSON object. Chunks
+/// with no candidates are skipped. The stream terminates when the
+/// upstream closes.
+pub fn gemini_event_stream(
     byte_stream: ByteStream,
-    model: String,
-) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> {
+) -> impl Stream<Item = Result<GeminiResponse, Error>> {
     stream::unfold(
-        (byte_stream, BytesMut::new(), model, 0u64),
-        |(mut byte_stream, mut buffer, model, mut chunk_idx)| async move {
+        (byte_stream, BytesMut::new()),
+        |(mut byte_stream, mut buffer)| async move {
             use futures::StreamExt;
 
             loop {
@@ -450,102 +470,25 @@ fn gemini_sse_stream(
                         buffer.advance(newline_pos + 1);
                         continue;
                     };
-                    let data = match std::str::from_utf8(data) {
-                        Ok(s) => s.trim(),
-                        Err(_) => {
-                            buffer.advance(newline_pos + 1);
-                            continue;
-                        }
+                    let Ok(data) = std::str::from_utf8(data) else {
+                        buffer.advance(newline_pos + 1);
+                        continue;
+                    };
+                    let data = data.trim();
+
+                    let Ok(gemini_resp) = crabllm_core::json::from_str::<GeminiResponse>(data)
+                    else {
+                        buffer.advance(newline_pos + 1);
+                        continue;
                     };
 
-                    let gemini_resp: GeminiResponse = match crabllm_core::json::from_str(data) {
-                        Ok(r) => r,
-                        Err(_) => {
-                            buffer.advance(newline_pos + 1);
-                            continue;
-                        }
-                    };
-
-                    let candidate = match gemini_resp.candidates.first() {
-                        Some(c) => c,
-                        None => {
-                            buffer.advance(newline_pos + 1);
-                            continue;
-                        }
-                    };
-
-                    let blocks = extract_blocks(candidate);
-                    let finish_reason = candidate.finish_reason.as_ref().map(Into::into);
-
-                    let mut text = String::new();
-                    let mut tool_call_deltas: Vec<ToolCallDelta> = Vec::new();
-                    for block in blocks {
-                        match block {
-                            ContentBlock::Text { text: t, .. } => text.push_str(&t),
-                            ContentBlock::ToolUse {
-                                id, name, input, ..
-                            } => {
-                                tool_call_deltas.push(ToolCallDelta {
-                                    index: tool_call_deltas.len() as u32,
-                                    id: Some(id),
-                                    kind: Some(crabllm_core::ToolType::Function),
-                                    function: Some(FunctionCallDelta {
-                                        name: Some(name),
-                                        arguments: Some(
-                                            crabllm_core::json::to_string(&input)
-                                                .unwrap_or_default(),
-                                        ),
-                                    }),
-                                });
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    let has_text = !text.is_empty();
-                    let has_tools = !tool_call_deltas.is_empty();
-
-                    if !has_text && !has_tools && finish_reason.is_none() {
+                    if gemini_resp.candidates.is_empty() {
                         buffer.advance(newline_pos + 1);
                         continue;
                     }
 
                     buffer.advance(newline_pos + 1);
-
-                    chunk_idx += 1;
-                    let tool_call_deltas = if has_tools {
-                        Some(tool_call_deltas)
-                    } else {
-                        None
-                    };
-
-                    let chunk = ChatCompletionChunk {
-                        id: format!("chatcmpl-{chunk_idx}"),
-                        object: "chat.completion.chunk".to_string(),
-                        created: 0,
-                        model: model.clone(),
-                        choices: vec![ChunkChoice {
-                            index: 0,
-                            delta: Delta {
-                                role: if chunk_idx == 1 {
-                                    Some(Role::Assistant)
-                                } else {
-                                    None
-                                },
-                                content: if has_text { Some(text) } else { None },
-                                tool_calls: tool_call_deltas,
-                                reasoning_content: None,
-                            },
-                            finish_reason,
-                            logprobs: None,
-                        }],
-                        usage: gemini_resp
-                            .usage_metadata
-                            .as_ref()
-                            .map(|u| OpenAiUsage::from(&Usage::from(u))),
-                        system_fingerprint: None,
-                    };
-                    return Some((Ok(chunk), (byte_stream, buffer, model, chunk_idx)));
+                    return Some((Ok(gemini_resp), (byte_stream, buffer)));
                 }
 
                 match byte_stream.next().await {
@@ -555,7 +498,7 @@ fn gemini_sse_stream(
                     Some(Err(e)) => {
                         return Some((
                             Err(Error::Internal(format!("stream error: {e}"))),
-                            (byte_stream, buffer, model, chunk_idx),
+                            (byte_stream, buffer),
                         ));
                     }
                     None => return None,
@@ -563,4 +506,180 @@ fn gemini_sse_stream(
             }
         },
     )
+}
+
+/// Convert a stream of native `GeminiResponse` items into OpenAI-shaped
+/// `ChatCompletionChunk` items. Inverse of [`chunks_to_gemini_responses`].
+pub fn gemini_responses_to_chunks(
+    responses: impl Stream<Item = Result<GeminiResponse, Error>> + Send + 'static,
+    model: String,
+) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> + Send + 'static {
+    stream::unfold(
+        (responses.boxed(), model, 0u64),
+        |(mut responses, model, mut chunk_idx)| async move {
+            use futures::StreamExt;
+
+            loop {
+                let gemini_resp = match responses.next().await? {
+                    Ok(r) => r,
+                    Err(e) => return Some((Err(e), (responses, model, chunk_idx))),
+                };
+
+                let Some(candidate) = gemini_resp.candidates.first() else {
+                    continue;
+                };
+
+                let blocks = extract_blocks(candidate);
+                let finish_reason = candidate.finish_reason.as_ref().map(Into::into);
+
+                let mut text = String::new();
+                let mut tool_call_deltas: Vec<ToolCallDelta> = Vec::new();
+                for block in blocks {
+                    match block {
+                        ContentBlock::Text { text: t, .. } => text.push_str(&t),
+                        ContentBlock::ToolUse {
+                            id, name, input, ..
+                        } => {
+                            tool_call_deltas.push(ToolCallDelta {
+                                index: tool_call_deltas.len() as u32,
+                                id: Some(id),
+                                kind: Some(crabllm_core::ToolType::Function),
+                                function: Some(FunctionCallDelta {
+                                    name: Some(name),
+                                    arguments: Some(
+                                        crabllm_core::json::to_string(&input)
+                                            .unwrap_or_default(),
+                                    ),
+                                }),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
+                let has_text = !text.is_empty();
+                let has_tools = !tool_call_deltas.is_empty();
+
+                if !has_text && !has_tools && finish_reason.is_none() {
+                    continue;
+                }
+
+                chunk_idx += 1;
+                let tool_call_deltas = if has_tools {
+                    Some(tool_call_deltas)
+                } else {
+                    None
+                };
+
+                let chunk = ChatCompletionChunk {
+                    id: format!("chatcmpl-{chunk_idx}"),
+                    object: "chat.completion.chunk".to_string(),
+                    created: 0,
+                    model: model.clone(),
+                    choices: vec![ChunkChoice {
+                        index: 0,
+                        delta: Delta {
+                            role: if chunk_idx == 1 {
+                                Some(Role::Assistant)
+                            } else {
+                                None
+                            },
+                            content: if has_text { Some(text) } else { None },
+                            tool_calls: tool_call_deltas,
+                            reasoning_content: None,
+                        },
+                        finish_reason,
+                        logprobs: None,
+                    }],
+                    usage: gemini_resp
+                        .usage_metadata
+                        .as_ref()
+                        .map(|u| OpenAiUsage::from(&Usage::from(u))),
+                    system_fingerprint: None,
+                };
+                return Some((Ok(chunk), (responses, model, chunk_idx)));
+            }
+        },
+    )
+}
+
+/// Convert an OpenAI-shaped `ChatCompletionChunk` stream into native
+/// `GeminiResponse` items. Each chunk maps 1:1 to one response.
+pub fn chunks_to_gemini_responses(
+    chunks: impl Stream<Item = Result<ChatCompletionChunk, Error>> + Send + 'static,
+) -> impl Stream<Item = Result<GeminiResponse, Error>> + Send + 'static {
+    use crabllm_core::{GeminiFinishReason, GeminiUsage};
+
+    chunks.map(|result| {
+        result.map(|chunk| {
+            let choice = chunk.choices.into_iter().next();
+            let (finish_reason, parts) = match choice {
+                Some(c) => {
+                    let fr = c.finish_reason.map(|r| match r {
+                        crabllm_core::FinishReason::Stop => GeminiFinishReason::Stop,
+                        crabllm_core::FinishReason::Length => GeminiFinishReason::MaxTokens,
+                        crabllm_core::FinishReason::ToolCalls => GeminiFinishReason::Stop,
+                        crabllm_core::FinishReason::ContentFilter => GeminiFinishReason::Safety,
+                        crabllm_core::FinishReason::Custom(_) => GeminiFinishReason::Other,
+                    });
+                    let mut parts = Vec::new();
+                    if let Some(text) = c.delta.content {
+                        parts.push(GeminiPart {
+                            text: Some(text),
+                            function_call: None,
+                            function_response: None,
+                            thought_signature: None,
+                        });
+                    }
+                    if let Some(tool_calls) = c.delta.tool_calls {
+                        for tc in tool_calls {
+                            let name = tc
+                                .function
+                                .as_ref()
+                                .and_then(|f| f.name.clone())
+                                .unwrap_or_default();
+                            let args_str = tc
+                                .function
+                                .as_ref()
+                                .and_then(|f| f.arguments.clone())
+                                .unwrap_or_default();
+                            let args: serde_json::Value =
+                                crabllm_core::json::from_str(&args_str)
+                                    .unwrap_or(serde_json::json!({}));
+                            parts.push(GeminiPart {
+                                text: None,
+                                function_call: Some(GeminiFunctionCall { name, args }),
+                                function_response: None,
+                                thought_signature: None,
+                            });
+                        }
+                    }
+                    (fr, parts)
+                }
+                None => (None, Vec::new()),
+            };
+
+            let usage_metadata = chunk.usage.as_ref().map(|u| {
+                let canonical = Usage::from(u);
+                GeminiUsage::from(&canonical)
+            });
+
+            let candidate = GeminiCandidate {
+                content: if parts.is_empty() {
+                    None
+                } else {
+                    Some(GeminiContent {
+                        role: Some(GeminiRole::Model),
+                        parts,
+                    })
+                },
+                finish_reason,
+            };
+
+            GeminiResponse {
+                candidates: vec![candidate],
+                usage_metadata,
+            }
+        })
+    })
 }

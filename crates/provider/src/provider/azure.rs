@@ -117,6 +117,19 @@ impl Provider for AzureProvider {
         Ok(chunks_to_anthropic_events(chunks).boxed())
     }
 
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        let mut chat_req =
+            ChatCompletionRequest::from(crabllm_core::AnthropicRequest::from(request));
+        chat_req.model = model.to_string();
+        chat_req.stream = Some(true);
+        let chunks = self.chat_completion_stream(&chat_req).await?;
+        Ok(crate::provider::google::chunks_to_gemini_responses(chunks).boxed())
+    }
+
     fn is_openai_compat(&self) -> bool {
         true
     }

@@ -110,6 +110,19 @@ impl Provider for AnthropicProvider {
         Ok(anthropic_event_stream(byte_stream, request.model.clone()).boxed())
     }
 
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        let mut chat_req =
+            ChatCompletionRequest::from(crabllm_core::AnthropicRequest::from(request));
+        chat_req.model = model.to_string();
+        chat_req.stream = Some(true);
+        let chunks = self.chat_completion_stream(&chat_req).await?;
+        Ok(crate::provider::google::chunks_to_gemini_responses(chunks).boxed())
+    }
+
     fn is_anthropic_compat(&self) -> bool {
         true
     }
@@ -509,20 +522,15 @@ pub fn anthropic_event_stream(
                         buffer.advance(newline_pos + 1);
                         continue;
                     };
-                    let data = match std::str::from_utf8(data) {
-                        Ok(s) => s.trim(),
-                        Err(_) => {
-                            buffer.advance(newline_pos + 1);
-                            continue;
-                        }
+                    let Ok(data) = std::str::from_utf8(data) else {
+                        buffer.advance(newline_pos + 1);
+                        continue;
                     };
+                    let data = data.trim();
 
-                    let event: SseEvent = match crabllm_core::json::from_str(data) {
-                        Ok(e) => e,
-                        Err(_) => {
-                            buffer.advance(newline_pos + 1);
-                            continue;
-                        }
+                    let Ok(event) = crabllm_core::json::from_str::<SseEvent>(data) else {
+                        buffer.advance(newline_pos + 1);
+                        continue;
                     };
                     buffer.advance(newline_pos + 1);
 

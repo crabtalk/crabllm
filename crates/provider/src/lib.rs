@@ -19,7 +19,10 @@ pub use provider::{
     },
     azure::AzureProvider,
     deepseek::DeepseekProvider,
-    google::GoogleProvider,
+    google::{
+        GoogleProvider, chunks_to_gemini_responses, gemini_event_stream,
+        gemini_responses_to_chunks,
+    },
     openai::OpenaiProvider,
 };
 
@@ -71,6 +74,22 @@ mod bedrock_stub {
         > {
             Err(crabllm_core::Error::not_implemented(
                 "bedrock anthropic streaming",
+            ))
+        }
+
+        async fn gemini_generate_content_stream(
+            &self,
+            _model: &str,
+            _request: &crabllm_core::GeminiRequest,
+        ) -> Result<
+            crabllm_core::BoxStream<
+                'static,
+                Result<crabllm_core::GeminiResponse, crabllm_core::Error>,
+            >,
+            crabllm_core::Error,
+        > {
+            Err(crabllm_core::Error::not_implemented(
+                "bedrock gemini streaming",
             ))
         }
     }
@@ -402,6 +421,77 @@ impl Provider for RemoteProvider {
             Self::Google(p) => p.anthropic_messages_stream_raw(raw_body).await,
             Self::Bedrock(p) => p.anthropic_messages_stream_raw(raw_body).await,
             Self::Azure(p) => p.anthropic_messages_stream_raw(raw_body).await,
+        }
+    }
+
+    fn is_gemini_compat(&self) -> bool {
+        match self {
+            Self::Openai(p) => p.is_gemini_compat(),
+            Self::Anthropic(p) => p.is_gemini_compat(),
+            Self::Deepseek(p) => p.is_gemini_compat(),
+            Self::Google(p) => p.is_gemini_compat(),
+            Self::Bedrock(p) => p.is_gemini_compat(),
+            Self::Azure(p) => p.is_gemini_compat(),
+        }
+    }
+
+    async fn gemini_generate_content(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content(model, request).await,
+            Self::Anthropic(p) => p.gemini_generate_content(model, request).await,
+            Self::Deepseek(p) => p.gemini_generate_content(model, request).await,
+            Self::Google(p) => p.gemini_generate_content(model, request).await,
+            Self::Bedrock(p) => p.gemini_generate_content(model, request).await,
+            Self::Azure(p) => p.gemini_generate_content(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Anthropic(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Deepseek(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Google(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Bedrock(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Azure(p) => p.gemini_generate_content_stream(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<Bytes, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Anthropic(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Deepseek(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Google(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Bedrock(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Azure(p) => p.gemini_generate_content_raw(model, raw_body).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Anthropic(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Deepseek(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Google(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Bedrock(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Azure(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
         }
     }
 }

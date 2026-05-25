@@ -11,21 +11,21 @@ use serde::{Deserialize, Serialize};
 mod request;
 mod response;
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GeminiRole {
     User,
     Model,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeminiContent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<GeminiRole>,
     pub parts: Vec<GeminiPart>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiPart {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,14 +40,14 @@ pub struct GeminiPart {
     pub thought_signature: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeminiFunctionCall {
     pub name: String,
     #[serde(default)]
     pub args: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeminiFunctionResponse {
     pub name: String,
     pub response: serde_json::Value,

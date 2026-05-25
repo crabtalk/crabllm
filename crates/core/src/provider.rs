@@ -78,22 +78,13 @@ pub trait Provider: Send + Sync {
 
     /// Gemini Generative Language API: `:streamGenerateContent`.
     ///
-    /// Returns `ChatCompletionChunk`s for consistency with the other
-    /// streaming methods on this trait — the proxy converts those chunks
-    /// to Gemini SSE shape at the wire boundary.
+    /// Returns native `GeminiResponse` items — each SSE chunk from Google
+    /// is a full response object with a single candidate.
     fn gemini_generate_content_stream(
         &self,
         model: &str,
         request: &GeminiRequest,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error>> + Send
-    {
-        async move {
-            let mut chat_req = ChatCompletionRequest::from(AnthropicRequest::from(request));
-            chat_req.model = model.to_string();
-            chat_req.stream = Some(true);
-            self.chat_completion_stream(&chat_req).await
-        }
-    }
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error>> + Send;
 
     fn embedding(
         &self,

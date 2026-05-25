@@ -77,6 +77,14 @@ impl Provider for FakeProvider {
     ) -> Result<BoxStream<'static, Result<crabllm_core::AnthropicStreamEvent, Error>>, Error> {
         Err(Error::not_implemented("anthropic_messages_stream"))
     }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        _model: &str,
+        _request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        Err(Error::not_implemented("gemini streaming"))
+    }
 }
 
 struct FakeStorage;

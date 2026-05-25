@@ -21,11 +21,16 @@ use axum::{
     Extension, Json,
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{
+        IntoResponse, Response,
+        sse::{Event, Sse},
+    },
 };
 use bytes::Bytes;
 use crabllm_core::{ApiError, GeminiRequest, Provider, RequestContext, Storage};
-use std::time::Instant;
+use futures::StreamExt;
+use parking_lot::Mutex;
+use std::{sync::Arc, time::Instant};
 
 const ENDPOINT: &str = "gemini.generateContent";
 
@@ -242,11 +247,85 @@ where
             }
         }
 
-        // Translated streaming requires ChatCompletionChunk → Gemini SSE
-        // conversion; not implemented yet.
-        last_err = Some(crabllm_core::Error::not_implemented(
-            "gemini streaming via non-gemini-compat provider",
-        ));
+        // Translated streaming for non-compat providers.
+        let Ok(request) = crabllm_core::json::from_slice::<GeminiRequest>(&raw_body) else {
+            last_err = Some(crabllm_core::Error::Internal("invalid gemini request".into()));
+            continue;
+        };
+        match with_timeout(
+            deployment.timeout,
+            deployment
+                .provider
+                .gemini_generate_content_stream(model, &request),
+        )
+        .await
+        {
+            Ok(stream) => {
+                let ctx = Arc::new(ctx);
+                let usage: Arc<Mutex<crabllm_core::Usage>> =
+                    Arc::new(Mutex::new(crabllm_core::Usage::default()));
+
+                let usage_c = usage.clone();
+                let ctx_c = ctx.clone();
+
+                let sse_stream = stream.map(move |result| match result {
+                    Ok(resp) => {
+                        if let Some(u) = resp.usage_metadata.as_ref() {
+                            let canonical = crabllm_core::Usage::from(u);
+                            record_tokens(
+                                &ctx_c,
+                                canonical.prompt_tokens(),
+                                canonical.completion_tokens(),
+                            );
+                            *usage_c.lock() = canonical;
+                        }
+                        let json = crabllm_core::json::to_string(&resp).unwrap_or_default();
+                        Ok::<_, std::convert::Infallible>(Event::default().data(json))
+                    }
+                    Err(e) => {
+                        let json = crabllm_core::json::to_string(&serde_json::json!({
+                            "error": { "message": e.to_string() }
+                        }))
+                        .unwrap_or_default();
+                        Ok(Event::default().data(json))
+                    }
+                });
+
+                let state_clone = state.clone();
+                let ctx_done = ctx.clone();
+                let usage_done = usage.clone();
+
+                let finalized = futures::stream::unfold(
+                    (Box::pin(sse_stream), Some((state_clone, ctx_done, usage_done))),
+                    |(mut inner, mut slot)| async move {
+                        match inner.next().await {
+                            Some(item) => Some((item, (inner, slot))),
+                            None => {
+                                if let Some((st, cx, u)) = slot.take() {
+                                    let usage = u.lock().clone();
+                                    record_duration(&cx, "2xx");
+                                    emit_usage(&st, &cx, ENDPOINT, RequestOutcome::ok(usage));
+                                }
+                                None
+                            }
+                        }
+                    },
+                );
+
+                return Sse::new(finalized)
+                    .keep_alive(axum::response::sse::KeepAlive::new())
+                    .into_response();
+            }
+            Err(e) => {
+                if !e.is_transient() {
+                    record_duration(&ctx, error_status(&e));
+                    emit_usage_error(state, &ctx, ENDPOINT, &e);
+                    return error_response(e);
+                }
+                last_err = Some(e);
+                continue;
+            }
+        }
     }
 
     let e =
