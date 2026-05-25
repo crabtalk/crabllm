@@ -18,21 +18,13 @@ pub struct RequestBody {
 }
 
 impl RequestBody {
-    pub async fn read(mut body: axum::body::Body) -> Result<Self, String> {
+    pub async fn read(mut body: axum::body::Body) -> Option<Self> {
         let mut buf = BytesMut::with_capacity(1024);
         loop {
             if let Ok(peek) = crabllm_core::json::from_slice::<Peek>(&buf) {
-                return Ok(Self {
-                    buf,
-                    rest: body,
-                    model: peek.model,
-                    is_stream: peek.stream == Some(true),
-                });
+                return Some(Self::from_peek(buf, body, peek));
             }
-            let Some(frame) = body.frame().await else { break };
-            let Ok(frame) = frame else {
-                return Err("failed to read request body".to_string());
-            };
+            let frame = body.frame().await?.ok()?;
             if let Some(data) = frame.data_ref() {
                 buf.extend_from_slice(data);
             }
@@ -40,14 +32,17 @@ impl RequestBody {
                 break;
             }
         }
-        crabllm_core::json::from_slice::<Peek>(&buf)
-            .map(|peek| Self {
-                buf,
-                rest: body,
-                model: peek.model,
-                is_stream: peek.stream == Some(true),
-            })
-            .map_err(|e| e.to_string())
+        let peek = crabllm_core::json::from_slice::<Peek>(&buf).ok()?;
+        Some(Self::from_peek(buf, body, peek))
+    }
+
+    fn from_peek(buf: BytesMut, rest: axum::body::Body, peek: Peek) -> Self {
+        Self {
+            buf,
+            rest,
+            model: peek.model,
+            is_stream: peek.stream == Some(true),
+        }
     }
 
     pub fn into_stream(self) -> ByteStream {
@@ -62,17 +57,12 @@ impl RequestBody {
         Box::pin(prefix_once.chain(rest))
     }
 
-    pub async fn into_bytes(self) -> Result<Bytes, String> {
-        let remaining = self
-            .rest
-            .collect()
-            .await
-            .map_err(|e| e.to_string())?
-            .to_bytes();
+    pub async fn into_bytes(self) -> Option<Bytes> {
+        let remaining = self.rest.collect().await.ok()?.to_bytes();
         let mut full = BytesMut::with_capacity(self.buf.len() + remaining.len());
         full.extend_from_slice(&self.buf);
         full.extend_from_slice(&remaining);
-        Ok(full.freeze())
+        Some(full.freeze())
     }
 }
 

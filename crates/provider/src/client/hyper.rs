@@ -2,7 +2,8 @@ use crate::client::{ByteStream, RawResponse};
 use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::StreamExt;
-use http_body_util::{BodyExt, BodyStream, Full, combinators::UnsyncBoxBody};
+use http_body::Frame;
+use http_body_util::{BodyExt, BodyStream, Full, StreamBody, combinators::UnsyncBoxBody};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::time::Instant;
 
@@ -174,65 +175,9 @@ impl HttpClient {
         headers: &[(&str, &str)],
         body_stream: ByteStream,
     ) -> Result<ByteStream, Error> {
-        use http_body::Frame;
-        use http_body_util::StreamBody;
-
-        let uri: http::Uri = url
-            .parse()
-            .map_err(|e: http::uri::InvalidUri| Error::Internal(e.to_string()))?;
-
-        let start = Instant::now();
-
         let framed = body_stream.map(|r| r.map(Frame::data));
-        let boxed: RequestBody = BodyExt::boxed_unsync(StreamBody::new(framed));
-
-        let mut builder = http::Request::builder().method(http::Method::POST).uri(uri);
-        for &(name, value) in headers {
-            builder = builder.header(name, value);
-        }
-        let req = builder
-            .body(boxed)
-            .map_err(|e| Error::Internal(e.to_string()))?;
-
-        let resp = self.inner.request(req).await.map_err(|e| {
-            tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream passthrough failed");
-            Error::Internal(e.to_string())
-        })?;
-
-        let status = resp.status().as_u16();
-        if status >= 400 {
-            let body = resp
-                .into_body()
-                .collect()
-                .await
-                .map_err(|e| Error::Internal(e.to_string()))?
-                .to_bytes();
-            let text = String::from_utf8_lossy(&body).into_owned();
-            tracing::debug!(
-                url,
-                status,
-                ttfb_ms = start.elapsed().as_millis() as u64,
-                "provider stream passthrough error"
-            );
-            return Err(Error::Provider { status, body: text });
-        }
-
-        tracing::debug!(
-            url,
-            status,
-            ttfb_ms = start.elapsed().as_millis() as u64,
-            "provider stream passthrough opened"
-        );
-
-        Ok(Box::pin(BodyStream::new(resp.into_body()).filter_map(
-            |frame| {
-                let result = match frame {
-                    Ok(f) => f.into_data().ok().map(Ok),
-                    Err(e) => Some(Err(std::io::Error::other(e))),
-                };
-                std::future::ready(result)
-            },
-        )))
+        let body: RequestBody = BodyExt::boxed_unsync(StreamBody::new(framed));
+        self.send_stream(url, headers, body).await
     }
 
     pub async fn post_stream(
@@ -241,23 +186,30 @@ impl HttpClient {
         headers: &[(&str, &str)],
         body: Bytes,
     ) -> Result<ByteStream, Error> {
+        self.send_stream(url, headers, full_body(body)).await
+    }
+
+    async fn send_stream(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: RequestBody,
+    ) -> Result<ByteStream, Error> {
         let uri: http::Uri = url
             .parse()
             .map_err(|e: http::uri::InvalidUri| Error::Internal(e.to_string()))?;
 
-        let request_bytes = body.len();
         let start = Instant::now();
-
         let mut builder = http::Request::builder().method(http::Method::POST).uri(uri);
         for &(name, value) in headers {
             builder = builder.header(name, value);
         }
         let req = builder
-            .body(full_body(body))
+            .body(body)
             .map_err(|e| Error::Internal(e.to_string()))?;
 
         let resp = self.inner.request(req).await.map_err(|e| {
-            tracing::debug!(url, request_bytes, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
+            tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
             Error::Internal(e.to_string())
         })?;
 
@@ -270,24 +222,11 @@ impl HttpClient {
                 .map_err(|e| Error::Internal(e.to_string()))?
                 .to_bytes();
             let text = String::from_utf8_lossy(&body).into_owned();
-            tracing::debug!(
-                url,
-                status,
-                request_bytes,
-                response_bytes = body.len(),
-                latency_ms = start.elapsed().as_millis() as u64,
-                "provider stream error"
-            );
+            tracing::debug!(url, status, latency_ms = start.elapsed().as_millis() as u64, "provider stream error");
             return Err(Error::Provider { status, body: text });
         }
 
-        tracing::debug!(
-            url,
-            status,
-            request_bytes,
-            ttfb_ms = start.elapsed().as_millis() as u64,
-            "provider stream opened"
-        );
+        tracing::debug!(url, status, ttfb_ms = start.elapsed().as_millis() as u64, "provider stream opened");
 
         Ok(Box::pin(BodyStream::new(resp.into_body()).filter_map(
             |frame| {

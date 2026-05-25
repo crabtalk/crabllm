@@ -153,7 +153,7 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let Ok(body) = crate::body::RequestBody::read(body).await else {
+    let Some(body) = crate::body::RequestBody::read(body).await else {
         return (
             StatusCode::BAD_REQUEST,
             Json(ApiError::new("missing or invalid 'model' field", "invalid_request_error")),
@@ -184,7 +184,7 @@ where
     }
 
     // All other paths need the full body buffered.
-    let Ok(raw_body) = body.into_bytes().await else {
+    let Some(raw_body) = body.into_bytes().await else {
         return (
             StatusCode::BAD_REQUEST,
             Json(ApiError::new("failed to read request body", "invalid_request_error")),
