@@ -1,9 +1,11 @@
+use crate::provider::anthropic::chunks_to_anthropic_events;
 use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, Choice, ChunkChoice, ContentBlock as CoreContentBlock, Delta, Error,
-    FinishReason, FunctionCallDelta, Message, Role, ToolCallDelta, ToolType, Usage,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,
+    ContentBlock as CoreContentBlock, Delta, Error, FinishReason, FunctionCallDelta, Message, Role,
+    ToolCallDelta, ToolType, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -64,10 +66,11 @@ impl crabllm_core::Provider for BedrockProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<crabllm_core::BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<crabllm_core::BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut chat_req = ChatCompletionRequest::from(request.clone());
         chat_req.stream = Some(true);
-        self.chat_completion_stream(&chat_req).await
+        let chunks = self.chat_completion_stream(&chat_req).await?;
+        Ok(chunks_to_anthropic_events(chunks).boxed())
     }
 }
 

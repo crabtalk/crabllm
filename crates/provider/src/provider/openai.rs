@@ -1,9 +1,10 @@
+use crate::provider::anthropic::chunks_to_anthropic_events;
 use crate::{ByteStream, HttpClient};
 use bytes::{Buf, Bytes, BytesMut};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    ImageRequest, MultipartField, Provider,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    EmbeddingResponse, Error, ImageRequest, MultipartField, Provider,
 };
 use futures::stream::{self, Stream, StreamExt};
 
@@ -64,10 +65,11 @@ impl Provider for OpenaiProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut chat_req = ChatCompletionRequest::from(request.clone());
         chat_req.stream = Some(true);
-        self.chat_completion_stream(&chat_req).await
+        let chunks = self.chat_completion_stream(&chat_req).await?;
+        Ok(chunks_to_anthropic_events(chunks).boxed())
     }
 
     fn is_openai_compat(&self) -> bool {

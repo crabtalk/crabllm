@@ -1,12 +1,13 @@
+use crate::provider::anthropic::chunks_to_anthropic_events;
 use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use bytes::{Buf, BytesMut};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, Delta, Error, FunctionCallDelta,
-    GeminiCandidate, GeminiContent, GeminiFunctionCall, GeminiFunctionDecl, GeminiFunctionResponse,
-    GeminiPart, GeminiRequest, GeminiResponse, GeminiRole, GeminiToolDef, GenerationConfig,
-    Message, OpenAiUsage, Provider, Role, ToolCallDelta, ToolResultContent, Usage,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, Delta, Error,
+    FunctionCallDelta, GeminiCandidate, GeminiContent, GeminiFunctionCall, GeminiFunctionDecl,
+    GeminiFunctionResponse, GeminiPart, GeminiRequest, GeminiResponse, GeminiRole, GeminiToolDef,
+    GenerationConfig, Message, OpenAiUsage, Provider, Role, ToolCallDelta, ToolResultContent, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 
@@ -45,10 +46,11 @@ impl Provider for GoogleProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut chat_req = ChatCompletionRequest::from(request.clone());
         chat_req.stream = Some(true);
-        self.chat_completion_stream(&chat_req).await
+        let chunks = self.chat_completion_stream(&chat_req).await?;
+        Ok(chunks_to_anthropic_events(chunks).boxed())
     }
 
     fn is_gemini_compat(&self) -> bool {

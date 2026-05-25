@@ -1,7 +1,7 @@
 pub use anthropic::{
     AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicMessages, AnthropicRequest,
-    AnthropicResponse, AnthropicSystem, AnthropicTool, AnthropicUsage, DEFAULT_MAX_TOKENS,
-    ThinkingConfig,
+    AnthropicResponse, AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage,
+    BlockDelta, DEFAULT_MAX_TOKENS, MessageDeltaPayload, ThinkingConfig,
 };
 pub use audio::AudioSpeechRequest;
 pub use embedding::{

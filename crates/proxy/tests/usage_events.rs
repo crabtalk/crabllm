@@ -74,7 +74,7 @@ impl Provider for FakeProvider {
     async fn anthropic_messages_stream(
         &self,
         _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<crabllm_core::AnthropicStreamEvent, Error>>, Error> {
         Err(Error::not_implemented("anthropic_messages_stream"))
     }
 }

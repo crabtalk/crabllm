@@ -1,8 +1,9 @@
 use crate::pool::ServerPool;
 use crabllm_core::{
-    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error, Provider,
+    AnthropicStreamEvent, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, Error, Provider,
 };
-use crabllm_provider::openai_client;
+use crabllm_provider::{chunks_to_anthropic_events, openai_client};
 use futures::StreamExt;
 use std::sync::Arc;
 
@@ -64,9 +65,10 @@ impl Provider for LlamaCppProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut chat_req = ChatCompletionRequest::from(request.clone());
         chat_req.stream = Some(true);
-        self.chat_completion_stream(&chat_req).await
+        let chunks = self.chat_completion_stream(&chat_req).await?;
+        Ok(chunks_to_anthropic_events(chunks).boxed())
     }
 }

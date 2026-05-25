@@ -1,7 +1,7 @@
 use crate::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
 };
 use bytes::Bytes;
 use futures_core::Stream;
@@ -55,7 +55,7 @@ pub trait Provider: Send + Sync {
     fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error>> + Send;
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error>> + Send;
 
     /// Gemini Generative Language API: `:generateContent`.
     ///
@@ -88,10 +88,10 @@ pub trait Provider: Send + Sync {
     ) -> impl Future<Output = Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error>> + Send
     {
         async move {
-            let mut anth = AnthropicRequest::from(request);
-            anth.model = model.to_string();
-            anth.stream = Some(true);
-            self.anthropic_messages_stream(&anth).await
+            let mut chat_req = ChatCompletionRequest::from(AnthropicRequest::from(request));
+            chat_req.model = model.to_string();
+            chat_req.stream = Some(true);
+            self.chat_completion_stream(&chat_req).await
         }
     }
 

@@ -1,9 +1,10 @@
 use crate::{RemoteProvider, make_client};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    GatewayConfig, ImageRequest, MultipartField, Provider, ProviderConfig, ProviderKind,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider, ProviderConfig,
+    ProviderKind,
 };
 use rand::Rng;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -358,7 +359,7 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let model = self.resolve(&request.model);
         let deployment = self
             .dispatch(model)

@@ -2,11 +2,12 @@ use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use bytes::{Buf, Bytes, BytesMut};
 use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicResponse, AnthropicSystem,
-    AnthropicTool, AnthropicUsage, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, DEFAULT_MAX_TOKENS, Delta, Error,
-    FinishReason, FunctionCallDelta, Message, OpenAiUsage, Provider, Role, Stop, ThinkingConfig,
-    ToolCallDelta, ToolChoice, ToolType, Usage,
+    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicRequest,
+    AnthropicResponse, AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage,
+    BlockDelta, BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    Choice, ChunkChoice, ContentBlock, DEFAULT_MAX_TOKENS, Delta, Error, FinishReason,
+    FunctionCallDelta, Message, MessageDeltaPayload, OpenAiUsage, Provider, Role, Stop,
+    ThinkingConfig, ToolCallDelta, ToolChoice, ToolType, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::Deserialize;
@@ -32,15 +33,25 @@ impl Provider for AnthropicProvider {
         &self,
         request: &ChatCompletionRequest,
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
-        let s = chat_completion_stream(
-            &self.client,
-            &self.base_url,
-            &self.api_key,
-            request,
-            &request.model,
-        )
-        .await?;
-        Ok(s.boxed())
+        let mut anthropic_req = translate_request(request);
+        anthropic_req.stream = Some(true);
+        let body = crabllm_core::json::to_vec(&anthropic_req)
+            .map_err(|e| Error::Internal(e.to_string()))?;
+        let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
+        let auth = auth_headers(&self.api_key);
+        let mut headers: Vec<(&str, &str)> = vec![
+            ("anthropic-version", "2023-06-01"),
+            ("content-type", "application/json"),
+        ];
+        for (k, v) in &auth {
+            headers.push((k, v.as_str()));
+        }
+        if anthropic_req.thinking.is_some() {
+            headers.push(("anthropic-beta", THINKING_BETA));
+        }
+        let byte_stream = self.client.post_stream(&url, &headers, body.into()).await?;
+        let events = anthropic_event_stream(byte_stream, request.model.clone());
+        Ok(anthropic_events_to_chunks(events).boxed())
     }
 
     async fn anthropic_messages(
@@ -79,7 +90,7 @@ impl Provider for AnthropicProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut req = request.clone();
         req.stream = Some(true);
         let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Internal(e.to_string()))?;
@@ -96,7 +107,7 @@ impl Provider for AnthropicProvider {
             headers.push(("anthropic-beta", THINKING_BETA));
         }
         let byte_stream = self.client.post_stream(&url, &headers, body.into()).await?;
-        Ok(anthropic_sse_stream(byte_stream, request.model.clone()).boxed())
+        Ok(anthropic_event_stream(byte_stream, request.model.clone()).boxed())
     }
 
     fn is_anthropic_compat(&self) -> bool {
@@ -458,62 +469,26 @@ pub async fn chat_completion(
     Ok(translate_response(anthropic_resp))
 }
 
-pub async fn chat_completion_stream(
-    client: &HttpClient,
-    base_url: &str,
-    api_key: &str,
-    request: &ChatCompletionRequest,
-    model: &str,
-) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
-    let mut anthropic_req = translate_request(request);
-    anthropic_req.stream = Some(true);
-    let url = format!("{}/messages", base_url.trim_end_matches('/'));
-
-    let body =
-        crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
-    let auth = auth_headers(api_key);
-    let mut headers: Vec<(&str, &str)> = vec![
-        ("anthropic-version", "2023-06-01"),
-        ("content-type", "application/json"),
-    ];
-    for (k, v) in &auth {
-        headers.push((k, v.as_str()));
-    }
-    if anthropic_req.thinking.is_some() {
-        headers.push(("anthropic-beta", THINKING_BETA));
-    }
-    let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
-
-    let model = model.to_string();
-    Ok(anthropic_sse_stream(byte_stream, model))
-}
-
-/// Streaming state: tracks chunk counter, tool call counter, cached input tokens,
-/// and whether the current content block is a thinking block.
-struct StreamState {
-    chunk_idx: u64,
-    tool_call_idx: u32,
-    input_tokens: u32,
-    cache_read_input_tokens: Option<u32>,
-    cache_creation_input_tokens: Option<u32>,
-    is_thinking_block: bool,
-}
-
-pub(crate) fn anthropic_sse_stream(
+/// Parse an Anthropic SSE byte stream into native `AnthropicStreamEvent`s.
+pub fn anthropic_event_stream(
     byte_stream: ByteStream,
     model: String,
-) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> {
-    let state = StreamState {
-        chunk_idx: 0,
-        tool_call_idx: 0,
-        input_tokens: 0,
-        cache_read_input_tokens: None,
-        cache_creation_input_tokens: None,
-        is_thinking_block: false,
-    };
+) -> impl Stream<Item = Result<AnthropicStreamEvent, Error>> {
+    struct State {
+        next_index: u32,
+        input_usage: AnthropicUsage,
+    }
 
     stream::unfold(
-        (byte_stream, BytesMut::new(), model, state),
+        (byte_stream, BytesMut::new(), model, State {
+            next_index: 0,
+            input_usage: AnthropicUsage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read_input_tokens: None,
+                cache_creation_input_tokens: None,
+            },
+        }),
         |(mut byte_stream, mut buffer, model, mut state)| async move {
             use futures::StreamExt;
 
@@ -556,11 +531,21 @@ pub(crate) fn anthropic_sse_stream(
                             if let Some(msg) = &event.message
                                 && let Some(usage) = &msg.usage
                             {
-                                state.input_tokens = usage.input_tokens;
-                                state.cache_read_input_tokens = usage.cache_read_input_tokens;
-                                state.cache_creation_input_tokens =
-                                    usage.cache_creation_input_tokens;
+                                state.input_usage = usage.clone();
                             }
+                            let out = AnthropicStreamEvent::MessageStart {
+                                message: AnthropicResponse {
+                                    id: String::new(),
+                                    r#type: "message".to_string(),
+                                    role: "assistant".to_string(),
+                                    model: model.clone(),
+                                    content: Vec::new(),
+                                    stop_reason: None,
+                                    stop_sequence: None,
+                                    usage: state.input_usage.clone(),
+                                },
+                            };
+                            return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
                         "error" => {
                             let msg = if let Some(err) = &event.error {
@@ -577,194 +562,96 @@ pub(crate) fn anthropic_sse_stream(
                             let Some(cb) = &event.content_block else {
                                 continue;
                             };
-                            match cb.kind.as_str() {
-                                "thinking" => state.is_thinking_block = true,
-                                "tool_use" => {
-                                    state.is_thinking_block = false;
-                                    state.chunk_idx += 1;
-                                    let tool_idx = state.tool_call_idx;
-                                    state.tool_call_idx += 1;
-                                    let chunk = ChatCompletionChunk {
-                                        id: format!("chatcmpl-{}", state.chunk_idx),
-                                        object: "chat.completion.chunk".to_string(),
-                                        created: 0,
-                                        model: model.clone(),
-                                        choices: vec![ChunkChoice {
-                                            index: 0,
-                                            delta: Delta {
-                                                role: if state.chunk_idx == 1 {
-                                                    Some(Role::Assistant)
-                                                } else {
-                                                    None
-                                                },
-                                                content: None,
-                                                tool_calls: Some(vec![ToolCallDelta {
-                                                    index: tool_idx,
-                                                    id: cb.id.clone(),
-                                                    kind: Some(ToolType::Function),
-                                                    function: Some(FunctionCallDelta {
-                                                        name: cb.name.clone(),
-                                                        arguments: Some(String::new()),
-                                                    }),
-                                                }]),
-                                                reasoning_content: None,
-                                            },
-                                            finish_reason: None,
-                                            logprobs: None,
-                                        }],
-                                        usage: None,
-                                        system_fingerprint: None,
-                                    };
-                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
-                                }
-                                _ => state.is_thinking_block = false,
-                            }
+                            let index = state.next_index;
+                            state.next_index += 1;
+                            let content_block = match cb.kind.as_str() {
+                                "text" => AnthropicContentBlock::text(""),
+                                "thinking" => AnthropicContentBlock::Thinking {
+                                    thinking: String::new(),
+                                    signature: None,
+                                },
+                                "tool_use" => AnthropicContentBlock::ToolUse {
+                                    id: cb.id.clone().unwrap_or_default(),
+                                    name: cb.name.clone().unwrap_or_default(),
+                                    input: serde_json::json!({}),
+                                    cache_control: None,
+                                },
+                                _ => continue,
+                            };
+                            let out = AnthropicStreamEvent::ContentBlockStart {
+                                index,
+                                content_block,
+                            };
+                            return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
                         "content_block_stop" => {
-                            state.is_thinking_block = false;
+                            let index = event.index.unwrap_or(
+                                state.next_index.saturating_sub(1),
+                            );
+                            let out = AnthropicStreamEvent::ContentBlockStop { index };
+                            return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
                         "content_block_delta" => {
                             let Some(delta) = &event.delta else {
                                 continue;
                             };
-                            match delta.kind.as_str() {
-                                "thinking_delta" => {
-                                    let text = delta.thinking.as_deref().unwrap_or(&delta.text);
-                                    if text.is_empty() {
-                                        continue;
-                                    }
-                                    state.chunk_idx += 1;
-                                    let chunk = ChatCompletionChunk {
-                                        id: format!("chatcmpl-{}", state.chunk_idx),
-                                        object: "chat.completion.chunk".to_string(),
-                                        created: 0,
-                                        model: model.clone(),
-                                        choices: vec![ChunkChoice {
-                                            index: 0,
-                                            delta: Delta {
-                                                role: if state.chunk_idx == 1 {
-                                                    Some(Role::Assistant)
-                                                } else {
-                                                    None
-                                                },
-                                                content: None,
-                                                tool_calls: None,
-                                                reasoning_content: Some(text.to_string()),
-                                            },
-                                            finish_reason: None,
-                                            logprobs: None,
-                                        }],
-                                        usage: None,
-                                        system_fingerprint: None,
-                                    };
-                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
-                                }
-                                "text_delta" => {
-                                    state.chunk_idx += 1;
-                                    let chunk = ChatCompletionChunk {
-                                        id: format!("chatcmpl-{}", state.chunk_idx),
-                                        object: "chat.completion.chunk".to_string(),
-                                        created: 0,
-                                        model: model.clone(),
-                                        choices: vec![ChunkChoice {
-                                            index: 0,
-                                            delta: Delta {
-                                                role: if state.chunk_idx == 1 {
-                                                    Some(Role::Assistant)
-                                                } else {
-                                                    None
-                                                },
-                                                content: Some(delta.text.clone()),
-                                                tool_calls: None,
-                                                reasoning_content: None,
-                                            },
-                                            finish_reason: None,
-                                            logprobs: None,
-                                        }],
-                                        usage: None,
-                                        system_fingerprint: None,
-                                    };
-                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
-                                }
+                            let index = event.index.unwrap_or(
+                                state.next_index.saturating_sub(1),
+                            );
+                            let block_delta = match delta.kind.as_str() {
+                                "text_delta" => BlockDelta::Text {
+                                    text: delta.text.clone(),
+                                },
+                                "thinking_delta" => BlockDelta::Thinking {
+                                    thinking: delta
+                                        .thinking
+                                        .clone()
+                                        .unwrap_or_else(|| delta.text.clone()),
+                                },
                                 "input_json_delta" => {
                                     let Some(partial) = &delta.partial_json else {
                                         continue;
                                     };
-                                    state.chunk_idx += 1;
-                                    let tool_idx = state.tool_call_idx.saturating_sub(1);
-                                    let chunk = ChatCompletionChunk {
-                                        id: format!("chatcmpl-{}", state.chunk_idx),
-                                        object: "chat.completion.chunk".to_string(),
-                                        created: 0,
-                                        model: model.clone(),
-                                        choices: vec![ChunkChoice {
-                                            index: 0,
-                                            delta: Delta {
-                                                role: None,
-                                                content: None,
-                                                tool_calls: Some(vec![ToolCallDelta {
-                                                    index: tool_idx,
-                                                    id: None,
-                                                    kind: None,
-                                                    function: Some(FunctionCallDelta {
-                                                        name: None,
-                                                        arguments: Some(partial.clone()),
-                                                    }),
-                                                }]),
-                                                reasoning_content: None,
-                                            },
-                                            finish_reason: None,
-                                            logprobs: None,
-                                        }],
-                                        usage: None,
-                                        system_fingerprint: None,
-                                    };
-                                    return Some((Ok(chunk), (byte_stream, buffer, model, state)));
+                                    BlockDelta::InputJson {
+                                        partial_json: partial.clone(),
+                                    }
                                 }
-                                _ => {}
-                            }
+                                _ => continue,
+                            };
+                            let out = AnthropicStreamEvent::ContentBlockDelta {
+                                index,
+                                delta: block_delta,
+                            };
+                            return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
                         "message_delta" => {
-                            let Some(delta) = &event.delta else {
-                                continue;
+                            let stop_reason = event
+                                .delta
+                                .as_ref()
+                                .and_then(|d| d.stop_reason.clone());
+                            let usage = event.usage.unwrap_or(AnthropicUsage {
+                                input_tokens: state.input_usage.input_tokens,
+                                output_tokens: 0,
+                                cache_read_input_tokens: state.input_usage.cache_read_input_tokens,
+                                cache_creation_input_tokens: state
+                                    .input_usage
+                                    .cache_creation_input_tokens,
+                            });
+                            let out = AnthropicStreamEvent::MessageDelta {
+                                delta: MessageDeltaPayload {
+                                    stop_reason,
+                                    stop_sequence: None,
+                                },
+                                usage,
                             };
-                            let finish_reason = map_stop_reason(&delta.stop_reason);
-                            state.chunk_idx += 1;
-                            let chunk = ChatCompletionChunk {
-                                id: format!("chatcmpl-{}", state.chunk_idx),
-                                object: "chat.completion.chunk".to_string(),
-                                created: 0,
-                                model: model.clone(),
-                                choices: vec![ChunkChoice {
-                                    index: 0,
-                                    delta: Delta {
-                                        role: None,
-                                        content: None,
-                                        tool_calls: None,
-                                        reasoning_content: None,
-                                    },
-                                    finish_reason,
-                                    logprobs: None,
-                                }],
-                                usage: event.usage.map(|u| {
-                                    OpenAiUsage::from(&Usage {
-                                        input_tokens: state.input_tokens,
-                                        cache_read_tokens: state
-                                            .cache_read_input_tokens
-                                            .unwrap_or(0),
-                                        cache_write_tokens: state
-                                            .cache_creation_input_tokens
-                                            .unwrap_or(0),
-                                        output_tokens: u.output_tokens,
-                                        reasoning_tokens: 0,
-                                        server_tool_calls: Default::default(),
-                                    })
-                                }),
-                                system_fingerprint: None,
-                            };
-                            return Some((Ok(chunk), (byte_stream, buffer, model, state)));
+                            return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
-                        "message_stop" => return None,
+                        "message_stop" => {
+                            return Some((
+                                Ok(AnthropicStreamEvent::MessageStop),
+                                (byte_stream, buffer, model, state),
+                            ));
+                        }
                         _ => {}
                     }
                     continue;
@@ -785,4 +672,397 @@ pub(crate) fn anthropic_sse_stream(
             }
         },
     )
+}
+
+/// Convert a stream of native Anthropic events to OpenAI-shaped chunks.
+pub fn anthropic_events_to_chunks(
+    events: impl Stream<Item = Result<AnthropicStreamEvent, Error>> + Send + 'static,
+) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> + Send + 'static {
+    struct ChunkState {
+        model: String,
+        chunk_idx: u64,
+        tool_call_idx: u32,
+        input_usage: AnthropicUsage,
+    }
+
+    stream::unfold(
+        (events.boxed(), ChunkState {
+            model: String::new(),
+            chunk_idx: 0,
+            tool_call_idx: 0,
+            input_usage: AnthropicUsage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read_input_tokens: None,
+                cache_creation_input_tokens: None,
+            },
+        }),
+        |(mut events, mut state)| async move {
+            use futures::StreamExt;
+
+            loop {
+                let event = match events.next().await? {
+                    Ok(e) => e,
+                    Err(e) => return Some((Err(e), (events, state))),
+                };
+
+                match event {
+                    AnthropicStreamEvent::MessageStart { message } => {
+                        state.model = message.model;
+                        state.input_usage = message.usage;
+                    }
+                    AnthropicStreamEvent::ContentBlockStart { content_block, .. } => {
+                        if let AnthropicContentBlock::ToolUse { id, name, .. } = &content_block {
+                            state.chunk_idx += 1;
+                            let tool_idx = state.tool_call_idx;
+                            state.tool_call_idx += 1;
+                            let chunk = ChatCompletionChunk {
+                                id: format!("chatcmpl-{}", state.chunk_idx),
+                                object: "chat.completion.chunk".to_string(),
+                                created: 0,
+                                model: state.model.clone(),
+                                choices: vec![ChunkChoice {
+                                    index: 0,
+                                    delta: Delta {
+                                        role: if state.chunk_idx == 1 {
+                                            Some(Role::Assistant)
+                                        } else {
+                                            None
+                                        },
+                                        content: None,
+                                        tool_calls: Some(vec![ToolCallDelta {
+                                            index: tool_idx,
+                                            id: Some(id.clone()),
+                                            kind: Some(ToolType::Function),
+                                            function: Some(FunctionCallDelta {
+                                                name: Some(name.clone()),
+                                                arguments: Some(String::new()),
+                                            }),
+                                        }]),
+                                        reasoning_content: None,
+                                    },
+                                    finish_reason: None,
+                                    logprobs: None,
+                                }],
+                                usage: None,
+                                system_fingerprint: None,
+                            };
+                            return Some((Ok(chunk), (events, state)));
+                        }
+                    }
+                    AnthropicStreamEvent::ContentBlockDelta { delta, .. } => {
+                        state.chunk_idx += 1;
+                        let oai_delta = match delta {
+                            BlockDelta::Text { text } => Delta {
+                                role: if state.chunk_idx == 1 { Some(Role::Assistant) } else { None },
+                                content: Some(text),
+                                tool_calls: None,
+                                reasoning_content: None,
+                            },
+                            BlockDelta::Thinking { thinking } => {
+                                if thinking.is_empty() { continue; }
+                                Delta {
+                                    role: if state.chunk_idx == 1 { Some(Role::Assistant) } else { None },
+                                    content: None,
+                                    tool_calls: None,
+                                    reasoning_content: Some(thinking),
+                                }
+                            }
+                            BlockDelta::InputJson { partial_json } => Delta {
+                                role: None,
+                                content: None,
+                                tool_calls: Some(vec![ToolCallDelta {
+                                    index: state.tool_call_idx.saturating_sub(1),
+                                    id: None,
+                                    kind: None,
+                                    function: Some(FunctionCallDelta {
+                                        name: None,
+                                        arguments: Some(partial_json),
+                                    }),
+                                }]),
+                                reasoning_content: None,
+                            },
+                        };
+                        let chunk = ChatCompletionChunk {
+                            id: format!("chatcmpl-{}", state.chunk_idx),
+                            object: "chat.completion.chunk".to_string(),
+                            created: 0,
+                            model: state.model.clone(),
+                            choices: vec![ChunkChoice {
+                                index: 0,
+                                delta: oai_delta,
+                                finish_reason: None,
+                                logprobs: None,
+                            }],
+                            usage: None,
+                            system_fingerprint: None,
+                        };
+                        return Some((Ok(chunk), (events, state)));
+                    }
+                    AnthropicStreamEvent::MessageDelta { delta, usage } => {
+                        let finish_reason = delta.stop_reason.as_deref().map(|r| match r {
+                            "end_turn" => FinishReason::Stop,
+                            "max_tokens" => FinishReason::Length,
+                            "tool_use" => FinishReason::ToolCalls,
+                            other => FinishReason::Custom(other.to_string()),
+                        });
+                        state.chunk_idx += 1;
+                        let chunk = ChatCompletionChunk {
+                            id: format!("chatcmpl-{}", state.chunk_idx),
+                            object: "chat.completion.chunk".to_string(),
+                            created: 0,
+                            model: state.model.clone(),
+                            choices: vec![ChunkChoice {
+                                index: 0,
+                                delta: Delta {
+                                    role: None,
+                                    content: None,
+                                    tool_calls: None,
+                                    reasoning_content: None,
+                                },
+                                finish_reason,
+                                logprobs: None,
+                            }],
+                            usage: Some(OpenAiUsage::from(&Usage {
+                                input_tokens: state.input_usage.input_tokens,
+                                cache_read_tokens: state.input_usage.cache_read_input_tokens.unwrap_or(0),
+                                cache_write_tokens: state.input_usage.cache_creation_input_tokens.unwrap_or(0),
+                                output_tokens: usage.output_tokens,
+                                reasoning_tokens: 0,
+                                server_tool_calls: Default::default(),
+                            })),
+                            system_fingerprint: None,
+                        };
+                        return Some((Ok(chunk), (events, state)));
+                    }
+                    AnthropicStreamEvent::MessageStop => return None,
+                    AnthropicStreamEvent::ContentBlockStop { .. } => {}
+                }
+            }
+        },
+    )
+}
+
+/// Convert an OpenAI-shaped chunk stream into native Anthropic streaming
+/// events. Reconstructs block boundaries from the flat delta stream.
+pub fn chunks_to_anthropic_events(
+    chunks: impl Stream<Item = Result<ChatCompletionChunk, Error>> + Unpin + Send + 'static,
+) -> impl Stream<Item = Result<AnthropicStreamEvent, Error>> + Send + 'static {
+    use std::collections::VecDeque;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum CurrentBlock {
+        Text { index: u32 },
+        Thinking { index: u32 },
+        ToolUse { index: u32, openai_index: u32 },
+    }
+
+    struct State {
+        started: bool,
+        finished: bool,
+        current: Option<CurrentBlock>,
+        next_index: u32,
+        pending: VecDeque<AnthropicStreamEvent>,
+        deferred_error: Option<Error>,
+        latest_usage: Option<OpenAiUsage>,
+        stop_reason: Option<String>,
+    }
+
+    impl State {
+        fn ensure_started(&mut self, chunk: &ChatCompletionChunk) {
+            if self.started { return; }
+            self.started = true;
+            let msg = AnthropicResponse {
+                id: chunk.id.clone(),
+                r#type: "message".to_string(),
+                role: "assistant".to_string(),
+                model: chunk.model.clone(),
+                content: Vec::new(),
+                stop_reason: None,
+                stop_sequence: None,
+                usage: AnthropicUsage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_input_tokens: None,
+                    cache_creation_input_tokens: None,
+                },
+            };
+            self.pending.push_back(AnthropicStreamEvent::MessageStart { message: msg });
+        }
+
+        fn close_current(&mut self) {
+            if let Some(block) = self.current.take() {
+                let index = match block {
+                    CurrentBlock::Text { index }
+                    | CurrentBlock::Thinking { index }
+                    | CurrentBlock::ToolUse { index, .. } => index,
+                };
+                self.pending.push_back(AnthropicStreamEvent::ContentBlockStop { index });
+            }
+        }
+
+        fn switch_to_text(&mut self) -> u32 {
+            if let Some(CurrentBlock::Text { index }) = self.current { return index; }
+            self.close_current();
+            let index = self.next_index;
+            self.next_index += 1;
+            self.pending.push_back(AnthropicStreamEvent::ContentBlockStart {
+                index,
+                content_block: AnthropicContentBlock::text(""),
+            });
+            self.current = Some(CurrentBlock::Text { index });
+            index
+        }
+
+        fn switch_to_thinking(&mut self) -> u32 {
+            if let Some(CurrentBlock::Thinking { index }) = self.current { return index; }
+            self.close_current();
+            let index = self.next_index;
+            self.next_index += 1;
+            self.pending.push_back(AnthropicStreamEvent::ContentBlockStart {
+                index,
+                content_block: AnthropicContentBlock::Thinking {
+                    thinking: String::new(),
+                    signature: None,
+                },
+            });
+            self.current = Some(CurrentBlock::Thinking { index });
+            index
+        }
+
+        fn open_tool_use(&mut self, openai_index: u32, id: String, name: String) -> u32 {
+            self.close_current();
+            let index = self.next_index;
+            self.next_index += 1;
+            self.pending.push_back(AnthropicStreamEvent::ContentBlockStart {
+                index,
+                content_block: AnthropicContentBlock::ToolUse {
+                    id, name,
+                    input: serde_json::json!({}),
+                    cache_control: None,
+                },
+            });
+            self.current = Some(CurrentBlock::ToolUse { index, openai_index });
+            index
+        }
+
+        fn handle_chunk(&mut self, chunk: ChatCompletionChunk) {
+            self.ensure_started(&chunk);
+            if let Some(usage) = chunk.usage {
+                self.latest_usage = Some(usage);
+            }
+            let Some(choice) = chunk.choices.into_iter().next() else { return };
+            let delta = choice.delta;
+
+            if let Some(reasoning) = delta.reasoning_content
+                && !reasoning.is_empty()
+            {
+                let index = self.switch_to_thinking();
+                self.pending.push_back(AnthropicStreamEvent::ContentBlockDelta {
+                    index,
+                    delta: BlockDelta::Thinking { thinking: reasoning },
+                });
+            }
+
+            if let Some(text) = delta.content
+                && !text.is_empty()
+            {
+                let index = self.switch_to_text();
+                self.pending.push_back(AnthropicStreamEvent::ContentBlockDelta {
+                    index,
+                    delta: BlockDelta::Text { text },
+                });
+            }
+
+            if let Some(tool_deltas) = delta.tool_calls {
+                for tc in tool_deltas {
+                    let openai_index = tc.index;
+                    let current_index = match self.current {
+                        Some(CurrentBlock::ToolUse { index, openai_index: oi }) if oi == openai_index => index,
+                        _ => {
+                            let id = tc.id.clone().unwrap_or_default();
+                            let name = tc.function.as_ref().and_then(|f| f.name.clone()).unwrap_or_default();
+                            self.open_tool_use(openai_index, id, name)
+                        }
+                    };
+                    if let Some(func) = tc.function
+                        && let Some(args) = func.arguments
+                        && !args.is_empty()
+                    {
+                        self.pending.push_back(AnthropicStreamEvent::ContentBlockDelta {
+                            index: current_index,
+                            delta: BlockDelta::InputJson { partial_json: args },
+                        });
+                    }
+                }
+            }
+
+            if let Some(reason) = choice.finish_reason {
+                self.stop_reason = Some(match reason {
+                    FinishReason::Stop => "end_turn".to_string(),
+                    FinishReason::Length => "max_tokens".to_string(),
+                    FinishReason::ToolCalls => "tool_use".to_string(),
+                    FinishReason::ContentFilter => "content_filter".to_string(),
+                    FinishReason::Custom(s) => s,
+                });
+            }
+        }
+
+        fn finalize(&mut self, default_stop: String) {
+            self.close_current();
+            let stop_reason = self.stop_reason.take().or(Some(default_stop));
+            let usage = self
+                .latest_usage
+                .take()
+                .map(|u| AnthropicUsage::from(&Usage::from(&u)))
+                .unwrap_or(AnthropicUsage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_input_tokens: None,
+                    cache_creation_input_tokens: None,
+                });
+            self.pending.push_back(AnthropicStreamEvent::MessageDelta {
+                delta: MessageDeltaPayload { stop_reason, stop_sequence: None },
+                usage,
+            });
+            self.pending.push_back(AnthropicStreamEvent::MessageStop);
+            self.finished = true;
+        }
+    }
+
+    let state = State {
+        started: false,
+        finished: false,
+        current: None,
+        next_index: 0,
+        pending: VecDeque::new(),
+        deferred_error: None,
+        latest_usage: None,
+        stop_reason: None,
+    };
+
+    stream::unfold((chunks.boxed(), state), |(mut chunks, mut state)| async move {
+        loop {
+            if let Some(event) = state.pending.pop_front() {
+                return Some((Ok(event), (chunks, state)));
+            }
+            if let Some(err) = state.deferred_error.take() {
+                state.finished = true;
+                return Some((Err(err), (chunks, state)));
+            }
+            if state.finished { return None; }
+            match chunks.next().await {
+                Some(Ok(chunk)) => state.handle_chunk(chunk),
+                Some(Err(e)) => {
+                    if state.started { state.finalize("error".to_string()); }
+                    else { state.finished = true; }
+                    state.deferred_error = Some(e);
+                }
+                None => {
+                    if state.started { state.finalize("end_turn".to_string()); }
+                    else { return None; }
+                }
+            }
+        }
+    })
 }

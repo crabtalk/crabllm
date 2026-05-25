@@ -2,10 +2,10 @@ use arc_swap::ArcSwap;
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ByteStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, Extension, GatewayConfig, ImageRequest, MultipartField, Provider,
-    Storage,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
+    ByteStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, Error, Extension, GatewayConfig, ImageRequest,
+    MultipartField, Provider, Storage,
 };
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use crabllm_proxy::{
@@ -250,7 +250,7 @@ impl Provider for Dispatch {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         match self {
             Self::Remote(p) => p.anthropic_messages_stream(request).await,
         }

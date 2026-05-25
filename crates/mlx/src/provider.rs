@@ -16,10 +16,12 @@ use crate::{
     session::{GenerateOptions, GenerateRequest},
 };
 use crabllm_core::{
-    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
-    ChunkChoice, ContentBlock, Delta, Error, FinishReason, FunctionCall, FunctionCallDelta,
-    Message, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta, ToolType,
+    AnthropicStreamEvent, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, Delta, Error, FinishReason,
+    FunctionCall, FunctionCallDelta, Message, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta,
+    ToolType,
 };
+use crabllm_provider::chunks_to_anthropic_events;
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
     fs,
@@ -320,10 +322,11 @@ impl Provider for MlxProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut chat_req = ChatCompletionRequest::from(request.clone());
         chat_req.stream = Some(true);
-        self.chat_completion_stream(&chat_req).await
+        let chunks = self.chat_completion_stream(&chat_req).await?;
+        Ok(chunks_to_anthropic_events(chunks).boxed())
     }
 }
 

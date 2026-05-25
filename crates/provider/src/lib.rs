@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    ImageRequest, MultipartField, Provider, ProviderConfig, ProviderKind,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    EmbeddingResponse, Error, ImageRequest, MultipartField, Provider, ProviderConfig, ProviderKind,
 };
 pub use registry::{Deployment, ProviderRegistry};
 
@@ -13,8 +13,14 @@ mod registry;
 pub use client::{ByteStream, HttpClient};
 pub use provider::schema;
 pub use provider::{
-    anthropic::AnthropicProvider, azure::AzureProvider, deepseek::DeepseekProvider,
-    google::GoogleProvider, openai::OpenaiProvider,
+    anthropic::{
+        AnthropicProvider, anthropic_event_stream, anthropic_events_to_chunks,
+        chunks_to_anthropic_events,
+    },
+    azure::AzureProvider,
+    deepseek::DeepseekProvider,
+    google::GoogleProvider,
+    openai::OpenaiProvider,
 };
 
 #[cfg(feature = "bedrock")]
@@ -59,7 +65,7 @@ mod bedrock_stub {
         ) -> Result<
             crabllm_core::BoxStream<
                 'static,
-                Result<crabllm_core::ChatCompletionChunk, crabllm_core::Error>,
+                Result<crabllm_core::AnthropicStreamEvent, crabllm_core::Error>,
             >,
             crabllm_core::Error,
         > {
@@ -285,7 +291,7 @@ impl Provider for RemoteProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         match self {
             Self::Openai(p) => p.anthropic_messages_stream(request).await,
             Self::Anthropic(p) => p.anthropic_messages_stream(request).await,

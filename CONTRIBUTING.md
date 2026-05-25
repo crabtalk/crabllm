@@ -38,6 +38,8 @@ Layer 3 ─ Binary
 - **Provider** — translates requests and responses. Never touches HTTP routing
   or gateway concerns. Each provider is self-contained.
 - **Proxy** — routes and streams. Never interprets provider-specific formats.
+  The proxy is untyped: it passes raw bytes through whenever possible. Typed
+  deserialization belongs in the provider crate, not the proxy.
 
 ## Data Flow
 
