@@ -2,7 +2,8 @@ use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, ImageRequest, MultipartField, Provider, ProviderConfig, ProviderKind,
+    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
+    Provider, ProviderConfig, ProviderKind,
 };
 pub use registry::{Deployment, ProviderRegistry};
 
@@ -104,6 +105,36 @@ pub use bedrock_stub::BedrockProvider;
 /// function.
 pub mod openai_client {
     pub use crate::provider::openai::{chat_completion, chat_completion_stream, embedding};
+}
+
+/// Shared fallback for providers that don't natively speak Anthropic
+/// streaming: convert the request → `chat_completion_stream` → wrap
+/// each chunk as an `AnthropicStreamEvent`.
+pub async fn anthropic_stream_via_chat(
+    provider: &(impl Provider + ?Sized),
+    request: &AnthropicRequest,
+) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+    use futures::StreamExt;
+    let mut chat_req = ChatCompletionRequest::from(request.clone());
+    chat_req.stream = Some(true);
+    let chunks = provider.chat_completion_stream(&chat_req).await?;
+    Ok(chunks_to_anthropic_events(chunks).boxed())
+}
+
+/// Shared fallback for providers that don't natively speak Gemini
+/// streaming: convert the request → `chat_completion_stream` → wrap
+/// each chunk as a `GeminiResponse`.
+pub async fn gemini_stream_via_chat(
+    provider: &(impl Provider + ?Sized),
+    model: &str,
+    request: &GeminiRequest,
+) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+    use futures::StreamExt;
+    let mut chat_req = ChatCompletionRequest::from(AnthropicRequest::from(request));
+    chat_req.model = model.to_string();
+    chat_req.stream = Some(true);
+    let chunks = provider.chat_completion_stream(&chat_req).await?;
+    Ok(chunks_to_gemini_responses(chunks).boxed())
 }
 
 /// A configured remote-API provider, ready to dispatch requests.

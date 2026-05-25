@@ -1,5 +1,4 @@
 use crate::HttpClient;
-use crate::provider::anthropic::chunks_to_anthropic_events;
 use crate::provider::openai;
 use bytes::Bytes;
 use crabllm_core::{
@@ -111,10 +110,7 @@ impl Provider for AzureProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
-        let mut chat_req = ChatCompletionRequest::from(request.clone());
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(chunks_to_anthropic_events(chunks).boxed())
+        crate::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
@@ -122,12 +118,7 @@ impl Provider for AzureProvider {
         model: &str,
         request: &crabllm_core::GeminiRequest,
     ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
-        let mut chat_req =
-            ChatCompletionRequest::from(crabllm_core::AnthropicRequest::from(request));
-        chat_req.model = model.to_string();
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(crate::provider::google::chunks_to_gemini_responses(chunks).boxed())
+        crate::gemini_stream_via_chat(self, model, request).await
     }
 
     fn is_openai_compat(&self) -> bool {

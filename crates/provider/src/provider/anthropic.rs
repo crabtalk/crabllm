@@ -115,12 +115,7 @@ impl Provider for AnthropicProvider {
         model: &str,
         request: &crabllm_core::GeminiRequest,
     ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
-        let mut chat_req =
-            ChatCompletionRequest::from(crabllm_core::AnthropicRequest::from(request));
-        chat_req.model = model.to_string();
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(crate::provider::google::chunks_to_gemini_responses(chunks).boxed())
+        crate::gemini_stream_via_chat(self, model, request).await
     }
 
     fn is_anthropic_compat(&self) -> bool {

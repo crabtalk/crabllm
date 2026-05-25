@@ -21,7 +21,6 @@ use crabllm_core::{
     FunctionCall, FunctionCallDelta, Message, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta,
     ToolType,
 };
-use crabllm_provider::chunks_to_anthropic_events;
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
     fs,
@@ -323,10 +322,7 @@ impl Provider for MlxProvider {
         &self,
         request: &crabllm_core::AnthropicRequest,
     ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
-        let mut chat_req = ChatCompletionRequest::from(request.clone());
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(chunks_to_anthropic_events(chunks).boxed())
+        crabllm_provider::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
@@ -334,12 +330,7 @@ impl Provider for MlxProvider {
         model: &str,
         request: &crabllm_core::GeminiRequest,
     ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
-        let mut chat_req =
-            ChatCompletionRequest::from(crabllm_core::AnthropicRequest::from(request));
-        chat_req.model = model.to_string();
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(crabllm_provider::chunks_to_gemini_responses(chunks).boxed())
+        crabllm_provider::gemini_stream_via_chat(self, model, request).await
     }
 }
 

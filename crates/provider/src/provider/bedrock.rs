@@ -1,4 +1,3 @@
-use crate::provider::anthropic::chunks_to_anthropic_events;
 use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use crabllm_core::{
@@ -67,10 +66,7 @@ impl crabllm_core::Provider for BedrockProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<crabllm_core::BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
-        let mut chat_req = ChatCompletionRequest::from(request.clone());
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(chunks_to_anthropic_events(chunks).boxed())
+        crate::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
@@ -78,12 +74,7 @@ impl crabllm_core::Provider for BedrockProvider {
         model: &str,
         request: &crabllm_core::GeminiRequest,
     ) -> Result<crabllm_core::BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
-        let mut chat_req =
-            ChatCompletionRequest::from(crabllm_core::AnthropicRequest::from(request));
-        chat_req.model = model.to_string();
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(crate::provider::google::chunks_to_gemini_responses(chunks).boxed())
+        crate::gemini_stream_via_chat(self, model, request).await
     }
 }
 

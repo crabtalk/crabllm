@@ -3,7 +3,7 @@ use crabllm_core::{
     AnthropicStreamEvent, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
     ChatCompletionResponse, Error, Provider,
 };
-use crabllm_provider::{chunks_to_anthropic_events, openai_client};
+use crabllm_provider::openai_client;
 use futures::StreamExt;
 use std::sync::Arc;
 
@@ -66,10 +66,7 @@ impl Provider for LlamaCppProvider {
         &self,
         request: &crabllm_core::AnthropicRequest,
     ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
-        let mut chat_req = ChatCompletionRequest::from(request.clone());
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(chunks_to_anthropic_events(chunks).boxed())
+        crabllm_provider::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
@@ -77,11 +74,6 @@ impl Provider for LlamaCppProvider {
         model: &str,
         request: &crabllm_core::GeminiRequest,
     ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
-        let mut chat_req =
-            ChatCompletionRequest::from(crabllm_core::AnthropicRequest::from(request));
-        chat_req.model = model.to_string();
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(crabllm_provider::chunks_to_gemini_responses(chunks).boxed())
+        crabllm_provider::gemini_stream_via_chat(self, model, request).await
     }
 }

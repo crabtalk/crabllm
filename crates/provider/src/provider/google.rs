@@ -1,4 +1,3 @@
-use crate::provider::anthropic::chunks_to_anthropic_events;
 use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use bytes::{Buf, BytesMut};
@@ -47,10 +46,7 @@ impl Provider for GoogleProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
-        let mut chat_req = ChatCompletionRequest::from(request.clone());
-        chat_req.stream = Some(true);
-        let chunks = self.chat_completion_stream(&chat_req).await?;
-        Ok(chunks_to_anthropic_events(chunks).boxed())
+        crate::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
@@ -615,13 +611,7 @@ pub fn chunks_to_gemini_responses(
             let choice = chunk.choices.into_iter().next();
             let (finish_reason, parts) = match choice {
                 Some(c) => {
-                    let fr = c.finish_reason.map(|r| match r {
-                        crabllm_core::FinishReason::Stop => GeminiFinishReason::Stop,
-                        crabllm_core::FinishReason::Length => GeminiFinishReason::MaxTokens,
-                        crabllm_core::FinishReason::ToolCalls => GeminiFinishReason::Stop,
-                        crabllm_core::FinishReason::ContentFilter => GeminiFinishReason::Safety,
-                        crabllm_core::FinishReason::Custom(_) => GeminiFinishReason::Other,
-                    });
+                    let fr = c.finish_reason.as_ref().map(GeminiFinishReason::from);
                     let mut parts = Vec::new();
                     if let Some(text) = c.delta.content {
                         parts.push(GeminiPart {

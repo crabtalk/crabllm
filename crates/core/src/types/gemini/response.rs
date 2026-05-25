@@ -55,6 +55,17 @@ pub struct GeminiUsage {
     pub thoughts_token_count: Option<u32>,
 }
 
+impl From<&FinishReason> for GeminiFinishReason {
+    fn from(r: &FinishReason) -> Self {
+        match r {
+            FinishReason::Stop | FinishReason::ToolCalls => GeminiFinishReason::Stop,
+            FinishReason::Length => GeminiFinishReason::MaxTokens,
+            FinishReason::ContentFilter => GeminiFinishReason::Safety,
+            FinishReason::Custom(_) => GeminiFinishReason::Other,
+        }
+    }
+}
+
 impl From<&GeminiFinishReason> for FinishReason {
     fn from(r: &GeminiFinishReason) -> Self {
         match r {

@@ -248,9 +248,15 @@ where
         }
 
         // Translated streaming for non-compat providers.
-        let Ok(request) = crabllm_core::json::from_slice::<GeminiRequest>(&raw_body) else {
-            last_err = Some(crabllm_core::Error::Internal("invalid gemini request".into()));
-            continue;
+        let request: GeminiRequest = match crabllm_core::json::from_slice(&raw_body) {
+            Ok(r) => r,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiError::new(e.to_string(), "invalid_request_error")),
+                )
+                    .into_response();
+            }
         };
         match with_timeout(
             deployment.timeout,
