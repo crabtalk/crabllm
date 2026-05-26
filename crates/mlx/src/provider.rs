@@ -16,9 +16,10 @@ use crate::{
     session::{GenerateOptions, GenerateRequest},
 };
 use crabllm_core::{
-    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
-    ChunkChoice, ContentBlock, Delta, Error, FinishReason, FunctionCall, FunctionCallDelta,
-    Message, Provider, Role, ToolCall, ToolCallDelta, ToolType, Usage,
+    AnthropicStreamEvent, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, Delta, Error, FinishReason,
+    FunctionCall, FunctionCallDelta, Message, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta,
+    ToolType,
 };
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
@@ -195,7 +196,7 @@ impl Provider for MlxProvider {
                 finish_reason: Some(finish_reason),
                 logprobs: None,
             }],
-            usage: Some(Usage {
+            usage: Some(OpenAiUsage {
                 prompt_tokens: output.prompt_tokens,
                 completion_tokens: output.completion_tokens,
                 total_tokens: output.prompt_tokens + output.completion_tokens,
@@ -312,18 +313,25 @@ impl Provider for MlxProvider {
         &self,
         request: &crabllm_core::AnthropicRequest,
     ) -> Result<crabllm_core::AnthropicResponse, Error> {
-        let chat_req = ChatCompletionRequest::from(request.clone());
-        let resp = self.chat_completion(&chat_req).await?;
-        crabllm_core::AnthropicResponse::try_from(resp)
+        let ir_resp = self
+            .complete(&crabllm_core::ir::Request::from(request.clone()))
+            .await?;
+        Ok(crabllm_core::AnthropicResponse::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
         request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
-        let mut chat_req = ChatCompletionRequest::from(request.clone());
-        chat_req.stream = Some(true);
-        self.chat_completion_stream(&chat_req).await
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        crabllm_provider::anthropic_stream_via_chat(self, request).await
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        crabllm_provider::gemini_stream_via_chat(self, model, request).await
     }
 }
 
@@ -535,7 +543,7 @@ fn make_final_chunk(
             finish_reason: Some(finish_reason),
             logprobs: None,
         }],
-        usage: Some(Usage {
+        usage: Some(OpenAiUsage {
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,

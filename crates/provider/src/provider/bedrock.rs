@@ -1,9 +1,10 @@
 use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, Choice, ChunkChoice, ContentBlock as CoreContentBlock, Delta, Error,
-    FinishReason, FunctionCallDelta, Message, Role, ToolCallDelta, ToolType, Usage,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,
+    ContentBlock as CoreContentBlock, Delta, Error, FinishReason, FunctionCallDelta, Message, Role,
+    ToolCallDelta, ToolType, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -56,18 +57,26 @@ impl crabllm_core::Provider for BedrockProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        let chat_req = ChatCompletionRequest::from(request.clone());
-        let resp = self.chat_completion(&chat_req).await?;
-        AnthropicResponse::try_from(resp)
+        let ir_resp = self
+            .complete(&crabllm_core::ir::Request::from(request.clone()))
+            .await?;
+        Ok(AnthropicResponse::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<crabllm_core::BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
-        let mut chat_req = ChatCompletionRequest::from(request.clone());
-        chat_req.stream = Some(true);
-        self.chat_completion_stream(&chat_req).await
+    ) -> Result<crabllm_core::BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        crate::anthropic_stream_via_chat(self, request).await
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<crabllm_core::BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error>
+    {
+        crate::gemini_stream_via_chat(self, model, request).await
     }
 }
 
@@ -381,6 +390,7 @@ pub async fn chat_completion(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 

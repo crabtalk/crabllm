@@ -1,9 +1,10 @@
 use crate::{RemoteProvider, make_client};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    GatewayConfig, ImageRequest, MultipartField, Provider, ProviderConfig, ProviderKind,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
+    ProviderConfig, ProviderKind,
 };
 use rand::Rng;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -25,6 +26,7 @@ pub struct Deployment<P> {
     pub weight: u16,
     pub max_retries: u32,
     pub timeout: Duration,
+    pub retry_deadline: Duration,
 }
 
 /// Maps model names to weighted provider lists for routing.
@@ -227,6 +229,7 @@ impl<P> ProviderRegistry<P> {
                 weight: provider_config.weight.unwrap_or(1),
                 max_retries: provider_config.max_retries.unwrap_or(2),
                 timeout: Duration::from_secs(provider_config.timeout.unwrap_or(30)),
+                retry_deadline: Duration::from_secs(provider_config.retry_deadline.unwrap_or(15)),
             });
             for model_name in &provider_config.models {
                 providers
@@ -344,6 +347,28 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
         deployment.provider.chat_completion_stream(request).await
     }
 
+    async fn complete(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<crabllm_core::ir::Response, Error> {
+        let model = self.resolve(&request.model);
+        let deployment = self
+            .dispatch(model)
+            .ok_or_else(|| model_not_registered(model))?;
+        deployment.provider.complete(request).await
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::ir::StreamEvent, Error>>, Error> {
+        let model = self.resolve(&request.model);
+        let deployment = self
+            .dispatch(model)
+            .ok_or_else(|| model_not_registered(model))?;
+        deployment.provider.complete_stream(request).await
+    }
+
     async fn anthropic_messages(
         &self,
         request: &AnthropicRequest,
@@ -358,7 +383,7 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let model = self.resolve(&request.model);
         let deployment = self
             .dispatch(model)
@@ -400,6 +425,36 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
             .dispatch(resolved)
             .ok_or_else(|| model_not_registered(resolved))?;
         deployment.provider.audio_transcription(model, fields).await
+    }
+
+    async fn gemini_generate_content(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        let resolved = self.resolve(model);
+        let deployment = self
+            .dispatch(resolved)
+            .ok_or_else(|| model_not_registered(resolved))?;
+        deployment
+            .provider
+            .gemini_generate_content(model, request)
+            .await
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        let resolved = self.resolve(model);
+        let deployment = self
+            .dispatch(resolved)
+            .ok_or_else(|| model_not_registered(resolved))?;
+        deployment
+            .provider
+            .gemini_generate_content_stream(model, request)
+            .await
     }
 }
 

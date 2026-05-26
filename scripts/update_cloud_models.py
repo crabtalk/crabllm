@@ -68,6 +68,26 @@ def to_toml_pricing_key(name: str) -> str:
     return f'["{name}".pricing]'
 
 
+def to_per_million(per_token):
+    """Convert LiteLLM's per-token cost to per-million, rounded to 4 places."""
+    if per_token is None:
+        return None
+    return round(per_token * 1_000_000, 4)
+
+
+def extract_search_per_call(info):
+    """LiteLLM's `search_context_cost_per_query` is a sub-object keyed by
+    context size. Anthropic and OpenAI typically charge the same regardless of
+    size, so we pick the medium tier as the canonical per-call rate."""
+    bucket = info.get("search_context_cost_per_query")
+    if not isinstance(bucket, dict):
+        return None
+    for size in ("search_context_size_medium", "search_context_size_high", "search_context_size_low"):
+        if size in bucket and bucket[size] is not None and bucket[size] > 0:
+            return float(bucket[size])
+    return None
+
+
 def main():
     print(f"Fetching {LITELLM_URL} ...")
     with urlopen(LITELLM_URL) as resp:
@@ -106,11 +126,32 @@ def main():
             provider = info.get("litellm_provider", "")
             provider_label = PROVIDERS.get(provider.split("/")[0], provider)
 
+        pricing = {
+            "input_cost_per_million": to_per_million(input_cost),
+            "output_cost_per_million": to_per_million(output_cost or 0),
+        }
+        # Each of these is dropped on the canonical floor if missing — meaning
+        # billing falls back to the coarser bucket. Only emit when LiteLLM has
+        # the data.
+        for src_field, dst_field in [
+            ("cache_read_input_token_cost", "cache_read_cost_per_million"),
+            ("cache_creation_input_token_cost", "cache_write_cost_per_million"),
+            ("output_cost_per_reasoning_token", "reasoning_cost_per_million"),
+            ("input_cost_per_audio_token", "audio_input_cost_per_million"),
+            ("output_cost_per_audio_token", "audio_output_cost_per_million"),
+        ]:
+            v = info.get(src_field)
+            if v is not None and v > 0:
+                pricing[dst_field] = to_per_million(v)
+
+        search_per_call = extract_search_per_call(info)
+
         entry = {
             "context_length": int(context),
-            "prompt_cost_per_million": round(input_cost * 1_000_000, 4),
-            "completion_cost_per_million": round((output_cost or 0) * 1_000_000, 4),
+            "pricing": pricing,
         }
+        if search_per_call is not None:
+            entry["server_tool_cost_per_call"] = {"web_search": search_per_call}
         if info.get("supports_vision"):
             entry["vision"] = True
         models[model_key] = entry
@@ -130,6 +171,18 @@ def main():
         "",
     ]
 
+    # Field order for [<model>.pricing]. Required fields first, then optional
+    # ones — matches the struct definition in PricingConfig.
+    PRICING_FIELDS = [
+        "input_cost_per_million",
+        "output_cost_per_million",
+        "cache_read_cost_per_million",
+        "cache_write_cost_per_million",
+        "reasoning_cost_per_million",
+        "audio_input_cost_per_million",
+        "audio_output_cost_per_million",
+    ]
+
     count = 0
     for provider in sorted(by_provider):
         lines.append(f"# {provider}")
@@ -140,11 +193,15 @@ def main():
             lines.append(f"context_length = {ctx}")
             if info.get("vision"):
                 lines.append("vision = true")
+            pricing = info["pricing"]
             lines.append(f"{to_toml_pricing_key(name)}")
-            lines.append(f"prompt_cost_per_million = {info['prompt_cost_per_million']}")
-            lines.append(
-                f"completion_cost_per_million = {info['completion_cost_per_million']}"
-            )
+            for field in PRICING_FIELDS:
+                if field in pricing:
+                    lines.append(f"{field} = {pricing[field]}")
+            tool_costs = info.get("server_tool_cost_per_call")
+            if tool_costs:
+                pairs = ", ".join(f'"{k}" = {v}' for k, v in sorted(tool_costs.items()))
+                lines.append(f"server_tool_cost_per_call = {{ {pairs} }}")
             lines.append("")
             count += 1
 

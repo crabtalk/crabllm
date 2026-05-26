@@ -24,6 +24,7 @@ path = "examples/vlm_smoke.rs"
 
 [dependencies]
 crabllm-core.workspace = true
+crabllm-provider.workspace = true
 futures.workspace = true
 hf-hub.workspace = true
 serde.workspace = true

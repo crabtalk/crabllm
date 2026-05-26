@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.20"
+version = "0.0.21"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "High-performance LLM API gateway"
@@ -12,14 +12,14 @@ keywords = ["llm", "gateway", "proxy", "openai", "anthropic"]
 categories = ["web-programming::http-server", "network-programming"]
 
 [workspace.dependencies]
-crabllm-core = { version = "0.0.20", path = "crates/core" }
-crabllm-provider = { version = "0.0.20", path = "crates/provider", default-features = false }
-crabllm-proxy = { version = "0.0.20", path = "crates/proxy", default-features = false }
-crabllm-bench = { version = "0.0.20", path = "crates/bench" }
-crabllm = { version = "0.0.20", path = "crates/crabllm" }
-crabllm-llamacpp = { version = "0.0.20", path = "crates/llamacpp" }
-crabllm-mlx = { version = "0.0.20", path = "crates/mlx" }
-crabctl = { version = "0.0.20", path = "crates/crabctl" }
+crabllm-core = { version = "0.0.21", path = "crates/core" }
+crabllm-provider = { version = "0.0.21", path = "crates/provider", default-features = false }
+crabllm-proxy = { version = "0.0.21", path = "crates/proxy", default-features = false }
+crabllm-bench = { version = "0.0.21", path = "crates/bench" }
+crabllm = { version = "0.0.21", path = "crates/crabllm" }
+crabllm-llamacpp = { version = "0.0.21", path = "crates/llamacpp" }
+crabllm-mlx = { version = "0.0.21", path = "crates/mlx" }
+crabctl = { version = "0.0.21", path = "crates/crabctl" }
 
 # crates-io
 axum = { version = "0.8", features = ["multipart"] }
@@ -37,6 +37,7 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 hyper-rustls = { version = "0.27", default-features = false, features = ["ring", "http1", "tls12", "native-tokio", "logging"] }
 hyper-tls = "0.6"
 native-tls = { version = "0.2", features = ["alpn"] }
+http-body = "1"
 http-body-util = "0.1"
 http = "1"
 tokio = { version = "1", features = ["full"] }
@@ -59,6 +60,7 @@ tar = "0.4"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 dirs = "6"
 arc-swap = "1"
+parking_lot = "0.12"
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false, features = ["http-listener"] }
 utoipa = { version = "5", features = ["axum_extras"] }

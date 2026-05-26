@@ -117,6 +117,8 @@ pub(crate) struct CreateProviderRequest {
     #[serde(default)]
     timeout: Option<u64>,
     #[serde(default)]
+    retry_deadline: Option<u64>,
+    #[serde(default)]
     region: Option<String>,
     #[serde(default)]
     access_key: Option<String>,
@@ -137,6 +139,7 @@ impl CreateProviderRequest {
                 max_retries: self.max_retries,
                 api_version: self.api_version,
                 timeout: self.timeout,
+                retry_deadline: self.retry_deadline,
                 region: self.region,
                 access_key: self.access_key,
                 secret_key: self.secret_key,

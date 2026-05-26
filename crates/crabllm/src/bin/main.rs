@@ -2,10 +2,10 @@ use arc_swap::ArcSwap;
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ByteStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, Extension, GatewayConfig, ImageRequest, MultipartField, Provider,
-    Storage,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
+    ByteStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, Error, Extension, GatewayConfig, ImageRequest,
+    MultipartField, Provider, Storage,
 };
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use crabllm_proxy::{
@@ -250,7 +250,7 @@ impl Provider for Dispatch {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         match self {
             Self::Remote(p) => p.anthropic_messages_stream(request).await,
         }
@@ -293,6 +293,52 @@ impl Provider for Dispatch {
     fn is_anthropic_compat(&self) -> bool {
         match self {
             Self::Remote(p) => p.is_anthropic_compat(),
+        }
+    }
+
+    fn is_gemini_compat(&self) -> bool {
+        match self {
+            Self::Remote(p) => p.is_gemini_compat(),
+        }
+    }
+
+    async fn gemini_generate_content(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        match self {
+            Self::Remote(p) => p.gemini_generate_content(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        match self {
+            Self::Remote(p) => p.gemini_generate_content_stream(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<Bytes, Error> {
+        match self {
+            Self::Remote(p) => p.gemini_generate_content_raw(model, raw_body).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<ByteStream, Error> {
+        match self {
+            Self::Remote(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
         }
     }
 

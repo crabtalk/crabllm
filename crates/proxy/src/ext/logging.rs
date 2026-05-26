@@ -1,6 +1,4 @@
-use crabllm_core::{
-    BoxFuture, ChatCompletionRequest, ChatCompletionResponse, Error, Prefix, RequestContext,
-};
+use crabllm_core::{BoxFuture, Error, Prefix, RequestContext};
 
 pub struct RequestLogger;
 
@@ -22,15 +20,11 @@ impl crabllm_core::Extension for RequestLogger {
     fn on_response(
         &self,
         ctx: &RequestContext,
-        _request: &ChatCompletionRequest,
-        response: &ChatCompletionResponse,
+        _raw_request: &[u8],
+        raw_response: &[u8],
     ) -> BoxFuture<'_, ()> {
         let latency = ctx.started_at.elapsed();
-        let (prompt, completion) = response
-            .usage
-            .as_ref()
-            .map(|u| (u.prompt_tokens, u.completion_tokens))
-            .unwrap_or((0, 0));
+        let usage = crabllm_core::Usage::from(raw_response);
 
         tracing::info!(
             model = %ctx.model,
@@ -38,8 +32,8 @@ impl crabllm_core::Extension for RequestLogger {
             key = ctx.principal.as_deref().unwrap_or("-"),
             stream = ctx.is_stream,
             latency_ms = latency.as_millis() as u64,
-            prompt_tokens = prompt,
-            completion_tokens = completion,
+            prompt_tokens = usage.prompt_tokens(),
+            completion_tokens = usage.completion_tokens(),
             "request completed"
         );
 

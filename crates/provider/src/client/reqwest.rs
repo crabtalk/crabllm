@@ -1,4 +1,4 @@
-use crate::client::{ByteStream, RawResponse};
+use crate::client::{ByteStream, RawResponse, parse_retry_after};
 use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::StreamExt;
@@ -47,6 +47,11 @@ impl HttpClient {
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
         let body = resp
             .bytes()
             .await
@@ -62,6 +67,7 @@ impl HttpClient {
             status,
             body,
             content_type,
+            retry_after,
         })
     }
 
@@ -87,6 +93,11 @@ impl HttpClient {
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
         let body = resp
             .bytes()
             .await
@@ -103,7 +114,18 @@ impl HttpClient {
             status,
             body,
             content_type,
+            retry_after,
         })
+    }
+
+    pub async fn post_stream_body(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body_stream: ByteStream,
+    ) -> Result<ByteStream, Error> {
+        self.send_stream(url, headers, reqwest::Body::wrap_stream(body_stream))
+            .await
     }
 
     pub async fn post_stream(
@@ -112,18 +134,32 @@ impl HttpClient {
         headers: &[(&str, &str)],
         body: Bytes,
     ) -> Result<ByteStream, Error> {
-        let request_bytes = body.len();
+        self.send_stream(url, headers, reqwest::Body::from(body))
+            .await
+    }
+
+    async fn send_stream(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: reqwest::Body,
+    ) -> Result<ByteStream, Error> {
         let start = Instant::now();
         let mut req = self.inner.post(url).body(body);
         for &(name, value) in headers {
             req = req.header(name, value);
         }
         let resp = req.send().await.map_err(|e| {
-            tracing::debug!(url, request_bytes, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
+            tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
             Error::Internal(e.to_string())
         })?;
         let status = resp.status().as_u16();
         if status >= 400 {
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(parse_retry_after);
             let body = resp
                 .bytes()
                 .await
@@ -132,17 +168,18 @@ impl HttpClient {
             tracing::debug!(
                 url,
                 status,
-                request_bytes,
-                response_bytes = body.len(),
                 latency_ms = start.elapsed().as_millis() as u64,
                 "provider stream error"
             );
-            return Err(Error::Provider { status, body: text });
+            return Err(Error::Provider {
+                status,
+                body: text,
+                retry_after,
+            });
         }
         tracing::debug!(
             url,
             status,
-            request_bytes,
             ttfb_ms = start.elapsed().as_millis() as u64,
             "provider stream opened"
         );

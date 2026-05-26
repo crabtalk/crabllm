@@ -1,9 +1,11 @@
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    ImageRequest, MultipartField, Provider, ProviderConfig, ProviderKind,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
+    Provider, ProviderConfig, ProviderKind, ir,
 };
+use futures::StreamExt;
 pub use registry::{Deployment, ProviderRegistry};
 
 mod client;
@@ -13,8 +15,16 @@ mod registry;
 pub use client::{ByteStream, HttpClient};
 pub use provider::schema;
 pub use provider::{
-    anthropic::AnthropicProvider, azure::AzureProvider, deepseek::DeepseekProvider,
-    google::GoogleProvider, openai::OpenaiProvider,
+    anthropic::{
+        AnthropicProvider, anthropic_event_stream, anthropic_events_to_chunks,
+        chunks_to_anthropic_events,
+    },
+    azure::AzureProvider,
+    deepseek::DeepseekProvider,
+    google::{
+        GoogleProvider, chunks_to_gemini_responses, gemini_event_stream, gemini_responses_to_chunks,
+    },
+    openai::OpenaiProvider,
 };
 
 #[cfg(feature = "bedrock")]
@@ -59,12 +69,28 @@ mod bedrock_stub {
         ) -> Result<
             crabllm_core::BoxStream<
                 'static,
-                Result<crabllm_core::ChatCompletionChunk, crabllm_core::Error>,
+                Result<crabllm_core::AnthropicStreamEvent, crabllm_core::Error>,
             >,
             crabllm_core::Error,
         > {
             Err(crabllm_core::Error::not_implemented(
                 "bedrock anthropic streaming",
+            ))
+        }
+
+        async fn gemini_generate_content_stream(
+            &self,
+            _model: &str,
+            _request: &crabllm_core::GeminiRequest,
+        ) -> Result<
+            crabllm_core::BoxStream<
+                'static,
+                Result<crabllm_core::GeminiResponse, crabllm_core::Error>,
+            >,
+            crabllm_core::Error,
+        > {
+            Err(crabllm_core::Error::not_implemented(
+                "bedrock gemini streaming",
             ))
         }
     }
@@ -79,6 +105,36 @@ pub use bedrock_stub::BedrockProvider;
 /// function.
 pub mod openai_client {
     pub use crate::provider::openai::{chat_completion, chat_completion_stream, embedding};
+}
+
+/// Shared fallback for providers that don't natively speak Anthropic
+/// streaming: convert the request → `chat_completion_stream` → wrap
+/// each chunk as an `AnthropicStreamEvent`.
+pub async fn anthropic_stream_via_chat(
+    provider: &(impl Provider + ?Sized),
+    request: &AnthropicRequest,
+) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+    let mut ir_req = ir::Request::from(request.clone());
+    ir_req.stream = true;
+    let chat_req = ChatCompletionRequest::from(&ir_req);
+    let chunks = provider.chat_completion_stream(&chat_req).await?;
+    Ok(chunks_to_anthropic_events(chunks).boxed())
+}
+
+/// Shared fallback for providers that don't natively speak Gemini
+/// streaming: convert the request → `chat_completion_stream` → wrap
+/// each chunk as a `GeminiResponse`.
+pub async fn gemini_stream_via_chat(
+    provider: &(impl Provider + ?Sized),
+    model: &str,
+    request: &GeminiRequest,
+) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+    let mut ir_req = ir::Request::from(request);
+    ir_req.model = model.to_string();
+    ir_req.stream = true;
+    let chat_req = ChatCompletionRequest::from(&ir_req);
+    let chunks = provider.chat_completion_stream(&chat_req).await?;
+    Ok(chunks_to_gemini_responses(chunks).boxed())
 }
 
 /// A configured remote-API provider, ready to dispatch requests.
@@ -285,7 +341,7 @@ impl Provider for RemoteProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         match self {
             Self::Openai(p) => p.anthropic_messages_stream(request).await,
             Self::Anthropic(p) => p.anthropic_messages_stream(request).await,
@@ -293,6 +349,34 @@ impl Provider for RemoteProvider {
             Self::Google(p) => p.anthropic_messages_stream(request).await,
             Self::Bedrock(p) => p.anthropic_messages_stream(request).await,
             Self::Azure(p) => p.anthropic_messages_stream(request).await,
+        }
+    }
+
+    async fn complete(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<crabllm_core::ir::Response, Error> {
+        match self {
+            Self::Openai(p) => p.complete(request).await,
+            Self::Anthropic(p) => p.complete(request).await,
+            Self::Deepseek(p) => p.complete(request).await,
+            Self::Google(p) => p.complete(request).await,
+            Self::Bedrock(p) => p.complete(request).await,
+            Self::Azure(p) => p.complete(request).await,
+        }
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::ir::StreamEvent, Error>>, Error> {
+        match self {
+            Self::Openai(p) => p.complete_stream(request).await,
+            Self::Anthropic(p) => p.complete_stream(request).await,
+            Self::Deepseek(p) => p.complete_stream(request).await,
+            Self::Google(p) => p.complete_stream(request).await,
+            Self::Bedrock(p) => p.complete_stream(request).await,
+            Self::Azure(p) => p.complete_stream(request).await,
         }
     }
 
@@ -366,6 +450,54 @@ impl Provider for RemoteProvider {
         }
     }
 
+    async fn chat_completion_stream_passthrough(
+        &self,
+        model: &str,
+        body_stream: crabllm_core::ByteStream,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        match self {
+            Self::Openai(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Anthropic(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Deepseek(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Google(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Bedrock(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Azure(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+        }
+    }
+
+    async fn chat_completion_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        match self {
+            Self::Openai(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Anthropic(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Deepseek(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Google(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Bedrock(p) => p.chat_completion_stream_raw(model, raw_body).await,
+            Self::Azure(p) => p.chat_completion_stream_raw(model, raw_body).await,
+        }
+    }
+
     async fn chat_completion_raw(&self, model: &str, raw_body: Bytes) -> Result<Bytes, Error> {
         match self {
             Self::Openai(p) => p.chat_completion_raw(model, raw_body).await,
@@ -396,6 +528,77 @@ impl Provider for RemoteProvider {
             Self::Google(p) => p.anthropic_messages_stream_raw(raw_body).await,
             Self::Bedrock(p) => p.anthropic_messages_stream_raw(raw_body).await,
             Self::Azure(p) => p.anthropic_messages_stream_raw(raw_body).await,
+        }
+    }
+
+    fn is_gemini_compat(&self) -> bool {
+        match self {
+            Self::Openai(p) => p.is_gemini_compat(),
+            Self::Anthropic(p) => p.is_gemini_compat(),
+            Self::Deepseek(p) => p.is_gemini_compat(),
+            Self::Google(p) => p.is_gemini_compat(),
+            Self::Bedrock(p) => p.is_gemini_compat(),
+            Self::Azure(p) => p.is_gemini_compat(),
+        }
+    }
+
+    async fn gemini_generate_content(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content(model, request).await,
+            Self::Anthropic(p) => p.gemini_generate_content(model, request).await,
+            Self::Deepseek(p) => p.gemini_generate_content(model, request).await,
+            Self::Google(p) => p.gemini_generate_content(model, request).await,
+            Self::Bedrock(p) => p.gemini_generate_content(model, request).await,
+            Self::Azure(p) => p.gemini_generate_content(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Anthropic(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Deepseek(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Google(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Bedrock(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Azure(p) => p.gemini_generate_content_stream(model, request).await,
+        }
+    }
+
+    async fn gemini_generate_content_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<Bytes, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Anthropic(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Deepseek(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Google(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Bedrock(p) => p.gemini_generate_content_raw(model, raw_body).await,
+            Self::Azure(p) => p.gemini_generate_content_raw(model, raw_body).await,
+        }
+    }
+
+    async fn gemini_generate_content_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        match self {
+            Self::Openai(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Anthropic(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Deepseek(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Google(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Bedrock(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
+            Self::Azure(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
         }
     }
 }

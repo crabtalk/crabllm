@@ -1,9 +1,10 @@
-use crate::provider::{anthropic::anthropic_sse_stream, openai};
+use crate::provider::{anthropic::anthropic_event_stream, openai};
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, Provider,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
+    Provider,
 };
 use futures::stream::StreamExt;
 
@@ -62,7 +63,7 @@ impl Provider for DeepseekProvider {
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut req = request.clone();
         req.stream = Some(true);
         let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Internal(e.to_string()))?;
@@ -73,7 +74,15 @@ impl Provider for DeepseekProvider {
             body.into(),
         )
         .await?;
-        Ok(anthropic_sse_stream(byte_stream, request.model.clone()).boxed())
+        Ok(anthropic_event_stream(byte_stream, request.model.clone()).boxed())
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        crate::gemini_stream_via_chat(self, model, request).await
     }
 
     fn is_openai_compat(&self) -> bool {
@@ -139,6 +148,7 @@ pub async fn anthropic_messages_raw(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 

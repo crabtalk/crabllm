@@ -21,14 +21,11 @@ pub struct UsageEvent {
     /// Logical endpoint: `"chat.completions"`, `"embeddings"`,
     /// `"images.generations"`, `"audio.speech"`, `"audio.transcriptions"`.
     pub endpoint: &'static str,
-    /// Prompt / input tokens. For embeddings this is the input token
-    /// count; for image / audio endpoints it's 0.
-    pub tokens_in: u32,
-    /// Completion / output tokens. 0 for endpoints that don't generate
-    /// tokens (embeddings, images, audio).
-    pub tokens_out: u32,
-    /// Prompt tokens served from provider cache. Subset of `tokens_in`.
-    pub cache_hit_tokens: u32,
+    /// Full canonical usage with all axes (input, cache_read, cache_write,
+    /// output, reasoning, audio, per-call tools). Embeds the same type that
+    /// drives billing in [`crabllm_core::ModelInfo::cost`], so subscribers
+    /// see exactly what was charged for.
+    pub usage: crabllm_core::Usage,
     pub duration_ms: u64,
     /// The wire HTTP status the client observed, or `0` when a
     /// streaming chat response sent 200 OK headers and then broke

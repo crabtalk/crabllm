@@ -1,8 +1,9 @@
-use crate::client::{ByteStream, RawResponse};
+use crate::client::{ByteStream, RawResponse, parse_retry_after};
 use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::StreamExt;
-use http_body_util::{BodyExt, BodyStream, Full};
+use http_body::Frame;
+use http_body_util::{BodyExt, BodyStream, Full, StreamBody, combinators::UnsyncBoxBody};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::time::Instant;
 
@@ -10,7 +11,15 @@ use std::time::Instant;
 type Connector = hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
 #[cfg(feature = "native-tls")]
 type Connector = hyper_tls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
-type HyperClient = Client<Connector, Full<Bytes>>;
+
+type RequestBody = UnsyncBoxBody<Bytes, std::io::Error>;
+type HyperClient = Client<Connector, RequestBody>;
+
+fn full_body(bytes: Bytes) -> RequestBody {
+    Full::new(bytes)
+        .map_err(|never| match never {})
+        .boxed_unsync()
+}
 
 /// hyper-util client. No redirects, no cookies, no decompression.
 #[derive(Clone, Debug)]
@@ -69,7 +78,7 @@ impl HttpClient {
             builder = builder.header(name, value);
         }
         let req = builder
-            .body(Full::new(Bytes::new()))
+            .body(full_body(Bytes::new()))
             .map_err(|e| Error::Internal(e.to_string()))?;
 
         let resp = self.inner.request(req).await.map_err(|e| {
@@ -83,6 +92,11 @@ impl HttpClient {
             .get(http::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
+        let retry_after = resp
+            .headers()
+            .get(http::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
         let body = resp
             .into_body()
             .collect()
@@ -102,6 +116,7 @@ impl HttpClient {
             status,
             body,
             content_type,
+            retry_after,
         })
     }
 
@@ -123,7 +138,7 @@ impl HttpClient {
             builder = builder.header(name, value);
         }
         let req = builder
-            .body(Full::new(body))
+            .body(full_body(body))
             .map_err(|e| Error::Internal(e.to_string()))?;
 
         let resp = self.inner.request(req).await.map_err(|e| {
@@ -137,6 +152,11 @@ impl HttpClient {
             .get(http::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
+        let retry_after = resp
+            .headers()
+            .get(http::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
         let body = resp
             .into_body()
             .collect()
@@ -157,7 +177,19 @@ impl HttpClient {
             status,
             body,
             content_type,
+            retry_after,
         })
+    }
+
+    pub async fn post_stream_body(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body_stream: ByteStream,
+    ) -> Result<ByteStream, Error> {
+        let framed = body_stream.map(|r| r.map(Frame::data));
+        let body: RequestBody = BodyExt::boxed_unsync(StreamBody::new(framed));
+        self.send_stream(url, headers, body).await
     }
 
     pub async fn post_stream(
@@ -166,28 +198,40 @@ impl HttpClient {
         headers: &[(&str, &str)],
         body: Bytes,
     ) -> Result<ByteStream, Error> {
+        self.send_stream(url, headers, full_body(body)).await
+    }
+
+    async fn send_stream(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: RequestBody,
+    ) -> Result<ByteStream, Error> {
         let uri: http::Uri = url
             .parse()
             .map_err(|e: http::uri::InvalidUri| Error::Internal(e.to_string()))?;
 
-        let request_bytes = body.len();
         let start = Instant::now();
-
         let mut builder = http::Request::builder().method(http::Method::POST).uri(uri);
         for &(name, value) in headers {
             builder = builder.header(name, value);
         }
         let req = builder
-            .body(Full::new(body))
+            .body(body)
             .map_err(|e| Error::Internal(e.to_string()))?;
 
         let resp = self.inner.request(req).await.map_err(|e| {
-            tracing::debug!(url, request_bytes, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
+            tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
             Error::Internal(e.to_string())
         })?;
 
         let status = resp.status().as_u16();
         if status >= 400 {
+            let retry_after = resp
+                .headers()
+                .get(http::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(parse_retry_after);
             let body = resp
                 .into_body()
                 .collect()
@@ -198,18 +242,19 @@ impl HttpClient {
             tracing::debug!(
                 url,
                 status,
-                request_bytes,
-                response_bytes = body.len(),
                 latency_ms = start.elapsed().as_millis() as u64,
                 "provider stream error"
             );
-            return Err(Error::Provider { status, body: text });
+            return Err(Error::Provider {
+                status,
+                body: text,
+                retry_after,
+            });
         }
 
         tracing::debug!(
             url,
             status,
-            request_bytes,
             ttfb_ms = start.elapsed().as_millis() as u64,
             "provider stream opened"
         );

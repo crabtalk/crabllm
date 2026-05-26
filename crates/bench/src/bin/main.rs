@@ -10,7 +10,7 @@ use axum::{
 use clap::Parser;
 use crabllm_core::{
     ApiError, ChatCompletionChunk, ChatCompletionResponse, Choice, ChunkChoice, Delta, Embedding,
-    EmbeddingResponse, EmbeddingUsage, FinishReason, Message, Model, ModelList, Role, Usage,
+    EmbeddingResponse, EmbeddingUsage, FinishReason, Message, Model, ModelList, OpenAiUsage, Role,
 };
 use futures::{StreamExt, stream};
 use std::sync::Arc;
@@ -186,7 +186,7 @@ fn canned_chat_response() -> ChatCompletionResponse {
             finish_reason: Some(FinishReason::Stop),
             logprobs: None,
         }],
-        usage: Some(Usage {
+        usage: Some(OpenAiUsage {
             prompt_tokens: 10,
             completion_tokens: 20,
             total_tokens: 30,

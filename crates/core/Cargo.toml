@@ -18,8 +18,11 @@ sonic = ["dep:sonic-rs"]
 # crates-io
 bytes.workspace = true
 futures-core.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true, features = ["time"] }
 sonic-rs = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
+tracing.workspace = true
 utoipa = { workspace = true, optional = true }

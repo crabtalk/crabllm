@@ -1,7 +1,4 @@
-use crate::{
-    ApiError, BoxFuture, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
-    Prefix, storage_key,
-};
+use crate::{ApiError, BoxFuture, Error, Prefix, storage_key};
 use std::time::Instant;
 
 /// Per-request metadata passed to extension hooks.
@@ -35,8 +32,8 @@ impl ExtensionError {
 
 /// Trait for request pipeline extensions (usage tracking, logging, rate limiting, etc.).
 ///
-/// Extensions are registered at startup and receive hooks at each stage of request
-/// processing. All methods have default no-op implementations except `name` and `prefix`.
+/// Extensions receive raw bytes — they deserialize only the fields they need.
+/// All methods have default no-op implementations except `name` and `prefix`.
 ///
 /// Extensions must be `Send + Sync` for use across async handler tasks.
 /// Hook methods return `BoxFuture` for dyn-compatibility.
@@ -52,12 +49,10 @@ pub trait Extension: Send + Sync {
         storage_key(&self.prefix(), suffix)
     }
 
-    /// Check for a cached response before provider dispatch. Return `Some` to
-    /// skip the provider call entirely. Called for non-streaming requests only.
-    fn on_cache_lookup(
-        &self,
-        _request: &ChatCompletionRequest,
-    ) -> BoxFuture<'_, Option<ChatCompletionResponse>> {
+    /// Check for a cached response before provider dispatch. Return `Some`
+    /// with raw response bytes to skip the provider call entirely.
+    /// Called for non-streaming requests only.
+    fn on_cache_lookup(&self, _raw_request: &[u8]) -> BoxFuture<'_, Option<Vec<u8>>> {
         Box::pin(async { None })
     }
 
@@ -67,18 +62,20 @@ pub trait Extension: Send + Sync {
         Box::pin(async { Ok(()) })
     }
 
-    /// Called after a non-streaming chat completion response arrives from the provider.
+    /// Called after a non-streaming response arrives from the provider.
+    /// Both request and response are raw wire bytes.
     fn on_response(
         &self,
         _ctx: &RequestContext,
-        _request: &ChatCompletionRequest,
-        _response: &ChatCompletionResponse,
+        _raw_request: &[u8],
+        _raw_response: &[u8],
     ) -> BoxFuture<'_, ()> {
         Box::pin(async {})
     }
 
-    /// Called once per SSE chunk during a streaming response, before serialization.
-    fn on_chunk(&self, _ctx: &RequestContext, _chunk: &ChatCompletionChunk) -> BoxFuture<'_, ()> {
+    /// Called once per SSE chunk during a streaming response.
+    /// `raw_chunk` is the serialized JSON of the chunk.
+    fn on_chunk(&self, _ctx: &RequestContext, _raw_chunk: &[u8]) -> BoxFuture<'_, ()> {
         Box::pin(async {})
     }
 

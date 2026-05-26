@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::Request,
+    extract::{DefaultBodyLimit, Request},
     middleware,
     response::Response,
     routing::{get, post},
@@ -24,7 +24,9 @@ pub mod admin;
 pub mod admin_providers;
 pub mod anthropic;
 pub mod auth;
+mod body;
 pub mod ext;
+pub mod gemini;
 pub mod handlers;
 #[cfg(feature = "openapi")]
 pub mod openapi;
@@ -81,6 +83,10 @@ where
             post(handlers::chat_completions::<S, P>),
         )
         .route("/v1/messages", post(anthropic::messages::<S, P>))
+        .route(
+            "/v1beta/models/{model_action}",
+            post(gemini::generate_content::<S, P>),
+        )
         .route("/v1/embeddings", post(handlers::embeddings::<S, P>))
         .route(
             "/v1/images/generations",
@@ -93,6 +99,7 @@ where
         )
         .route("/v1/models", get(handlers::models::<S, P>))
         .route("/v1/usage", get(handlers::usage::<S, P>))
+        .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .with_state(state)
 }
 

@@ -6,9 +6,5 @@
 //! unchanged, then translate the response back to Anthropic's wire format.
 
 pub use handler::messages;
-pub use sse::{AnthropicSseEvent, to_anthropic_sse};
-pub use translate::{from_chat_completion, to_chat_completion};
 
 mod handler;
-mod sse;
-mod translate;

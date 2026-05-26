@@ -1,7 +1,7 @@
 use crate::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    ImageRequest, MultipartField,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField, ir,
 };
 use bytes::Bytes;
 use futures_core::Stream;
@@ -55,7 +55,52 @@ pub trait Provider: Send + Sync {
     fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error>> + Send;
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error>>
+    + Send;
+
+    /// Gemini Generative Language API: `:generateContent`.
+    ///
+    /// Default impl converts `GeminiRequest` to canonical Anthropic IR
+    /// (filling `model` from the path), dispatches to `anthropic_messages`,
+    /// and converts the response back. Providers that natively speak Gemini
+    /// (e.g. `GoogleProvider`) override for direct dispatch.
+    fn gemini_generate_content(
+        &self,
+        model: &str,
+        request: &GeminiRequest,
+    ) -> impl Future<Output = Result<GeminiResponse, Error>> + Send {
+        async move {
+            let mut ir_req = ir::Request::from(request);
+            ir_req.model = model.to_string();
+            let ir_resp = self.complete(&ir_req).await?;
+            Ok(GeminiResponse::from(&ir_resp))
+        }
+    }
+
+    /// Gemini Generative Language API: `:streamGenerateContent`.
+    ///
+    /// Returns native `GeminiResponse` items — each SSE chunk from Google
+    /// is a full response object with a single candidate.
+    fn gemini_generate_content_stream(
+        &self,
+        model: &str,
+        request: &GeminiRequest,
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error>> + Send;
+
+    fn complete(
+        &self,
+        _request: &ir::Request,
+    ) -> impl Future<Output = Result<ir::Response, Error>> + Send {
+        async { Err(Error::not_implemented("complete")) }
+    }
+
+    fn complete_stream(
+        &self,
+        _request: &ir::Request,
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<ir::StreamEvent, Error>>, Error>> + Send
+    {
+        async { Err(Error::not_implemented("complete_stream")) }
+    }
 
     fn embedding(
         &self,
@@ -98,6 +143,33 @@ pub trait Provider: Send + Sync {
         false
     }
 
+    /// Whether this provider speaks the Gemini wire format and can
+    /// forward raw `:generateContent` bytes without translation.
+    fn is_gemini_compat(&self) -> bool {
+        false
+    }
+
+    /// Stream a request body directly to an OpenAI-compatible endpoint and
+    /// return the raw SSE response stream. The body is consumed — no retries.
+    fn chat_completion_stream_passthrough(
+        &self,
+        _model: &str,
+        _body_stream: crate::ByteStream,
+    ) -> impl Future<Output = Result<crate::ByteStream, Error>> + Send {
+        async { Err(Error::not_implemented("chat_completion_stream_passthrough")) }
+    }
+
+    /// Stream raw OpenAI SSE bytes from an OpenAI-compatible endpoint.
+    /// The default returns `not_implemented`. OpenAI-compatible providers
+    /// override to forward bytes without deserialization.
+    fn chat_completion_stream_raw(
+        &self,
+        _model: &str,
+        _raw_body: Bytes,
+    ) -> impl Future<Output = Result<crate::ByteStream, Error>> + Send {
+        async { Err(Error::not_implemented("chat_completion_stream_raw")) }
+    }
+
     /// Forward raw OpenAI-format JSON body and return raw response bytes.
     /// The default deserializes, calls [`chat_completion`](Self::chat_completion),
     /// and re-serializes. OpenAI-compatible providers override to skip serde.
@@ -132,5 +204,32 @@ pub trait Provider: Send + Sync {
         _raw_body: Bytes,
     ) -> impl Future<Output = Result<crate::ByteStream, Error>> + Send {
         async { Err(Error::not_implemented("anthropic_messages_stream_raw")) }
+    }
+
+    /// Forward raw Gemini-format JSON body and return raw response bytes.
+    /// Defaults to deserialize → [`gemini_generate_content`](Self::gemini_generate_content) → re-serialize.
+    /// Gemini-compatible providers override to skip serde.
+    fn gemini_generate_content_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> impl Future<Output = Result<Bytes, Error>> + Send {
+        async move {
+            let request: GeminiRequest =
+                crate::json::from_slice(&raw_body).map_err(|e| Error::Internal(e.to_string()))?;
+            let resp = self.gemini_generate_content(model, &request).await?;
+            Ok(Bytes::from(
+                crate::json::to_vec(&resp).map_err(|e| Error::Internal(e.to_string()))?,
+            ))
+        }
+    }
+
+    /// Stream raw Gemini SSE bytes from a Gemini-compatible endpoint.
+    fn gemini_generate_content_stream_raw(
+        &self,
+        _model: &str,
+        _raw_body: Bytes,
+    ) -> impl Future<Output = Result<crate::ByteStream, Error>> + Send {
+        async { Err(Error::not_implemented("gemini_generate_content_stream_raw")) }
     }
 }

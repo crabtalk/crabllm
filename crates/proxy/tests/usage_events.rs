@@ -11,7 +11,8 @@ use axum::{
 };
 use crabllm_core::{
     BoxFuture, BoxStream, ChatCompletionRequest, ChatCompletionResponse, Choice, ContentBlock,
-    Error, FinishReason, GatewayConfig, KvPairs, Message, Prefix, Provider, Role, Storage, Usage,
+    Error, FinishReason, GatewayConfig, KvPairs, Message, OpenAiUsage, Prefix, Provider, Role,
+    Storage,
 };
 use crabllm_provider::{Deployment, ProviderRegistry};
 use crabllm_proxy::{AppState, UsageEvent, router};
@@ -44,7 +45,7 @@ impl Provider for FakeProvider {
                 finish_reason: Some(FinishReason::Stop),
                 logprobs: None,
             }],
-            usage: Some(Usage {
+            usage: Some(OpenAiUsage {
                 prompt_tokens: 11,
                 completion_tokens: 22,
                 total_tokens: 33,
@@ -73,8 +74,16 @@ impl Provider for FakeProvider {
     async fn anthropic_messages_stream(
         &self,
         _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::ChatCompletionChunk, Error>>, Error> {
+    ) -> Result<BoxStream<'static, Result<crabllm_core::AnthropicStreamEvent, Error>>, Error> {
         Err(Error::not_implemented("anthropic_messages_stream"))
+    }
+
+    async fn gemini_generate_content_stream(
+        &self,
+        _model: &str,
+        _request: &crabllm_core::GeminiRequest,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        Err(Error::not_implemented("gemini streaming"))
     }
 }
 
@@ -123,6 +132,7 @@ fn build_state(tx: broadcast::Sender<UsageEvent>) -> AppState<FakeStorage, FakeP
             weight: 1,
             max_retries: 0,
             timeout: Duration::from_secs(5),
+            retry_deadline: Duration::from_secs(15),
         })],
     );
     let mut model_providers = HashMap::new();
@@ -168,9 +178,9 @@ async fn chat_completion_emits_one_usage_event() {
     assert_eq!(event.endpoint, "chat.completions");
     assert_eq!(event.model, "fake-model");
     assert_eq!(event.provider, "fake");
-    assert_eq!(event.tokens_in, 11);
-    assert_eq!(event.tokens_out, 22);
-    assert_eq!(event.cache_hit_tokens, 0);
+    assert_eq!(event.usage.prompt_tokens(), 11);
+    assert_eq!(event.usage.completion_tokens(), 22);
+    assert_eq!(event.usage.cache_read_tokens, 0);
     assert_eq!(event.status, 200);
     assert!(event.error.is_none());
 
@@ -195,6 +205,7 @@ async fn none_usage_events_is_zero_cost() {
             weight: 1,
             max_retries: 0,
             timeout: Duration::from_secs(5),
+            retry_deadline: Duration::from_secs(15),
         })],
     );
     let mut model_providers = HashMap::new();
