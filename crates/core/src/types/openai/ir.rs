@@ -1,6 +1,7 @@
 use crate::{
-    ChatCompletionResponse, ContentBlock, FinishReason, OpenAiUsage, ToolResultContent, Usage,
-    ir::{self, Content, Message, Role, StopReason},
+    ChatCompletionChunk, ChatCompletionResponse, ContentBlock, FinishReason, FunctionDef,
+    OpenAiUsage, ToolResultContent, ToolType, Usage,
+    ir::{self, Content, Message, Role, StopReason, StreamEvent},
 };
 
 impl From<crate::ChatCompletionRequest> for ir::Request {
@@ -114,6 +115,88 @@ impl From<ChatCompletionResponse> for ir::Response {
     }
 }
 
+impl From<&ir::Request> for crate::ChatCompletionRequest {
+    fn from(req: &ir::Request) -> Self {
+        let mut messages = Vec::new();
+
+        if let Some(system) = &req.system {
+            messages.push(crate::Message {
+                role: crate::Role::System,
+                content: system.iter().map(ContentBlock::from).collect(),
+            });
+        }
+
+        for msg in &req.messages {
+            let role = match msg.role {
+                Role::System => crate::Role::System,
+                Role::User => crate::Role::User,
+                Role::Assistant => crate::Role::Assistant,
+            };
+            messages.push(crate::Message {
+                role,
+                content: msg.content.iter().map(ContentBlock::from).collect(),
+            });
+        }
+
+        let stop = req.stop.as_ref().map(|seqs| {
+            if seqs.len() == 1 {
+                crate::Stop::Single(seqs[0].clone())
+            } else {
+                crate::Stop::Multiple(seqs.clone())
+            }
+        });
+
+        let tools = req.tools.as_ref().map(|tools| {
+            tools
+                .iter()
+                .map(|t| crate::Tool {
+                    kind: ToolType::Function,
+                    function: FunctionDef {
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        parameters: t.parameters.clone(),
+                    },
+                    strict: None,
+                })
+                .collect()
+        });
+
+        let tool_choice = req.tool_choice.as_ref().map(|tc| match tc {
+            ir::ToolChoice::Auto => crate::ToolChoice::Auto,
+            ir::ToolChoice::Required => crate::ToolChoice::Required,
+            ir::ToolChoice::Disabled => crate::ToolChoice::Disabled,
+            ir::ToolChoice::Named(name) => crate::ToolChoice::Function {
+                name: name.clone(),
+            },
+        });
+
+        let thinking = req.thinking.as_ref().map(|t| crate::ThinkingConfig {
+            kind: "enabled".to_string(),
+            budget_tokens: t.budget_tokens,
+        });
+
+        crate::ChatCompletionRequest {
+            model: req.model.clone(),
+            messages,
+            temperature: req.temperature,
+            top_p: req.top_p,
+            max_tokens: Some(req.max_tokens),
+            stream: if req.stream { Some(true) } else { None },
+            stop,
+            tools,
+            tool_choice,
+            frequency_penalty: None,
+            presence_penalty: None,
+            seed: None,
+            user: None,
+            reasoning_effort: None,
+            thinking,
+            anthropic_max_tokens: Some(req.max_tokens),
+            extra: serde_json::Map::new(),
+        }
+    }
+}
+
 impl From<ContentBlock> for Content {
     fn from(block: ContentBlock) -> Self {
         match block {
@@ -194,6 +277,64 @@ impl From<&Content> for ContentBlock {
                 cache_control: None,
             },
         }
+    }
+}
+
+impl ChatCompletionChunk {
+    pub fn to_ir_events(&self) -> Vec<StreamEvent> {
+        let mut events = Vec::new();
+        let Some(choice) = self.choices.first() else {
+            if let Some(ref usage) = self.usage {
+                events.push(StreamEvent::Usage(Usage::from(usage)));
+            }
+            return events;
+        };
+
+        if let Some(text) = choice.delta.content.as_deref() {
+            if !text.is_empty() {
+                events.push(StreamEvent::TextDelta(text.to_string()));
+            }
+        }
+
+        if let Some(reasoning) = choice.delta.reasoning_content.as_deref() {
+            if !reasoning.is_empty() {
+                events.push(StreamEvent::ReasoningDelta(reasoning.to_string()));
+            }
+        }
+
+        if let Some(tool_calls) = &choice.delta.tool_calls {
+            for tc in tool_calls {
+                if let Some(ref func) = tc.function {
+                    if let (Some(id), Some(name)) = (&tc.id, &func.name) {
+                        events.push(StreamEvent::ToolCallStart {
+                            id: id.clone(),
+                            name: name.clone(),
+                        });
+                    }
+                    if let Some(args) = &func.arguments {
+                        if !args.is_empty() {
+                            events.push(StreamEvent::ToolCallDelta(args.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(ref usage) = self.usage {
+            events.push(StreamEvent::Usage(Usage::from(usage)));
+        }
+
+        if let Some(ref reason) = choice.finish_reason {
+            let stop = match reason {
+                FinishReason::Stop => StopReason::End,
+                FinishReason::Length => StopReason::MaxTokens,
+                FinishReason::ToolCalls => StopReason::ToolUse,
+                _ => StopReason::End,
+            };
+            events.push(StreamEvent::Stop(stop));
+        }
+
+        events
     }
 }
 

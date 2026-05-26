@@ -352,6 +352,34 @@ impl Provider for RemoteProvider {
         }
     }
 
+    async fn complete(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<crabllm_core::ir::Response, Error> {
+        match self {
+            Self::Openai(p) => p.complete(request).await,
+            Self::Anthropic(p) => p.complete(request).await,
+            Self::Deepseek(p) => p.complete(request).await,
+            Self::Google(p) => p.complete(request).await,
+            Self::Bedrock(p) => p.complete(request).await,
+            Self::Azure(p) => p.complete(request).await,
+        }
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::ir::StreamEvent, Error>>, Error> {
+        match self {
+            Self::Openai(p) => p.complete_stream(request).await,
+            Self::Anthropic(p) => p.complete_stream(request).await,
+            Self::Deepseek(p) => p.complete_stream(request).await,
+            Self::Google(p) => p.complete_stream(request).await,
+            Self::Bedrock(p) => p.complete_stream(request).await,
+            Self::Azure(p) => p.complete_stream(request).await,
+        }
+    }
+
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         match self {
             Self::Openai(p) => p.embedding(request).await,

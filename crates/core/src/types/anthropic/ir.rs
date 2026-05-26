@@ -1,6 +1,7 @@
 use crate::{
-    AnthropicContent, AnthropicResponse, AnthropicSystem, AnthropicUsage, ContentBlock,
-    ir::{self, Content, Message, Role, StopReason},
+    AnthropicContent, AnthropicMessage, AnthropicResponse, AnthropicStreamEvent, AnthropicSystem,
+    AnthropicTool, AnthropicUsage, BlockDelta, ContentBlock, ThinkingConfig, Usage,
+    ir::{self, Content, Message, Role, StopReason, StreamEvent},
 };
 
 impl From<crate::AnthropicRequest> for ir::Request {
@@ -71,6 +72,71 @@ impl From<crate::AnthropicRequest> for ir::Request {
     }
 }
 
+impl From<&ir::Request> for crate::AnthropicRequest {
+    fn from(req: &ir::Request) -> Self {
+        let system = req.system.as_ref().map(|blocks| {
+            AnthropicSystem::Blocks(blocks.iter().map(ContentBlock::from).collect())
+        });
+
+        let messages = req
+            .messages
+            .iter()
+            .map(|msg| {
+                let role = match msg.role {
+                    Role::Assistant => "assistant".to_string(),
+                    Role::User | Role::System => "user".to_string(),
+                };
+                AnthropicMessage {
+                    role,
+                    content: AnthropicContent::Blocks(
+                        msg.content.iter().map(ContentBlock::from).collect(),
+                    ),
+                }
+            })
+            .collect();
+
+        let tools = req.tools.as_ref().map(|tools| {
+            tools
+                .iter()
+                .map(|t| AnthropicTool {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    input_schema: t
+                        .parameters
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                })
+                .collect()
+        });
+
+        let tool_choice = req.tool_choice.as_ref().map(|tc| match tc {
+            ir::ToolChoice::Auto => serde_json::json!({"type": "auto"}),
+            ir::ToolChoice::Required => serde_json::json!({"type": "any"}),
+            ir::ToolChoice::Disabled => serde_json::json!({"type": "none"}),
+            ir::ToolChoice::Named(name) => serde_json::json!({"type": "tool", "name": name}),
+        });
+
+        let thinking = req.thinking.as_ref().map(|t| ThinkingConfig {
+            kind: "enabled".to_string(),
+            budget_tokens: t.budget_tokens,
+        });
+
+        crate::AnthropicRequest {
+            model: req.model.clone(),
+            messages,
+            max_tokens: req.max_tokens,
+            system,
+            temperature: req.temperature,
+            top_p: req.top_p,
+            stream: if req.stream { Some(true) } else { None },
+            tools,
+            tool_choice,
+            stop_sequences: req.stop.clone(),
+            thinking,
+        }
+    }
+}
+
 impl From<AnthropicResponse> for ir::Response {
     fn from(resp: AnthropicResponse) -> Self {
         let stop_reason = resp.stop_reason.as_deref().map(|r| match r {
@@ -107,6 +173,46 @@ impl From<&ir::Response> for AnthropicResponse {
             stop_reason,
             stop_sequence: None,
             usage: AnthropicUsage::from(&resp.usage),
+        }
+    }
+}
+
+impl AnthropicStreamEvent {
+    pub fn to_ir_events(&self) -> Vec<StreamEvent> {
+        match self {
+            AnthropicStreamEvent::ContentBlockStart {
+                content_block: ContentBlock::ToolUse { id, name, .. },
+                ..
+            } => vec![StreamEvent::ToolCallStart {
+                id: id.clone(),
+                name: name.clone(),
+            }],
+            AnthropicStreamEvent::ContentBlockDelta { delta, .. } => match delta {
+                BlockDelta::Text { text } if !text.is_empty() => {
+                    vec![StreamEvent::TextDelta(text.clone())]
+                }
+                BlockDelta::Thinking { thinking } if !thinking.is_empty() => {
+                    vec![StreamEvent::ReasoningDelta(thinking.clone())]
+                }
+                BlockDelta::InputJson { partial_json } if !partial_json.is_empty() => {
+                    vec![StreamEvent::ToolCallDelta(partial_json.clone())]
+                }
+                _ => vec![],
+            },
+            AnthropicStreamEvent::MessageDelta { delta, usage } => {
+                let mut events = vec![StreamEvent::Usage(Usage::from(usage))];
+                if let Some(reason) = &delta.stop_reason {
+                    let stop = match reason.as_str() {
+                        "end_turn" => StopReason::End,
+                        "max_tokens" => StopReason::MaxTokens,
+                        "tool_use" => StopReason::ToolUse,
+                        _ => StopReason::End,
+                    };
+                    events.push(StreamEvent::Stop(stop));
+                }
+                events
+            }
+            _ => vec![],
         }
     }
 }

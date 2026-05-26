@@ -1,7 +1,7 @@
 use crate::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
+    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField, ir,
 };
 use bytes::Bytes;
 use futures_core::Stream;
@@ -85,6 +85,20 @@ pub trait Provider: Send + Sync {
         model: &str,
         request: &GeminiRequest,
     ) -> impl Future<Output = Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error>> + Send;
+
+    fn complete(
+        &self,
+        _request: &ir::Request,
+    ) -> impl Future<Output = Result<ir::Response, Error>> + Send {
+        async { Err(Error::not_implemented("complete")) }
+    }
+
+    fn complete_stream(
+        &self,
+        _request: &ir::Request,
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<ir::StreamEvent, Error>>, Error>> + Send {
+        async { Err(Error::not_implemented("complete_stream")) }
+    }
 
     fn embedding(
         &self,

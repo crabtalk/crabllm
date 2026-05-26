@@ -345,6 +345,28 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
         deployment.provider.chat_completion_stream(request).await
     }
 
+    async fn complete(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<crabllm_core::ir::Response, Error> {
+        let model = self.resolve(&request.model);
+        let deployment = self
+            .dispatch(model)
+            .ok_or_else(|| model_not_registered(model))?;
+        deployment.provider.complete(request).await
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::ir::StreamEvent, Error>>, Error> {
+        let model = self.resolve(&request.model);
+        let deployment = self
+            .dispatch(model)
+            .ok_or_else(|| model_not_registered(model))?;
+        deployment.provider.complete_stream(request).await
+    }
+
     async fn anthropic_messages(
         &self,
         request: &AnthropicRequest,

@@ -118,6 +118,33 @@ impl Provider for AnthropicProvider {
         crate::gemini_stream_via_chat(self, model, request).await
     }
 
+    async fn complete(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<crabllm_core::ir::Response, Error> {
+        let native = crabllm_core::AnthropicRequest::from(request);
+        let resp = self.anthropic_messages(&native).await?;
+        Ok(crabllm_core::ir::Response::from(resp))
+    }
+
+    async fn complete_stream(
+        &self,
+        request: &crabllm_core::ir::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::ir::StreamEvent, Error>>, Error> {
+        let mut native = crabllm_core::AnthropicRequest::from(request);
+        native.stream = Some(true);
+        let stream = self.anthropic_messages_stream(&native).await?;
+        Ok(stream
+            .flat_map(|result| {
+                let events: Vec<Result<crabllm_core::ir::StreamEvent, Error>> = match result {
+                    Ok(event) => event.to_ir_events().into_iter().map(Ok).collect(),
+                    Err(e) => vec![Err(e)],
+                };
+                futures::stream::iter(events)
+            })
+            .boxed())
+    }
+
     fn is_anthropic_compat(&self) -> bool {
         true
     }
