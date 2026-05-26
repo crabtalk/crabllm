@@ -627,14 +627,18 @@ pub fn anthropic_event_stream(
                         "message_delta" => {
                             let stop_reason =
                                 event.delta.as_ref().and_then(|d| d.stop_reason.clone());
-                            let usage = event.usage.unwrap_or(AnthropicUsage {
+                            let usage = AnthropicUsage {
                                 input_tokens: state.input_usage.input_tokens,
-                                output_tokens: 0,
+                                output_tokens: event
+                                    .usage
+                                    .as_ref()
+                                    .map(|u| u.output_tokens)
+                                    .unwrap_or(0),
                                 cache_read_input_tokens: state.input_usage.cache_read_input_tokens,
                                 cache_creation_input_tokens: state
                                     .input_usage
                                     .cache_creation_input_tokens,
-                            });
+                            };
                             let out = AnthropicStreamEvent::MessageDelta {
                                 delta: MessageDeltaPayload {
                                     stop_reason,
