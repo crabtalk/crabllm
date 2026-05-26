@@ -132,6 +132,7 @@ fn build_state(tx: broadcast::Sender<UsageEvent>) -> AppState<FakeStorage, FakeP
             weight: 1,
             max_retries: 0,
             timeout: Duration::from_secs(5),
+            retry_deadline: Duration::from_secs(15),
         })],
     );
     let mut model_providers = HashMap::new();
@@ -204,6 +205,7 @@ async fn none_usage_events_is_zero_cost() {
             weight: 1,
             max_retries: 0,
             timeout: Duration::from_secs(5),
+            retry_deadline: Duration::from_secs(15),
         })],
     );
     let mut model_providers = HashMap::new();

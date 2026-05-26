@@ -1,4 +1,4 @@
-use crate::client::{ByteStream, RawResponse};
+use crate::client::{ByteStream, RawResponse, parse_retry_after};
 use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::StreamExt;
@@ -47,6 +47,11 @@ impl HttpClient {
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
         let body = resp
             .bytes()
             .await
@@ -62,6 +67,7 @@ impl HttpClient {
             status,
             body,
             content_type,
+            retry_after,
         })
     }
 
@@ -87,6 +93,11 @@ impl HttpClient {
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
         let body = resp
             .bytes()
             .await
@@ -103,6 +114,7 @@ impl HttpClient {
             status,
             body,
             content_type,
+            retry_after,
         })
     }
 
@@ -143,13 +155,18 @@ impl HttpClient {
         })?;
         let status = resp.status().as_u16();
         if status >= 400 {
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(parse_retry_after);
             let body = resp
                 .bytes()
                 .await
                 .map_err(|e| Error::Internal(e.to_string()))?;
             let text = String::from_utf8_lossy(&body).into_owned();
             tracing::debug!(url, status, latency_ms = start.elapsed().as_millis() as u64, "provider stream error");
-            return Err(Error::Provider { status, body: text });
+            return Err(Error::Provider { status, body: text, retry_after });
         }
         tracing::debug!(url, status, ttfb_ms = start.elapsed().as_millis() as u64, "provider stream opened");
         let stream = resp

@@ -82,6 +82,7 @@ impl Provider for AnthropicProvider {
             return Err(Error::Provider {
                 status: resp.status,
                 body,
+                retry_after: resp.retry_after,
             });
         }
         crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
@@ -399,6 +400,7 @@ pub async fn anthropic_messages_raw(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 
@@ -462,6 +464,7 @@ pub async fn chat_completion(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 

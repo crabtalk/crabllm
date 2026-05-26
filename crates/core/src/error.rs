@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{fmt, time::Duration};
 
 /// Shared error type for the crabllm workspace.
 #[derive(Debug)]
@@ -7,7 +7,11 @@ pub enum Error {
     /// TOML config parse error or missing env var.
     Config(String),
     /// Upstream provider returned an error status.
-    Provider { status: u16, body: String },
+    Provider {
+        status: u16,
+        body: String,
+        retry_after: Option<Duration>,
+    },
     /// JSON serialization/deserialization error.
     Json(serde_json::Error),
     /// Catch-all for internal errors.
@@ -20,7 +24,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Config(msg) => write!(f, "config error: {msg}"),
-            Error::Provider { status, body } => {
+            Error::Provider { status, body, .. } => {
                 write!(f, "provider error (HTTP {status}): {body}")
             }
             Error::Json(e) => write!(f, "json error: {e}"),
@@ -39,6 +43,14 @@ impl Error {
             Error::Provider { status, .. } => matches!(status, 429 | 500 | 502 | 503 | 504),
             Error::Internal(_) | Error::Timeout => true,
             _ => false,
+        }
+    }
+
+    /// Extract the retry-after duration from a `Provider` error, if present.
+    pub fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Error::Provider { retry_after, .. } => *retry_after,
+            _ => None,
         }
     }
 

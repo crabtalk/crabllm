@@ -170,6 +170,7 @@ pub async fn chat_completion(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 
@@ -198,6 +199,7 @@ pub async fn chat_completion_raw(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 
@@ -225,6 +227,7 @@ pub async fn embedding(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 
@@ -280,6 +283,7 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 
@@ -316,6 +320,7 @@ pub async fn audio_transcription(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 

@@ -148,6 +148,7 @@ pub async fn anthropic_messages_raw(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 

@@ -387,6 +387,7 @@ pub async fn chat_completion(
         return Err(Error::Provider {
             status: resp.status,
             body,
+            retry_after: resp.retry_after,
         });
     }
 

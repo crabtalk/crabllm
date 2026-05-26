@@ -34,6 +34,7 @@ impl Provider for GoogleProvider {
             return Err(Error::Provider {
                 status: resp.status,
                 body: String::from_utf8_lossy(&resp.body).into_owned(),
+                retry_after: resp.retry_after,
             });
         }
         let gemini_resp: GeminiResponse =
@@ -139,6 +140,7 @@ impl Provider for GoogleProvider {
             return Err(Error::Provider {
                 status: resp.status,
                 body: String::from_utf8_lossy(&resp.body).into_owned(),
+                retry_after: resp.retry_after,
             });
         }
         Ok(resp.body)

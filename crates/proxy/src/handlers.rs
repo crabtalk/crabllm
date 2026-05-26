@@ -959,11 +959,22 @@ fn jittered(backoff: Duration) -> Duration {
     rand::rng().random_range(lo..=backoff)
 }
 
+/// Pick the retry sleep duration. On 429, honor the upstream Retry-After
+/// (floored at the exponential backoff so we don't under-wait). For all
+/// other transient errors, use the jittered backoff as-is.
+fn retry_sleep(err: &crabllm_core::Error, backoff: Duration) -> Duration {
+    match err.retry_after() {
+        Some(ra) => ra.max(backoff),
+        None => backoff,
+    }
+}
+
 /// Retry a raw Anthropic streaming request on a single deployment.
 pub(crate) async fn try_anthropic_stream_with_retries<P: Provider>(
     deployment: &Deployment<P>,
     raw_body: bytes::Bytes,
 ) -> Result<crabllm_core::ByteStream, crabllm_core::Error> {
+    let started = Instant::now();
     let mut last_err;
     match with_timeout(
         deployment.timeout,
@@ -984,7 +995,11 @@ pub(crate) async fn try_anthropic_stream_with_retries<P: Provider>(
 
     let mut backoff = Duration::from_millis(100);
     for _ in 0..deployment.max_retries {
-        tokio::time::sleep(jittered(backoff)).await;
+        let sleep = retry_sleep(&last_err, jittered(backoff));
+        if started.elapsed() + sleep > deployment.retry_deadline {
+            break;
+        }
+        tokio::time::sleep(sleep).await;
         backoff *= 2;
         match with_timeout(
             deployment.timeout,
@@ -1012,6 +1027,7 @@ async fn try_embedding_with_retries<P: Provider>(
     deployment: &Deployment<P>,
     request: &EmbeddingRequest,
 ) -> Result<crabllm_core::EmbeddingResponse, crabllm_core::Error> {
+    let started = Instant::now();
     let mut last_err;
     match with_timeout(deployment.timeout, deployment.provider.embedding(request)).await {
         Ok(resp) => return Ok(resp),
@@ -1025,7 +1041,11 @@ async fn try_embedding_with_retries<P: Provider>(
 
     let mut backoff = Duration::from_millis(100);
     for _ in 0..deployment.max_retries {
-        tokio::time::sleep(jittered(backoff)).await;
+        let sleep = retry_sleep(&last_err, jittered(backoff));
+        if started.elapsed() + sleep > deployment.retry_deadline {
+            break;
+        }
+        tokio::time::sleep(sleep).await;
         backoff *= 2;
         match with_timeout(deployment.timeout, deployment.provider.embedding(request)).await {
             Ok(resp) => return Ok(resp),
@@ -1044,7 +1064,7 @@ async fn try_embedding_with_retries<P: Provider>(
 /// Map a provider Error to an HTTP error response.
 pub(crate) fn error_response(e: crabllm_core::Error) -> Response {
     let (status, api_error) = match &e {
-        crabllm_core::Error::Provider { status, body } => (
+        crabllm_core::Error::Provider { status, body, .. } => (
             StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY),
             ApiError::new(body.clone(), "upstream_error"),
         ),

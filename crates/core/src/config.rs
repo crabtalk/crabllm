@@ -120,6 +120,11 @@ pub struct ProviderConfig {
     /// Per-request timeout in seconds. Default: 30.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
+    /// Wall-clock deadline for the entire retry loop in seconds. Default: 15.
+    /// The loop stops retrying once this much time has elapsed since the
+    /// first attempt, even if `max_retries` has not been exhausted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_deadline: Option<u64>,
     /// AWS region for Bedrock provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,

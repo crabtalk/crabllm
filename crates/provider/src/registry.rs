@@ -26,6 +26,7 @@ pub struct Deployment<P> {
     pub weight: u16,
     pub max_retries: u32,
     pub timeout: Duration,
+    pub retry_deadline: Duration,
 }
 
 /// Maps model names to weighted provider lists for routing.
@@ -228,6 +229,7 @@ impl<P> ProviderRegistry<P> {
                 weight: provider_config.weight.unwrap_or(1),
                 max_retries: provider_config.max_retries.unwrap_or(2),
                 timeout: Duration::from_secs(provider_config.timeout.unwrap_or(30)),
+                retry_deadline: Duration::from_secs(provider_config.retry_deadline.unwrap_or(15)),
             });
             for model_name in &provider_config.models {
                 providers
