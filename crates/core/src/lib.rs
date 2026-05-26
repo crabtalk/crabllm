@@ -8,6 +8,7 @@ pub use model_info::ModelInfo;
 pub use provider::{BoxStream, ByteStream, Provider};
 pub use retrying::Retrying;
 pub use storage::{BoxFuture, KvPairs, PREFIX_LEN, Prefix, Storage, storage_key};
+pub use types::ir;
 pub use types::{
     AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicMessages, AnthropicRequest,
     AnthropicResponse, AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage,
@@ -21,7 +22,6 @@ pub use types::{
     MultipartField, OpenAiUsage, Role, Stop, ThinkingConfig, Tool, ToolCall, ToolCallDelta,
     ToolChoice, ToolResultContent, ToolType,
 };
-pub use types::ir;
 pub use usage::Usage;
 
 mod config;

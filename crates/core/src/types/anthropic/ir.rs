@@ -74,9 +74,10 @@ impl From<crate::AnthropicRequest> for ir::Request {
 
 impl From<&ir::Request> for crate::AnthropicRequest {
     fn from(req: &ir::Request) -> Self {
-        let system = req.system.as_ref().map(|blocks| {
-            AnthropicSystem::Blocks(blocks.iter().map(ContentBlock::from).collect())
-        });
+        let system = req
+            .system
+            .as_ref()
+            .map(|blocks| AnthropicSystem::Blocks(blocks.iter().map(ContentBlock::from).collect()));
 
         let messages = req
             .messages

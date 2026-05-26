@@ -22,8 +22,7 @@ pub use provider::{
     azure::AzureProvider,
     deepseek::DeepseekProvider,
     google::{
-        GoogleProvider, chunks_to_gemini_responses, gemini_event_stream,
-        gemini_responses_to_chunks,
+        GoogleProvider, chunks_to_gemini_responses, gemini_event_stream, gemini_responses_to_chunks,
     },
     openai::OpenaiProvider,
 };
@@ -457,12 +456,30 @@ impl Provider for RemoteProvider {
         body_stream: crabllm_core::ByteStream,
     ) -> Result<crabllm_core::ByteStream, Error> {
         match self {
-            Self::Openai(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
-            Self::Anthropic(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
-            Self::Deepseek(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
-            Self::Google(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
-            Self::Bedrock(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
-            Self::Azure(p) => p.chat_completion_stream_passthrough(model, body_stream).await,
+            Self::Openai(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Anthropic(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Deepseek(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Google(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Bedrock(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+            Self::Azure(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
         }
     }
 

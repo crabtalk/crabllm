@@ -239,11 +239,25 @@ impl HttpClient {
                 .map_err(|e| Error::Internal(e.to_string()))?
                 .to_bytes();
             let text = String::from_utf8_lossy(&body).into_owned();
-            tracing::debug!(url, status, latency_ms = start.elapsed().as_millis() as u64, "provider stream error");
-            return Err(Error::Provider { status, body: text, retry_after });
+            tracing::debug!(
+                url,
+                status,
+                latency_ms = start.elapsed().as_millis() as u64,
+                "provider stream error"
+            );
+            return Err(Error::Provider {
+                status,
+                body: text,
+                retry_after,
+            });
         }
 
-        tracing::debug!(url, status, ttfb_ms = start.elapsed().as_millis() as u64, "provider stream opened");
+        tracing::debug!(
+            url,
+            status,
+            ttfb_ms = start.elapsed().as_millis() as u64,
+            "provider stream opened"
+        );
 
         Ok(Box::pin(BodyStream::new(resp.into_body()).filter_map(
             |frame| {

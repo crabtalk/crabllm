@@ -144,8 +144,9 @@ where
         }
     }
 
-    let e =
-        last_err.unwrap_or_else(|| crabllm_core::Error::Internal("no compatible providers available".into()));
+    let e = last_err.unwrap_or_else(|| {
+        crabllm_core::Error::Internal("no compatible providers available".into())
+    });
     record_duration(&ctx, error_status(&e));
     emit_usage_error(state, &ctx, ENDPOINT, &e);
     error_response(e)
@@ -197,8 +198,9 @@ where
         }
     }
 
-    let e =
-        last_err.unwrap_or_else(|| crabllm_core::Error::Internal("no compatible providers available".into()));
+    let e = last_err.unwrap_or_else(|| {
+        crabllm_core::Error::Internal("no compatible providers available".into())
+    });
     record_duration(&ctx, error_status(&e));
     emit_usage_error(state, &ctx, ENDPOINT, &e);
     error_response(e)

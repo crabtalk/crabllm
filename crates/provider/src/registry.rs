@@ -3,8 +3,8 @@ use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider, ProviderConfig,
-    ProviderKind,
+    EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
+    ProviderConfig, ProviderKind,
 };
 use rand::Rng;
 use std::{collections::HashMap, sync::Arc, time::Duration};

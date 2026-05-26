@@ -101,7 +101,9 @@ impl Provider for AzureProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        let ir_resp = self.complete(&crabllm_core::ir::Request::from(request.clone())).await?;
+        let ir_resp = self
+            .complete(&crabllm_core::ir::Request::from(request.clone()))
+            .await?;
         Ok(AnthropicResponse::from(&ir_resp))
     }
 

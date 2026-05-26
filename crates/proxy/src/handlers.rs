@@ -14,8 +14,8 @@ use crabllm_core::{
 };
 use crabllm_provider::Deployment;
 use futures::StreamExt;
-use rand::Rng;
 use parking_lot::Mutex;
+use rand::Rng;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -187,7 +187,11 @@ where
 
     if is_stream {
         return handle_raw_stream_passthrough(
-            &state, principal, &model, &deployments, body.into_stream(),
+            &state,
+            principal,
+            &model,
+            &deployments,
+            body.into_stream(),
         )
         .await;
     }
@@ -431,11 +435,7 @@ async fn handle_raw_stream_passthrough<S: Storage + 'static, P: Provider + 'stat
                 Ok(data) => {
                     let peeked = crabllm_core::Usage::from(data.as_bytes());
                     if peeked.total_tokens() > 0 {
-                        record_tokens(
-                            &ctx,
-                            peeked.prompt_tokens(),
-                            peeked.completion_tokens(),
-                        );
+                        record_tokens(&ctx, peeked.prompt_tokens(), peeked.completion_tokens());
                         *usage.lock() = peeked;
                     }
                     for ext in extensions.iter() {
@@ -788,7 +788,12 @@ where
         {
             Ok((bytes, content_type)) => {
                 record_duration(&ctx, "2xx");
-                emit_usage(&state, &ctx, "audio.speech", RequestOutcome::ok(crabllm_core::Usage::default()));
+                emit_usage(
+                    &state,
+                    &ctx,
+                    "audio.speech",
+                    RequestOutcome::ok(crabllm_core::Usage::default()),
+                );
                 return ([(axum::http::header::CONTENT_TYPE, content_type)], bytes).into_response();
             }
             Err(e) => last_err = Some(e),

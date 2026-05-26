@@ -27,9 +27,9 @@ impl AnthropicMessages for Vec<AnthropicMessage> {
     fn coalesce_tool_results(&mut self) {
         let mut out: Vec<AnthropicMessage> = Vec::with_capacity(self.len());
         for msg in self.drain(..) {
-            let mergeable = out
-                .last()
-                .is_some_and(|prev| prev.is_tool_result_only_user() && msg.is_tool_result_only_user());
+            let mergeable = out.last().is_some_and(|prev| {
+                prev.is_tool_result_only_user() && msg.is_tool_result_only_user()
+            });
             if !mergeable {
                 out.push(msg);
                 continue;

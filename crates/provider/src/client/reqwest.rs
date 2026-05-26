@@ -165,10 +165,24 @@ impl HttpClient {
                 .await
                 .map_err(|e| Error::Internal(e.to_string()))?;
             let text = String::from_utf8_lossy(&body).into_owned();
-            tracing::debug!(url, status, latency_ms = start.elapsed().as_millis() as u64, "provider stream error");
-            return Err(Error::Provider { status, body: text, retry_after });
+            tracing::debug!(
+                url,
+                status,
+                latency_ms = start.elapsed().as_millis() as u64,
+                "provider stream error"
+            );
+            return Err(Error::Provider {
+                status,
+                body: text,
+                retry_after,
+            });
         }
-        tracing::debug!(url, status, ttfb_ms = start.elapsed().as_millis() as u64, "provider stream opened");
+        tracing::debug!(
+            url,
+            status,
+            ttfb_ms = start.elapsed().as_millis() as u64,
+            "provider stream opened"
+        );
         let stream = resp
             .bytes_stream()
             .map(|r| r.map_err(std::io::Error::other));

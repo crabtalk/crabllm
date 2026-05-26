@@ -22,12 +22,12 @@ pub use openai::{
     ToolResultContent, ToolType,
 };
 
-pub mod ir;
 mod anthropic;
 mod audio;
 mod embedding;
 mod gemini;
 mod image;
+pub mod ir;
 mod model;
 mod multipart;
 mod openai;

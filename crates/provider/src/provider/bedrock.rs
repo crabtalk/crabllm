@@ -57,7 +57,9 @@ impl crabllm_core::Provider for BedrockProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        let ir_resp = self.complete(&crabllm_core::ir::Request::from(request.clone())).await?;
+        let ir_resp = self
+            .complete(&crabllm_core::ir::Request::from(request.clone()))
+            .await?;
         Ok(AnthropicResponse::from(&ir_resp))
     }
 
@@ -72,7 +74,8 @@ impl crabllm_core::Provider for BedrockProvider {
         &self,
         model: &str,
         request: &crabllm_core::GeminiRequest,
-    ) -> Result<crabllm_core::BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+    ) -> Result<crabllm_core::BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error>
+    {
         crate::gemini_stream_via_chat(self, model, request).await
     }
 }

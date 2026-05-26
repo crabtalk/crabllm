@@ -12,8 +12,7 @@ impl From<crate::ChatCompletionRequest> for ir::Request {
         for msg in req.messages {
             match msg.role {
                 crate::Role::System | crate::Role::Developer => {
-                    let blocks: Vec<Content> =
-                        msg.content.into_iter().map(Content::from).collect();
+                    let blocks: Vec<Content> = msg.content.into_iter().map(Content::from).collect();
                     match &mut system {
                         Some(existing) => {
                             let v: &mut Vec<Content> = existing;
@@ -165,9 +164,7 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
             ir::ToolChoice::Auto => crate::ToolChoice::Auto,
             ir::ToolChoice::Required => crate::ToolChoice::Required,
             ir::ToolChoice::Disabled => crate::ToolChoice::Disabled,
-            ir::ToolChoice::Named(name) => crate::ToolChoice::Function {
-                name: name.clone(),
-            },
+            ir::ToolChoice::Named(name) => crate::ToolChoice::Function { name: name.clone() },
         });
 
         let thinking = req.thinking.as_ref().map(|t| crate::ThinkingConfig {
@@ -201,7 +198,9 @@ impl From<ContentBlock> for Content {
     fn from(block: ContentBlock) -> Self {
         match block {
             ContentBlock::Text { text, .. } => Content::Text(text),
-            ContentBlock::ToolUse { id, name, input, .. } => Content::ToolCall { id, name, input },
+            ContentBlock::ToolUse {
+                id, name, input, ..
+            } => Content::ToolCall { id, name, input },
             ContentBlock::ToolResult {
                 tool_use_id,
                 content,
@@ -290,16 +289,16 @@ impl ChatCompletionChunk {
             return events;
         };
 
-        if let Some(text) = choice.delta.content.as_deref() {
-            if !text.is_empty() {
-                events.push(StreamEvent::TextDelta(text.to_string()));
-            }
+        if let Some(text) = choice.delta.content.as_deref()
+            && !text.is_empty()
+        {
+            events.push(StreamEvent::TextDelta(text.to_string()));
         }
 
-        if let Some(reasoning) = choice.delta.reasoning_content.as_deref() {
-            if !reasoning.is_empty() {
-                events.push(StreamEvent::ReasoningDelta(reasoning.to_string()));
-            }
+        if let Some(reasoning) = choice.delta.reasoning_content.as_deref()
+            && !reasoning.is_empty()
+        {
+            events.push(StreamEvent::ReasoningDelta(reasoning.to_string()));
         }
 
         if let Some(tool_calls) = &choice.delta.tool_calls {
@@ -311,10 +310,10 @@ impl ChatCompletionChunk {
                             name: name.clone(),
                         });
                     }
-                    if let Some(args) = &func.arguments {
-                        if !args.is_empty() {
-                            events.push(StreamEvent::ToolCallDelta(args.clone()));
-                        }
+                    if let Some(args) = &func.arguments
+                        && !args.is_empty()
+                    {
+                        events.push(StreamEvent::ToolCallDelta(args.clone()));
                     }
                 }
             }

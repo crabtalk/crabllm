@@ -85,10 +85,10 @@ fn gemini_part_to_content(
     call_counter: &mut u32,
 ) -> Vec<Content> {
     let mut out = Vec::new();
-    if let Some(text) = &part.text {
-        if !text.is_empty() {
-            out.push(Content::Text(text.clone()));
-        }
+    if let Some(text) = &part.text
+        && !text.is_empty()
+    {
+        out.push(Content::Text(text.clone()));
     }
     if let Some(fc) = &part.function_call {
         let id = format!("call_{call_counter}");
@@ -164,10 +164,10 @@ impl From<GeminiResponse> for ir::Response {
 
 fn gemini_response_part_to_content(part: GeminiPart) -> Vec<Content> {
     let mut out = Vec::new();
-    if let Some(text) = part.text {
-        if !text.is_empty() {
-            out.push(Content::Text(text));
-        }
+    if let Some(text) = part.text
+        && !text.is_empty()
+    {
+        out.push(Content::Text(text));
     }
     if let Some(fc) = part.function_call {
         out.push(Content::ToolCall {
@@ -184,16 +184,15 @@ impl From<&ir::Response> for GeminiResponse {
         let mut parts = Vec::with_capacity(resp.content.len());
         for block in &resp.content {
             match block {
-                Content::Text(text) => {
-                    if !text.is_empty() {
-                        parts.push(GeminiPart {
-                            text: Some(text.clone()),
-                            function_call: None,
-                            function_response: None,
-                            thought_signature: None,
-                        });
-                    }
+                Content::Text(text) if !text.is_empty() => {
+                    parts.push(GeminiPart {
+                        text: Some(text.clone()),
+                        function_call: None,
+                        function_response: None,
+                        thought_signature: None,
+                    });
                 }
+                Content::Text(_) => {}
                 Content::ToolCall { name, input, .. } => {
                     parts.push(GeminiPart {
                         text: None,

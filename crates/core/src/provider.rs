@@ -55,7 +55,8 @@ pub trait Provider: Send + Sync {
     fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error>> + Send;
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error>>
+    + Send;
 
     /// Gemini Generative Language API: `:generateContent`.
     ///
@@ -96,7 +97,8 @@ pub trait Provider: Send + Sync {
     fn complete_stream(
         &self,
         _request: &ir::Request,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<ir::StreamEvent, Error>>, Error>> + Send {
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<ir::StreamEvent, Error>>, Error>> + Send
+    {
         async { Err(Error::not_implemented("complete_stream")) }
     }
 

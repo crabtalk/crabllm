@@ -1,8 +1,6 @@
 use crate::PREFIX_BUDGET;
 use axum::{Json, Router, routing::get};
-use crabllm_core::{
-    BoxFuture, ExtensionError, ModelInfo, RequestContext, Storage, storage_key,
-};
+use crabllm_core::{BoxFuture, ExtensionError, ModelInfo, RequestContext, Storage, storage_key};
 use serde::Serialize;
 use std::{collections::HashMap, sync::Arc};
 

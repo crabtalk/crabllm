@@ -6,9 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use crabllm_core::{
-    ApiError, BoxFuture, Error, ModelInfo, RequestContext, Storage, storage_key,
-};
+use crabllm_core::{ApiError, BoxFuture, Error, ModelInfo, RequestContext, Storage, storage_key};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::SystemTime};
 

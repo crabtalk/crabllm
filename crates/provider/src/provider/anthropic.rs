@@ -2,12 +2,11 @@ use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use bytes::{Buf, Bytes, BytesMut};
 use crabllm_core::{
-    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicRequest,
-    AnthropicResponse, AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage,
-    BlockDelta, BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    ChunkChoice, ContentBlock, DEFAULT_MAX_TOKENS, Delta, Error, FinishReason,
-    FunctionCallDelta, MessageDeltaPayload, OpenAiUsage, Provider, Role, Stop,
-    ThinkingConfig, ToolCallDelta, ToolChoice, ToolType, Usage,
+    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicRequest, AnthropicResponse,
+    AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage, BlockDelta, BoxStream,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChunkChoice, ContentBlock,
+    DEFAULT_MAX_TOKENS, Delta, Error, FinishReason, FunctionCallDelta, MessageDeltaPayload,
+    OpenAiUsage, Provider, Role, Stop, ThinkingConfig, ToolCallDelta, ToolChoice, ToolType, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::Deserialize;
@@ -485,15 +484,20 @@ pub fn anthropic_event_stream(
     }
 
     stream::unfold(
-        (byte_stream, BytesMut::new(), model, State {
-            next_index: 0,
-            input_usage: AnthropicUsage {
-                input_tokens: 0,
-                output_tokens: 0,
-                cache_read_input_tokens: None,
-                cache_creation_input_tokens: None,
+        (
+            byte_stream,
+            BytesMut::new(),
+            model,
+            State {
+                next_index: 0,
+                input_usage: AnthropicUsage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_input_tokens: None,
+                    cache_creation_input_tokens: None,
+                },
             },
-        }),
+        ),
         |(mut byte_stream, mut buffer, model, mut state)| async move {
             use futures::StreamExt;
 
@@ -585,9 +589,7 @@ pub fn anthropic_event_stream(
                             return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
                         "content_block_stop" => {
-                            let index = event.index.unwrap_or(
-                                state.next_index.saturating_sub(1),
-                            );
+                            let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
                             let out = AnthropicStreamEvent::ContentBlockStop { index };
                             return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
@@ -595,9 +597,7 @@ pub fn anthropic_event_stream(
                             let Some(delta) = &event.delta else {
                                 continue;
                             };
-                            let index = event.index.unwrap_or(
-                                state.next_index.saturating_sub(1),
-                            );
+                            let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
                             let block_delta = match delta.kind.as_str() {
                                 "text_delta" => BlockDelta::Text {
                                     text: delta.text.clone(),
@@ -625,10 +625,8 @@ pub fn anthropic_event_stream(
                             return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
                         "message_delta" => {
-                            let stop_reason = event
-                                .delta
-                                .as_ref()
-                                .and_then(|d| d.stop_reason.clone());
+                            let stop_reason =
+                                event.delta.as_ref().and_then(|d| d.stop_reason.clone());
                             let usage = event.usage.unwrap_or(AnthropicUsage {
                                 input_tokens: state.input_usage.input_tokens,
                                 output_tokens: 0,
@@ -686,17 +684,20 @@ pub fn anthropic_events_to_chunks(
     }
 
     stream::unfold(
-        (events.boxed(), ChunkState {
-            model: String::new(),
-            chunk_idx: 0,
-            tool_call_idx: 0,
-            input_usage: AnthropicUsage {
-                input_tokens: 0,
-                output_tokens: 0,
-                cache_read_input_tokens: None,
-                cache_creation_input_tokens: None,
+        (
+            events.boxed(),
+            ChunkState {
+                model: String::new(),
+                chunk_idx: 0,
+                tool_call_idx: 0,
+                input_usage: AnthropicUsage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_input_tokens: None,
+                    cache_creation_input_tokens: None,
+                },
             },
-        }),
+        ),
         |(mut events, mut state)| async move {
             use futures::StreamExt;
 
@@ -754,15 +755,25 @@ pub fn anthropic_events_to_chunks(
                         state.chunk_idx += 1;
                         let oai_delta = match delta {
                             BlockDelta::Text { text } => Delta {
-                                role: if state.chunk_idx == 1 { Some(Role::Assistant) } else { None },
+                                role: if state.chunk_idx == 1 {
+                                    Some(Role::Assistant)
+                                } else {
+                                    None
+                                },
                                 content: Some(text),
                                 tool_calls: None,
                                 reasoning_content: None,
                             },
                             BlockDelta::Thinking { thinking } => {
-                                if thinking.is_empty() { continue; }
+                                if thinking.is_empty() {
+                                    continue;
+                                }
                                 Delta {
-                                    role: if state.chunk_idx == 1 { Some(Role::Assistant) } else { None },
+                                    role: if state.chunk_idx == 1 {
+                                        Some(Role::Assistant)
+                                    } else {
+                                        None
+                                    },
                                     content: None,
                                     tool_calls: None,
                                     reasoning_content: Some(thinking),
@@ -825,8 +836,14 @@ pub fn anthropic_events_to_chunks(
                             }],
                             usage: Some(OpenAiUsage::from(&Usage {
                                 input_tokens: state.input_usage.input_tokens,
-                                cache_read_tokens: state.input_usage.cache_read_input_tokens.unwrap_or(0),
-                                cache_write_tokens: state.input_usage.cache_creation_input_tokens.unwrap_or(0),
+                                cache_read_tokens: state
+                                    .input_usage
+                                    .cache_read_input_tokens
+                                    .unwrap_or(0),
+                                cache_write_tokens: state
+                                    .input_usage
+                                    .cache_creation_input_tokens
+                                    .unwrap_or(0),
                                 output_tokens: usage.output_tokens,
                                 reasoning_tokens: 0,
                                 server_tool_calls: Default::default(),
@@ -870,7 +887,9 @@ pub fn chunks_to_anthropic_events(
 
     impl State {
         fn ensure_started(&mut self, chunk: &ChatCompletionChunk) {
-            if self.started { return; }
+            if self.started {
+                return;
+            }
             self.started = true;
             let msg = AnthropicResponse {
                 id: chunk.id.clone(),
@@ -887,7 +906,8 @@ pub fn chunks_to_anthropic_events(
                     cache_creation_input_tokens: None,
                 },
             };
-            self.pending.push_back(AnthropicStreamEvent::MessageStart { message: msg });
+            self.pending
+                .push_back(AnthropicStreamEvent::MessageStart { message: msg });
         }
 
         fn close_current(&mut self) {
@@ -897,35 +917,42 @@ pub fn chunks_to_anthropic_events(
                     | CurrentBlock::Thinking { index }
                     | CurrentBlock::ToolUse { index, .. } => index,
                 };
-                self.pending.push_back(AnthropicStreamEvent::ContentBlockStop { index });
+                self.pending
+                    .push_back(AnthropicStreamEvent::ContentBlockStop { index });
             }
         }
 
         fn switch_to_text(&mut self) -> u32 {
-            if let Some(CurrentBlock::Text { index }) = self.current { return index; }
+            if let Some(CurrentBlock::Text { index }) = self.current {
+                return index;
+            }
             self.close_current();
             let index = self.next_index;
             self.next_index += 1;
-            self.pending.push_back(AnthropicStreamEvent::ContentBlockStart {
-                index,
-                content_block: AnthropicContentBlock::text(""),
-            });
+            self.pending
+                .push_back(AnthropicStreamEvent::ContentBlockStart {
+                    index,
+                    content_block: AnthropicContentBlock::text(""),
+                });
             self.current = Some(CurrentBlock::Text { index });
             index
         }
 
         fn switch_to_thinking(&mut self) -> u32 {
-            if let Some(CurrentBlock::Thinking { index }) = self.current { return index; }
+            if let Some(CurrentBlock::Thinking { index }) = self.current {
+                return index;
+            }
             self.close_current();
             let index = self.next_index;
             self.next_index += 1;
-            self.pending.push_back(AnthropicStreamEvent::ContentBlockStart {
-                index,
-                content_block: AnthropicContentBlock::Thinking {
-                    thinking: String::new(),
-                    signature: None,
-                },
-            });
+            self.pending
+                .push_back(AnthropicStreamEvent::ContentBlockStart {
+                    index,
+                    content_block: AnthropicContentBlock::Thinking {
+                        thinking: String::new(),
+                        signature: None,
+                    },
+                });
             self.current = Some(CurrentBlock::Thinking { index });
             index
         }
@@ -934,15 +961,20 @@ pub fn chunks_to_anthropic_events(
             self.close_current();
             let index = self.next_index;
             self.next_index += 1;
-            self.pending.push_back(AnthropicStreamEvent::ContentBlockStart {
+            self.pending
+                .push_back(AnthropicStreamEvent::ContentBlockStart {
+                    index,
+                    content_block: AnthropicContentBlock::ToolUse {
+                        id,
+                        name,
+                        input: serde_json::json!({}),
+                        cache_control: None,
+                    },
+                });
+            self.current = Some(CurrentBlock::ToolUse {
                 index,
-                content_block: AnthropicContentBlock::ToolUse {
-                    id, name,
-                    input: serde_json::json!({}),
-                    cache_control: None,
-                },
+                openai_index,
             });
-            self.current = Some(CurrentBlock::ToolUse { index, openai_index });
             index
         }
 
@@ -951,37 +983,50 @@ pub fn chunks_to_anthropic_events(
             if let Some(usage) = chunk.usage {
                 self.latest_usage = Some(usage);
             }
-            let Some(choice) = chunk.choices.into_iter().next() else { return };
+            let Some(choice) = chunk.choices.into_iter().next() else {
+                return;
+            };
             let delta = choice.delta;
 
             if let Some(reasoning) = delta.reasoning_content
                 && !reasoning.is_empty()
             {
                 let index = self.switch_to_thinking();
-                self.pending.push_back(AnthropicStreamEvent::ContentBlockDelta {
-                    index,
-                    delta: BlockDelta::Thinking { thinking: reasoning },
-                });
+                self.pending
+                    .push_back(AnthropicStreamEvent::ContentBlockDelta {
+                        index,
+                        delta: BlockDelta::Thinking {
+                            thinking: reasoning,
+                        },
+                    });
             }
 
             if let Some(text) = delta.content
                 && !text.is_empty()
             {
                 let index = self.switch_to_text();
-                self.pending.push_back(AnthropicStreamEvent::ContentBlockDelta {
-                    index,
-                    delta: BlockDelta::Text { text },
-                });
+                self.pending
+                    .push_back(AnthropicStreamEvent::ContentBlockDelta {
+                        index,
+                        delta: BlockDelta::Text { text },
+                    });
             }
 
             if let Some(tool_deltas) = delta.tool_calls {
                 for tc in tool_deltas {
                     let openai_index = tc.index;
                     let current_index = match self.current {
-                        Some(CurrentBlock::ToolUse { index, openai_index: oi }) if oi == openai_index => index,
+                        Some(CurrentBlock::ToolUse {
+                            index,
+                            openai_index: oi,
+                        }) if oi == openai_index => index,
                         _ => {
                             let id = tc.id.clone().unwrap_or_default();
-                            let name = tc.function.as_ref().and_then(|f| f.name.clone()).unwrap_or_default();
+                            let name = tc
+                                .function
+                                .as_ref()
+                                .and_then(|f| f.name.clone())
+                                .unwrap_or_default();
                             self.open_tool_use(openai_index, id, name)
                         }
                     };
@@ -989,10 +1034,11 @@ pub fn chunks_to_anthropic_events(
                         && let Some(args) = func.arguments
                         && !args.is_empty()
                     {
-                        self.pending.push_back(AnthropicStreamEvent::ContentBlockDelta {
-                            index: current_index,
-                            delta: BlockDelta::InputJson { partial_json: args },
-                        });
+                        self.pending
+                            .push_back(AnthropicStreamEvent::ContentBlockDelta {
+                                index: current_index,
+                                delta: BlockDelta::InputJson { partial_json: args },
+                            });
                     }
                 }
             }
@@ -1022,7 +1068,10 @@ pub fn chunks_to_anthropic_events(
                     cache_creation_input_tokens: None,
                 });
             self.pending.push_back(AnthropicStreamEvent::MessageDelta {
-                delta: MessageDeltaPayload { stop_reason, stop_sequence: None },
+                delta: MessageDeltaPayload {
+                    stop_reason,
+                    stop_sequence: None,
+                },
                 usage,
             });
             self.pending.push_back(AnthropicStreamEvent::MessageStop);
@@ -1041,28 +1090,39 @@ pub fn chunks_to_anthropic_events(
         stop_reason: None,
     };
 
-    stream::unfold((chunks.boxed(), state), |(mut chunks, mut state)| async move {
-        loop {
-            if let Some(event) = state.pending.pop_front() {
-                return Some((Ok(event), (chunks, state)));
-            }
-            if let Some(err) = state.deferred_error.take() {
-                state.finished = true;
-                return Some((Err(err), (chunks, state)));
-            }
-            if state.finished { return None; }
-            match chunks.next().await {
-                Some(Ok(chunk)) => state.handle_chunk(chunk),
-                Some(Err(e)) => {
-                    if state.started { state.finalize("error".to_string()); }
-                    else { state.finished = true; }
-                    state.deferred_error = Some(e);
+    stream::unfold(
+        (chunks.boxed(), state),
+        |(mut chunks, mut state)| async move {
+            loop {
+                if let Some(event) = state.pending.pop_front() {
+                    return Some((Ok(event), (chunks, state)));
                 }
-                None => {
-                    if state.started { state.finalize("end_turn".to_string()); }
-                    else { return None; }
+                if let Some(err) = state.deferred_error.take() {
+                    state.finished = true;
+                    return Some((Err(err), (chunks, state)));
+                }
+                if state.finished {
+                    return None;
+                }
+                match chunks.next().await {
+                    Some(Ok(chunk)) => state.handle_chunk(chunk),
+                    Some(Err(e)) => {
+                        if state.started {
+                            state.finalize("error".to_string());
+                        } else {
+                            state.finished = true;
+                        }
+                        state.deferred_error = Some(e);
+                    }
+                    None => {
+                        if state.started {
+                            state.finalize("end_turn".to_string());
+                        } else {
+                            return None;
+                        }
+                    }
                 }
             }
-        }
-    })
+        },
+    )
 }

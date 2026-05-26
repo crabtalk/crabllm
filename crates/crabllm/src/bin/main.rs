@@ -338,9 +338,7 @@ impl Provider for Dispatch {
         raw_body: Bytes,
     ) -> Result<ByteStream, Error> {
         match self {
-            Self::Remote(p) => {
-                p.gemini_generate_content_stream_raw(model, raw_body).await
-            }
+            Self::Remote(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
         }
     }
 

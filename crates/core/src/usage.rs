@@ -74,25 +74,24 @@ mod peek {
 
 impl From<&[u8]> for Usage {
     fn from(raw: &[u8]) -> Self {
-        if let Ok(peek::OpenAi { usage: Some(u) }) = crate::json::from_slice(raw) {
-            if u.prompt_tokens > 0 || u.completion_tokens > 0 {
-                return Usage::from(&u);
-            }
+        if let Ok(peek::OpenAi { usage: Some(u) }) = crate::json::from_slice(raw)
+            && (u.prompt_tokens > 0 || u.completion_tokens > 0)
+        {
+            return Usage::from(&u);
         }
 
-        if let Ok(peek::Anthropic { usage: Some(u) }) = crate::json::from_slice(raw) {
-            if u.input_tokens > 0 || u.output_tokens > 0 {
-                return Usage::from(&u);
-            }
+        if let Ok(peek::Anthropic { usage: Some(u) }) = crate::json::from_slice(raw)
+            && (u.input_tokens > 0 || u.output_tokens > 0)
+        {
+            return Usage::from(&u);
         }
 
         if let Ok(peek::Gemini {
             usage_metadata: Some(u),
         }) = crate::json::from_slice(raw)
+            && u.total_token_count > 0
         {
-            if u.total_token_count > 0 {
-                return Usage::from(&u);
-            }
+            return Usage::from(&u);
         }
 
         Usage::default()

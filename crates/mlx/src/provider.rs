@@ -313,7 +313,9 @@ impl Provider for MlxProvider {
         &self,
         request: &crabllm_core::AnthropicRequest,
     ) -> Result<crabllm_core::AnthropicResponse, Error> {
-        let ir_resp = self.complete(&crabllm_core::ir::Request::from(request.clone())).await?;
+        let ir_resp = self
+            .complete(&crabllm_core::ir::Request::from(request.clone()))
+            .await?;
         Ok(crabllm_core::AnthropicResponse::from(&ir_resp))
     }
 

@@ -51,10 +51,7 @@ impl<P: Provider> Retrying<P> {
         if !e.is_transient() {
             return false;
         }
-        match e.retry_after() {
-            Some(ra) if ra > self.max_retry_after => false,
-            _ => true,
-        }
+        !matches!(e.retry_after(), Some(ra) if ra > self.max_retry_after)
     }
 
     async fn timed<T>(

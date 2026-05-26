@@ -137,8 +137,9 @@ where
         }
     }
 
-    let e = last_err
-        .unwrap_or_else(|| crabllm_core::Error::Internal("no compatible providers available".into()));
+    let e = last_err.unwrap_or_else(|| {
+        crabllm_core::Error::Internal("no compatible providers available".into())
+    });
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
@@ -155,7 +156,6 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
     deployments: &[&crabllm_provider::Deployment<P>],
     raw_body: axum::body::Bytes,
 ) -> Response {
-
     let registry = state.registry();
     let provider_name = registry
         .provider_name(model)
@@ -232,8 +232,9 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         }
     }
 
-    let e = last_err
-        .unwrap_or_else(|| crabllm_core::Error::Internal("no compatible providers available".to_string()));
+    let e = last_err.unwrap_or_else(|| {
+        crabllm_core::Error::Internal("no compatible providers available".to_string())
+    });
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
@@ -266,7 +267,11 @@ fn raw_anthropic_stream_response<S: Storage + 'static, P: Provider + 'static>(
             peek_anthropic_usage(&event_name, &data, &usage_c);
             let snapshot = usage_c.lock().clone();
             if snapshot.prompt_tokens() > 0 || snapshot.completion_tokens() > 0 {
-                record_tokens(&ctx_c, snapshot.prompt_tokens(), snapshot.completion_tokens());
+                record_tokens(
+                    &ctx_c,
+                    snapshot.prompt_tokens(),
+                    snapshot.completion_tokens(),
+                );
             }
             Ok::<_, std::convert::Infallible>(Event::default().event(event_name).data(data))
         }
@@ -391,10 +396,8 @@ fn peek_anthropic_usage(event_name: &str, data: &str, usage: &Mutex<crabllm_core
         "message_start" => {
             if let Some(u) = val.pointer("/message/usage") {
                 let mut snap = usage.lock();
-                snap.input_tokens = u
-                    .get("input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0) as u32;
+                snap.input_tokens =
+                    u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 snap.cache_read_tokens = u
                     .get("cache_read_input_tokens")
                     .and_then(|v| v.as_u64())

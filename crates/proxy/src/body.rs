@@ -31,7 +31,9 @@ impl RequestBody {
             if let Ok(peek) = crabllm_core::json::from_slice::<Peek>(&buf) {
                 return Ok(Self::from_peek(buf, body, peek));
             }
-            let Some(frame) = body.frame().await else { break };
+            let Some(frame) = body.frame().await else {
+                break;
+            };
             let frame = frame.map_err(|e| ReadError::Io(e.to_string()))?;
             if let Some(data) = frame.data_ref() {
                 buf.extend_from_slice(data);
@@ -92,15 +94,15 @@ impl RequestBody {
 }
 
 fn inject_stream_options(prefix: Bytes) -> Bytes {
-    if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(&prefix) {
-        if let Some(obj) = val.as_object_mut() {
-            obj.insert(
-                "stream_options".to_string(),
-                serde_json::json!({ "include_usage": true }),
-            );
-            if let Ok(out) = serde_json::to_vec(&val) {
-                return Bytes::from(out);
-            }
+    if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(&prefix)
+        && let Some(obj) = val.as_object_mut()
+    {
+        obj.insert(
+            "stream_options".to_string(),
+            serde_json::json!({ "include_usage": true }),
+        );
+        if let Ok(out) = serde_json::to_vec(&val) {
+            return Bytes::from(out);
         }
     }
 

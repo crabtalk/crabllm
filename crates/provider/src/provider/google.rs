@@ -6,7 +6,8 @@ use crabllm_core::{
     ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, Delta, Error,
     FunctionCallDelta, GeminiCandidate, GeminiContent, GeminiFunctionCall, GeminiFunctionDecl,
     GeminiFunctionResponse, GeminiPart, GeminiRequest, GeminiResponse, GeminiRole, GeminiToolDef,
-    GenerationConfig, Message, OpenAiUsage, Provider, Role, ToolCallDelta, ToolResultContent, Usage,
+    GenerationConfig, Message, OpenAiUsage, Provider, Role, ToolCallDelta, ToolResultContent,
+    Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
 
@@ -37,8 +38,8 @@ impl Provider for GoogleProvider {
                 retry_after: resp.retry_after,
             });
         }
-        let gemini_resp: GeminiResponse =
-            crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
+        let gemini_resp: GeminiResponse = crabllm_core::json::from_slice(&resp.body)
+            .map_err(|e| Error::Internal(e.to_string()))?;
         Ok(translate_response(gemini_resp, &request.model))
     }
 
@@ -47,7 +48,10 @@ impl Provider for GoogleProvider {
         request: &ChatCompletionRequest,
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
         let gemini_req = translate_request(request);
-        let url = format!("{BASE_URL}/models/{}:streamGenerateContent?alt=sse", request.model);
+        let url = format!(
+            "{BASE_URL}/models/{}:streamGenerateContent?alt=sse",
+            request.model
+        );
         let body =
             crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
         let headers = [
@@ -63,7 +67,9 @@ impl Provider for GoogleProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        let ir_resp = self.complete(&crabllm_core::ir::Request::from(request.clone())).await?;
+        let ir_resp = self
+            .complete(&crabllm_core::ir::Request::from(request.clone()))
+            .await?;
         Ok(AnthropicResponse::from(&ir_resp))
     }
 
@@ -540,8 +546,7 @@ pub fn gemini_responses_to_chunks(
                                 function: Some(FunctionCallDelta {
                                     name: Some(name),
                                     arguments: Some(
-                                        crabllm_core::json::to_string(&input)
-                                            .unwrap_or_default(),
+                                        crabllm_core::json::to_string(&input).unwrap_or_default(),
                                     ),
                                 }),
                             });
@@ -630,9 +635,8 @@ pub fn chunks_to_gemini_responses(
                                 .as_ref()
                                 .and_then(|f| f.arguments.clone())
                                 .unwrap_or_default();
-                            let args: serde_json::Value =
-                                crabllm_core::json::from_str(&args_str)
-                                    .unwrap_or(serde_json::json!({}));
+                            let args: serde_json::Value = crabllm_core::json::from_str(&args_str)
+                                .unwrap_or(serde_json::json!({}));
                             parts.push(GeminiPart {
                                 text: None,
                                 function_call: Some(GeminiFunctionCall { name, args }),

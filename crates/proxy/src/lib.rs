@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::Request,
+    extract::{DefaultBodyLimit, Request},
     middleware,
     response::Response,
     routing::{get, post},
@@ -99,6 +99,7 @@ where
         )
         .route("/v1/models", get(handlers::models::<S, P>))
         .route("/v1/usage", get(handlers::usage::<S, P>))
+        .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .with_state(state)
 }
 
