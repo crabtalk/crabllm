@@ -15,6 +15,7 @@ pub use stream::{AnthropicStreamEvent, BlockDelta, MessageDeltaPayload};
 
 use crate::types::openai::ContentBlock;
 
+mod ir;
 mod message;
 mod messages;
 mod request;

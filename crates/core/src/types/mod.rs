@@ -22,6 +22,7 @@ pub use openai::{
     ToolResultContent, ToolType,
 };
 
+pub mod ir;
 mod anthropic;
 mod audio;
 mod embedding;

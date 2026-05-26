@@ -5,6 +5,7 @@ pub use response::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use stream::{ChatCompletionChunk, ChunkChoice, Delta, FunctionCallDelta, ToolCallDelta};
 
+mod ir;
 mod request;
 mod response;
 mod stream;

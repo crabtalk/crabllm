@@ -8,6 +8,7 @@ pub use request::{GeminiFunctionDecl, GeminiRequest, GeminiToolDef, GenerationCo
 pub use response::{GeminiCandidate, GeminiFinishReason, GeminiResponse, GeminiUsage};
 use serde::{Deserialize, Serialize};
 
+mod ir;
 mod request;
 mod response;
 

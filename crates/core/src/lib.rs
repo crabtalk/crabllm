@@ -20,6 +20,7 @@ pub use types::{
     MultipartField, OpenAiUsage, Role, Stop, ThinkingConfig, Tool, ToolCall, ToolCallDelta,
     ToolChoice, ToolResultContent, ToolType,
 };
+pub use types::ir;
 pub use usage::Usage;
 
 mod config;
