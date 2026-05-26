@@ -9,9 +9,8 @@ use axum::{
     },
 };
 use crabllm_core::{
-    ApiError, AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    EmbeddingRequest, ImageRequest, Model, ModelList, MultipartField, Provider, RequestContext,
-    Storage,
+    ApiError, AudioSpeechRequest, EmbeddingRequest, ImageRequest, Model, ModelList, MultipartField,
+    Provider, RequestContext, Storage,
 };
 use crabllm_provider::Deployment;
 use futures::StreamExt;
@@ -185,248 +184,20 @@ where
             .into_response();
     };
     let is_stream = body.is_stream;
-    let all_compat = deployments.iter().all(|d| d.provider.is_openai_compat());
 
-    // Streaming passthrough: compat providers, body streamed without buffering.
-    if is_stream && all_compat {
+    if is_stream {
         return handle_raw_stream_passthrough(
             &state, principal, &model, &deployments, body.into_stream(),
         )
         .await;
     }
 
-    // All other paths need the full body buffered.
     let raw_body = match body.into_bytes().await {
         Ok(b) => b,
         Err(e) => return read_error_response(e),
     };
 
-    if all_compat {
-        return handle_raw_proxy(&state, principal, &model, &deployments, raw_body).await;
-    }
-
-    // Full deserialization for non-compat providers (format translation needed).
-    let Ok(mut request) = crabllm_core::json::from_slice::<ChatCompletionRequest>(&raw_body) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError::new("invalid request body", "invalid_request_error")),
-        )
-            .into_response();
-    };
-
-    let provider_name = registry
-        .provider_name(&model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
-        request_id: uuid::Uuid::new_v4().to_string(),
-        model: model.clone(),
-        provider: provider_name,
-        principal: principal.0,
-        is_stream,
-        started_at: Instant::now(),
-    };
-
-    for ext in state.extensions.iter() {
-        if let Err(ext_err) = ext.on_request(&ctx).await {
-            return (
-                StatusCode::from_u16(ext_err.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                Json(ext_err.body),
-            )
-                .into_response();
-        }
-    }
-
-    if is_stream {
-        // Ensure OpenAI-compatible providers include token usage in the final
-        // streaming chunk. Harmlessly ignored by Anthropic/Google/Bedrock which
-        // build their own request format and don't read `extra`.
-        request
-            .extra
-            .entry("stream_options".to_string())
-            .or_insert(serde_json::json!({ "include_usage": true }));
-
-        // Streaming: retry + fallback on connection errors only (pre-stream).
-        let mut last_err = None;
-        for deployment in &deployments {
-            match try_stream_with_retries(deployment, &request).await {
-                Ok(stream) => {
-                    let extensions = state.extensions.clone();
-                    let ctx = Arc::new(ctx);
-                    let errored = Arc::new(AtomicBool::new(false));
-                    // `Ordering::Relaxed` is sufficient because the stream
-                    // is polled by a single task — every store in the
-                    // per-chunk future is sequenced-before the `done`
-                    // terminator's load via tokio's normal single-task
-                    // poll ordering. No cross-thread visibility problem
-                    // exists; the atomics only provide interior
-                    // mutability across closure clones.
-                    let usage: Arc<Mutex<crabllm_core::Usage>> =
-                        Arc::new(Mutex::new(crabllm_core::Usage::default()));
-                    let first_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-
-                    let ctx_done = ctx.clone();
-                    let errored_done = errored.clone();
-                    let usage_done = usage.clone();
-                    let first_error_done = first_error.clone();
-                    let state_done = state.clone();
-
-                    let observed = stream.then(move |result| {
-                        let extensions = extensions.clone();
-                        let ctx = ctx.clone();
-                        let errored = errored.clone();
-                        let usage = usage.clone();
-                        let first_error = first_error.clone();
-                        async move {
-                            match &result {
-                                Ok(chunk) => {
-                                    if let Some(ref wire) = chunk.usage {
-                                        let canonical = crabllm_core::Usage::from(wire);
-                                        record_tokens(
-                                            &ctx,
-                                            canonical.prompt_tokens(),
-                                            canonical.completion_tokens(),
-                                        );
-                                        *usage.lock() = canonical;
-                                    }
-                                    if !extensions.is_empty() {
-                                        let raw = crabllm_core::json::to_vec(chunk)
-                                            .unwrap_or_default();
-                                        for ext in extensions.iter() {
-                                            ext.on_chunk(&ctx, &raw).await;
-                                        }
-                                    }
-                                }
-                                Err(error) => {
-                                    errored.store(true, Ordering::Relaxed);
-                                    {
-                                        let mut slot = first_error.lock();
-                                        if slot.is_none() {
-                                            *slot = Some(error.to_string());
-                                        }
-                                    }
-                                    for ext in extensions.iter() {
-                                        ext.on_error(&ctx, error).await;
-                                    }
-                                }
-                            }
-                            result
-                        }
-                    });
-
-                    let sse_stream = observed.map(|result| match result {
-                        Ok(chunk) => {
-                            let json = crabllm_core::json::to_string(&chunk).unwrap_or_default();
-                            Ok(Event::default().data(json))
-                        }
-                        Err(e) => {
-                            let json = crabllm_core::json::to_string(&ApiError::new(
-                                e.to_string(),
-                                "server_error",
-                            ))
-                            .unwrap_or_default();
-                            Ok(Event::default().data(json))
-                        }
-                    });
-
-                    // Record duration + emit usage once when the stream
-                    // terminates. Status codes:
-                    //   - 200: clean stream, no errors
-                    //   - 0:   mid-stream failure after headers went out.
-                    //          The real wire status was 200 (headers
-                    //          shipped before the break), but reporting
-                    //          200 again here would let consumers miss
-                    //          the failure without also inspecting the
-                    //          `error` field. 0 is a clear sentinel
-                    //          meaning "not a real HTTP response".
-                    let done = futures::stream::once(async move {
-                        let errored = errored_done.load(Ordering::Relaxed);
-                        record_duration(&ctx_done, if errored { "5xx" } else { "2xx" });
-                        let error = first_error_done.lock().take();
-                        let status = if errored { 0 } else { 200 };
-                        let usage = usage_done.lock().clone();
-                        emit_usage(
-                            &state_done,
-                            &ctx_done,
-                            "chat.completions",
-                            RequestOutcome {
-                                usage,
-                                status,
-                                error,
-                            },
-                        );
-                        Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]"))
-                    });
-                    let full_stream = sse_stream.chain(done);
-
-                    return Sse::new(full_stream)
-                        .keep_alive(axum::response::sse::KeepAlive::new())
-                        .into_response();
-                }
-                Err(e) => last_err = Some(e),
-            }
-        }
-
-        let e = last_err
-            .unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".to_string()));
-        for ext in state.extensions.iter() {
-            ext.on_error(&ctx, &e).await;
-        }
-        record_duration(&ctx, "5xx");
-        emit_usage_error(&state, &ctx, "chat.completions", &e);
-        error_response(e)
-    } else {
-        // Non-streaming non-compat: deserialization was needed for format
-        // translation. Extensions still receive raw bytes.
-        for ext in state.extensions.iter() {
-            if let Some(cached) = ext.on_cache_lookup(&raw_body).await {
-                return (
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    cached,
-                )
-                    .into_response();
-            }
-        }
-
-        let mut last_err = None;
-        for deployment in &deployments {
-            match try_chat_with_retries(deployment, &request).await {
-                Ok(resp) => {
-                    let resp_bytes = crabllm_core::json::to_vec(&resp).unwrap_or_default();
-                    let usage = crabllm_core::Usage::from(resp_bytes.as_slice());
-                    if usage.prompt_tokens() > 0 || usage.completion_tokens() > 0 {
-                        record_tokens(&ctx, usage.prompt_tokens(), usage.completion_tokens());
-                    }
-                    record_duration(&ctx, "2xx");
-                    emit_usage(
-                        &state,
-                        &ctx,
-                        "chat.completions",
-                        RequestOutcome::ok(usage),
-                    );
-                    for ext in state.extensions.iter() {
-                        ext.on_response(&ctx, &raw_body, &resp_bytes).await;
-                    }
-                    return (
-                        [(axum::http::header::CONTENT_TYPE, "application/json")],
-                        resp_bytes,
-                    )
-                        .into_response();
-                }
-                Err(e) => last_err = Some(e),
-            }
-        }
-
-        let e = last_err
-            .unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".to_string()));
-        for ext in state.extensions.iter() {
-            ext.on_error(&ctx, &e).await;
-        }
-        record_duration(&ctx, error_status(&e));
-        emit_usage_error(&state, &ctx, "chat.completions", &e);
-        error_response(e)
-    }
+    handle_raw_proxy(&state, principal, &model, &deployments, raw_body).await
 }
 
 /// Non-streaming raw byte proxy for OpenAI-compatible providers.
@@ -606,10 +377,10 @@ async fn handle_raw_stream_passthrough<S: Storage + 'static, P: Provider + 'stat
         }
     }
 
-    let deployment = match deployments.first() {
+    let deployment = match deployments.iter().find(|d| d.provider.is_openai_compat()) {
         Some(d) => d,
         None => {
-            let e = crabllm_core::Error::Internal("no providers available".to_string());
+            let e = crabllm_core::Error::Internal("no compatible providers available".to_string());
             record_duration(&ctx, "5xx");
             emit_usage_error(state, &ctx, "chat.completions", &e);
             return error_response(e);
@@ -1186,95 +957,6 @@ where
 fn jittered(backoff: Duration) -> Duration {
     let lo = backoff / 2;
     rand::rng().random_range(lo..=backoff)
-}
-
-/// Retry a non-streaming chat completion on a single deployment.
-pub(crate) async fn try_chat_with_retries<P: Provider>(
-    deployment: &Deployment<P>,
-    request: &ChatCompletionRequest,
-) -> Result<crabllm_core::ChatCompletionResponse, crabllm_core::Error> {
-    let mut last_err;
-    match with_timeout(
-        deployment.timeout,
-        deployment.provider.chat_completion(request),
-    )
-    .await
-    {
-        Ok(resp) => return Ok(resp),
-        Err(e) => {
-            if !e.is_transient() || deployment.max_retries == 0 {
-                return Err(e);
-            }
-            last_err = e;
-        }
-    }
-
-    let mut backoff = Duration::from_millis(100);
-    for _ in 0..deployment.max_retries {
-        tokio::time::sleep(jittered(backoff)).await;
-        backoff *= 2;
-        match with_timeout(
-            deployment.timeout,
-            deployment.provider.chat_completion(request),
-        )
-        .await
-        {
-            Ok(resp) => return Ok(resp),
-            Err(e) => {
-                if !e.is_transient() {
-                    return Err(e);
-                }
-                last_err = e;
-            }
-        }
-    }
-
-    Err(last_err)
-}
-
-/// Retry a streaming chat completion on a single deployment.
-pub(crate) async fn try_stream_with_retries<P: Provider>(
-    deployment: &Deployment<P>,
-    request: &ChatCompletionRequest,
-) -> Result<BoxStream<'static, Result<ChatCompletionChunk, crabllm_core::Error>>, crabllm_core::Error>
-{
-    let mut last_err;
-    match with_timeout(
-        deployment.timeout,
-        deployment.provider.chat_completion_stream(request),
-    )
-    .await
-    {
-        Ok(stream) => return Ok(stream),
-        Err(e) => {
-            if !e.is_transient() || deployment.max_retries == 0 {
-                return Err(e);
-            }
-            last_err = e;
-        }
-    }
-
-    let mut backoff = Duration::from_millis(100);
-    for _ in 0..deployment.max_retries {
-        tokio::time::sleep(jittered(backoff)).await;
-        backoff *= 2;
-        match with_timeout(
-            deployment.timeout,
-            deployment.provider.chat_completion_stream(request),
-        )
-        .await
-        {
-            Ok(stream) => return Ok(stream),
-            Err(e) => {
-                if !e.is_transient() {
-                    return Err(e);
-                }
-                last_err = e;
-            }
-        }
-    }
-
-    Err(last_err)
 }
 
 /// Retry a raw Anthropic streaming request on a single deployment.
