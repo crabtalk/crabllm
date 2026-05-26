@@ -6,6 +6,7 @@ pub use error::{ApiError, ApiErrorBody, Error};
 pub use extension::{Extension, ExtensionError, RequestContext};
 pub use model_info::ModelInfo;
 pub use provider::{BoxStream, ByteStream, Provider};
+pub use retrying::Retrying;
 pub use storage::{BoxFuture, KvPairs, PREFIX_LEN, Prefix, Storage, storage_key};
 pub use types::{
     AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicMessages, AnthropicRequest,
@@ -31,6 +32,7 @@ mod model_info;
 #[cfg(feature = "openapi")]
 mod openapi;
 mod provider;
+mod retrying;
 mod storage;
 mod types;
 mod usage;
