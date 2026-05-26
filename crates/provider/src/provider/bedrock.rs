@@ -57,9 +57,8 @@ impl crabllm_core::Provider for BedrockProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        let chat_req = ChatCompletionRequest::from(request.clone());
-        let resp = self.chat_completion(&chat_req).await?;
-        AnthropicResponse::try_from(resp)
+        let ir_resp = self.complete(&crabllm_core::ir::Request::from(request.clone())).await?;
+        Ok(AnthropicResponse::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(

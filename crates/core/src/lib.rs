@@ -24,7 +24,6 @@ pub use types::ir;
 pub use usage::Usage;
 
 mod config;
-mod convert;
 mod error;
 mod extension;
 pub mod json;

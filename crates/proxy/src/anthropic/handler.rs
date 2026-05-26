@@ -9,7 +9,7 @@ use crate::{
     auth::Principal,
     handlers::{
         RequestOutcome, emit_usage, emit_usage_error, error_response, error_status,
-        record_duration, record_tokens, try_anthropic_stream_with_retries,
+        record_duration, record_tokens, try_anthropic_stream_with_retries, with_timeout,
     },
 };
 use axum::{
@@ -155,7 +155,6 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
     deployments: &[&crabllm_provider::Deployment<P>],
     raw_body: axum::body::Bytes,
 ) -> Response {
-    use crate::handlers::with_timeout;
 
     let registry = state.registry();
     let provider_name = registry

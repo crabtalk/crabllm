@@ -313,9 +313,8 @@ impl Provider for MlxProvider {
         &self,
         request: &crabllm_core::AnthropicRequest,
     ) -> Result<crabllm_core::AnthropicResponse, Error> {
-        let chat_req = ChatCompletionRequest::from(request.clone());
-        let resp = self.chat_completion(&chat_req).await?;
-        crabllm_core::AnthropicResponse::try_from(resp)
+        let ir_resp = self.complete(&crabllm_core::ir::Request::from(request.clone())).await?;
+        Ok(crabllm_core::AnthropicResponse::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(

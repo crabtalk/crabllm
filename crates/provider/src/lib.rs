@@ -3,8 +3,9 @@ use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
     EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
-    Provider, ProviderConfig, ProviderKind,
+    Provider, ProviderConfig, ProviderKind, ir,
 };
+use futures::StreamExt;
 pub use registry::{Deployment, ProviderRegistry};
 
 mod client;
@@ -114,9 +115,9 @@ pub async fn anthropic_stream_via_chat(
     provider: &(impl Provider + ?Sized),
     request: &AnthropicRequest,
 ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
-    use futures::StreamExt;
-    let mut chat_req = ChatCompletionRequest::from(request.clone());
-    chat_req.stream = Some(true);
+    let mut ir_req = ir::Request::from(request.clone());
+    ir_req.stream = true;
+    let chat_req = ChatCompletionRequest::from(&ir_req);
     let chunks = provider.chat_completion_stream(&chat_req).await?;
     Ok(chunks_to_anthropic_events(chunks).boxed())
 }
@@ -129,10 +130,10 @@ pub async fn gemini_stream_via_chat(
     model: &str,
     request: &GeminiRequest,
 ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
-    use futures::StreamExt;
-    let mut chat_req = ChatCompletionRequest::from(AnthropicRequest::from(request));
-    chat_req.model = model.to_string();
-    chat_req.stream = Some(true);
+    let mut ir_req = ir::Request::from(request);
+    ir_req.model = model.to_string();
+    ir_req.stream = true;
+    let chat_req = ChatCompletionRequest::from(&ir_req);
     let chunks = provider.chat_completion_stream(&chat_req).await?;
     Ok(chunks_to_gemini_responses(chunks).boxed())
 }

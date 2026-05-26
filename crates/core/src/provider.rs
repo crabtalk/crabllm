@@ -69,10 +69,10 @@ pub trait Provider: Send + Sync {
         request: &GeminiRequest,
     ) -> impl Future<Output = Result<GeminiResponse, Error>> + Send {
         async move {
-            let mut anth = AnthropicRequest::from(request);
-            anth.model = model.to_string();
-            let resp = self.anthropic_messages(&anth).await?;
-            GeminiResponse::try_from(resp)
+            let mut ir_req = ir::Request::from(request);
+            ir_req.model = model.to_string();
+            let ir_resp = self.complete(&ir_req).await?;
+            Ok(GeminiResponse::from(&ir_resp))
         }
     }
 

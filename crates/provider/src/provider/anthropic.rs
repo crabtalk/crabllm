@@ -467,8 +467,8 @@ pub async fn chat_completion(
 
     let anthropic_resp: AnthropicResponse =
         crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
-
-    Ok(ChatCompletionResponse::from(anthropic_resp))
+    let ir_resp = crabllm_core::ir::Response::from(anthropic_resp);
+    Ok(ChatCompletionResponse::from(&ir_resp))
 }
 
 /// Parse an Anthropic SSE byte stream into native `AnthropicStreamEvent`s.
