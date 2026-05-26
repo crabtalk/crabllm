@@ -12,16 +12,15 @@ concurrency:
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: Linux
     steps:
       - uses: actions/checkout@v4
-      - name: Install Toolchain
-        run: rustup update stable && rustup default stable
-      - uses: Swatinem/rust-cache@v2
+      # - name: Install Toolchain
+      #   run: rustup update stable && rustup default stable
       # - name: Install protoc
       #   uses: arduino/setup-protoc@v3
-      - uses: taiki-e/install-action@sccache
-      - uses: taiki-e/install-action@nextest
+      # - uses: taiki-e/install-action@sccache
+      # - uses: taiki-e/install-action@nextest
       - name: Build
         run: cargo build -p crabllm
 
@@ -30,14 +29,13 @@ jobs:
 
   check:
     name: Check
-    runs-on: ubuntu-latest
+    runs-on: Linux
     steps:
       - uses: actions/checkout@v4
-      - name: Install Toolchain
-        run: |
-          rustup update stable && rustup default stable
-          rustup component add clippy rustfmt
-      - uses: Swatinem/rust-cache@v2
+      # - name: Install Toolchain
+      #   run: |
+      #     rustup update stable && rustup default stable
+      #     rustup component add clippy rustfmt
       # - name: Install protoc
       #   uses: arduino/setup-protoc@v3
       - uses: taiki-e/install-action@sccache
@@ -45,3 +43,11 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --all -- -D warnings
+
+  typos:
+    name: Typos
+    runs-on: Linux
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Typos
+        run: typos
