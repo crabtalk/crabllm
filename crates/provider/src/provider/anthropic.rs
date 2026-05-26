@@ -290,6 +290,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                         schema::inline_refs(&mut s);
                         s
                     },
+                    cache_control: None,
                 })
                 .collect()
         })

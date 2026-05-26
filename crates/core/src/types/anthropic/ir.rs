@@ -106,6 +106,7 @@ impl From<&ir::Request> for crate::AnthropicRequest {
                         .parameters
                         .clone()
                         .unwrap_or_else(|| serde_json::json!({})),
+                    cache_control: None,
                 })
                 .collect()
         });
