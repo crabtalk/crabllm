@@ -21,16 +21,41 @@ impl Provider for GoogleProvider {
         &self,
         request: &ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse, Error> {
-        chat_completion(&self.client, &self.api_key, request).await
+        let gemini_req = translate_request(request);
+        let url = format!("{BASE_URL}/models/{}:generateContent", request.model);
+        let body =
+            crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+        let headers = [
+            ("x-goog-api-key", self.api_key.as_str()),
+            ("content-type", "application/json"),
+        ];
+        let resp = self.client.post(&url, &headers, body.into()).await?;
+        if resp.status >= 400 {
+            return Err(Error::Provider {
+                status: resp.status,
+                body: String::from_utf8_lossy(&resp.body).into_owned(),
+            });
+        }
+        let gemini_resp: GeminiResponse =
+            crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
+        Ok(translate_response(gemini_resp, &request.model))
     }
 
     async fn chat_completion_stream(
         &self,
         request: &ChatCompletionRequest,
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
-        let s =
-            chat_completion_stream(&self.client, &self.api_key, request, &request.model).await?;
-        Ok(s.boxed())
+        let gemini_req = translate_request(request);
+        let url = format!("{BASE_URL}/models/{}:streamGenerateContent?alt=sse", request.model);
+        let body =
+            crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+        let headers = [
+            ("x-goog-api-key", self.api_key.as_str()),
+            ("content-type", "application/json"),
+        ];
+        let byte_stream = self.client.post_stream(&url, &headers, body.into()).await?;
+        let model = request.model.clone();
+        Ok(gemini_responses_to_chunks(gemini_event_stream(byte_stream), model).boxed())
     }
 
     async fn anthropic_messages(
@@ -321,38 +346,16 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     }
 }
 
-/// Extract content blocks from response candidate parts.
-fn extract_blocks(candidate: &GeminiCandidate) -> Vec<ContentBlock> {
-    let mut blocks = Vec::new();
-
-    if let Some(content) = &candidate.content {
-        for (i, part) in content.parts.iter().enumerate() {
-            if let Some(t) = &part.text
-                && !t.is_empty()
-            {
-                blocks.push(ContentBlock::text(t.clone()));
-            }
-            if let Some(fc) = &part.function_call {
-                let base_id = format!("call_{i}");
-                let id = encode_signature_into_id(&base_id, part.thought_signature.as_deref());
-                blocks.push(ContentBlock::ToolUse {
-                    id,
-                    name: fc.name.clone(),
-                    input: fc.args.clone(),
-                    cache_control: None,
-                });
-            }
-        }
-    }
-
-    blocks
-}
-
 fn translate_response(resp: GeminiResponse, model: &str) -> ChatCompletionResponse {
     let (blocks, finish_reason) = resp
         .candidates
         .first()
-        .map(|c| (extract_blocks(c), c.finish_reason.as_ref().map(Into::into)))
+        .map(|c| {
+            (
+                candidate_to_blocks(c),
+                c.finish_reason.as_ref().map(Into::into),
+            )
+        })
         .unwrap_or_default();
 
     ChatCompletionResponse {
@@ -377,63 +380,29 @@ fn translate_response(resp: GeminiResponse, model: &str) -> ChatCompletionRespon
     }
 }
 
-// ── Public API ──
-
-pub async fn chat_completion(
-    client: &HttpClient,
-    api_key: &str,
-    request: &ChatCompletionRequest,
-) -> Result<ChatCompletionResponse, Error> {
-    let gemini_req = translate_request(request);
-    let url = format!("{}/models/{}:generateContent", BASE_URL, request.model);
-
-    let body =
-        crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
-    let headers = [
-        ("x-goog-api-key", api_key),
-        ("content-type", "application/json"),
-    ];
-    let resp = client
-        .post(&url, &headers, body.into())
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-        });
+fn candidate_to_blocks(candidate: &GeminiCandidate) -> Vec<ContentBlock> {
+    let Some(content) = &candidate.content else {
+        return Vec::new();
+    };
+    let mut blocks = Vec::new();
+    for (i, part) in content.parts.iter().enumerate() {
+        if let Some(t) = &part.text
+            && !t.is_empty()
+        {
+            blocks.push(ContentBlock::text(t.clone()));
+        }
+        if let Some(fc) = &part.function_call {
+            let base_id = format!("call_{i}");
+            let id = encode_signature_into_id(&base_id, part.thought_signature.as_deref());
+            blocks.push(ContentBlock::ToolUse {
+                id,
+                name: fc.name.clone(),
+                input: fc.args.clone(),
+                cache_control: None,
+            });
+        }
     }
-
-    let gemini_resp: GeminiResponse =
-        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
-
-    Ok(translate_response(gemini_resp, &request.model))
-}
-
-pub async fn chat_completion_stream(
-    client: &HttpClient,
-    api_key: &str,
-    request: &ChatCompletionRequest,
-    model: &str,
-) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
-    let gemini_req = translate_request(request);
-    let url = format!(
-        "{}/models/{}:streamGenerateContent?alt=sse",
-        BASE_URL, request.model
-    );
-
-    let body =
-        crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
-    let headers = [
-        ("x-goog-api-key", api_key),
-        ("content-type", "application/json"),
-    ];
-    let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
-
-    let model = model.to_string();
-    Ok(gemini_responses_to_chunks(gemini_event_stream(byte_stream), model))
+    blocks
 }
 
 /// Parse a Gemini SSE byte stream into native `GeminiResponse` items.
@@ -525,7 +494,7 @@ pub fn gemini_responses_to_chunks(
                     continue;
                 };
 
-                let blocks = extract_blocks(candidate);
+                let blocks = candidate_to_blocks(candidate);
                 let finish_reason = candidate.finish_reason.as_ref().map(Into::into);
 
                 let mut text = String::new();

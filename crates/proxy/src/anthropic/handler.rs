@@ -7,7 +7,6 @@
 
 use crate::{
     AppState,
-    anthropic::{from_chat_completion, to_anthropic_sse, to_chat_completion},
     auth::Principal,
     handlers::{
         RequestOutcome, emit_usage, emit_usage_error, error_response, error_status,
@@ -54,7 +53,7 @@ fn deserialize_request(raw_body: &[u8]) -> Result<crabllm_core::ChatCompletionRe
             )
                 .into_response()
         })?;
-    Ok(to_chat_completion(anthropic_req))
+    Ok(crabllm_core::ChatCompletionRequest::from(anthropic_req))
 }
 
 /// POST /v1/messages
@@ -208,7 +207,7 @@ where
                         }
                     });
 
-                    let anthropic_events = to_anthropic_sse(Box::pin(observed));
+                    let anthropic_events = crabllm_provider::chunks_to_anthropic_events(Box::pin(observed));
 
                     let sse_stream = anthropic_events.map(|result| match result {
                         Ok(event) => {
@@ -308,7 +307,7 @@ where
     for deployment in &deployments {
         match try_chat_with_retries(deployment, &request).await {
             Ok(resp) => {
-                match from_chat_completion(resp) {
+                match crabllm_core::AnthropicResponse::try_from(resp) {
                     Ok(anthropic) => {
                         let resp_bytes =
                             crabllm_core::json::to_vec(&anthropic).unwrap_or_default();

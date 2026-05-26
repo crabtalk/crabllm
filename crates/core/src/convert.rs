@@ -1,9 +1,9 @@
 use crate::{
     AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicRequest, AnthropicResponse,
     AnthropicSystem, AnthropicTool, AnthropicUsage, ChatCompletionRequest, ChatCompletionResponse,
-    ContentBlock, DEFAULT_MAX_TOKENS, Error, FinishReason, FunctionDef, GeminiCandidate,
-    GeminiContent, GeminiFinishReason, GeminiFunctionCall, GeminiPart, GeminiRequest,
-    GeminiResponse, GeminiRole, GeminiUsage, GenerationConfig, Message, Role, Stop, Tool,
+    ContentBlock, DEFAULT_MAX_TOKENS, Error, FunctionDef, GeminiCandidate, GeminiContent,
+    GeminiFinishReason, GeminiFunctionCall, GeminiPart, GeminiRequest, GeminiResponse, GeminiRole,
+    GeminiUsage, Message, Role, Stop, Tool,
     ToolChoice, ToolResultContent, ToolType, Usage,
 };
 use std::collections::{HashMap, VecDeque};
@@ -60,7 +60,7 @@ impl From<AnthropicRequest> for ChatCompletionRequest {
                 })
                 .collect()
         });
-        let tool_choice = req.tool_choice.as_ref().and_then(translate_tool_choice);
+        let tool_choice = req.tool_choice.as_ref().and_then(|v| ToolChoice::try_from(v).ok());
 
         ChatCompletionRequest {
             model: req.model,
@@ -97,7 +97,7 @@ impl TryFrom<ChatCompletionResponse> for AnthropicResponse {
             .usage
             .ok_or_else(|| Error::Internal("provider returned no usage".into()))?;
 
-        let stop_reason = choice.finish_reason.as_ref().map(finish_reason_to_stop);
+        let stop_reason = choice.finish_reason.as_ref().map(|r| r.to_anthropic_stop());
         let mut content = choice.message.content;
         if content.is_empty() {
             content.push(AnthropicContentBlock::text(""));
@@ -116,6 +116,32 @@ impl TryFrom<ChatCompletionResponse> for AnthropicResponse {
     }
 }
 
+impl From<AnthropicResponse> for ChatCompletionResponse {
+    fn from(resp: AnthropicResponse) -> Self {
+        let finish_reason = resp
+            .stop_reason
+            .as_ref()
+            .map(|r| crate::FinishReason::from_anthropic_stop(r));
+        Self {
+            id: resp.id,
+            object: "chat.completion".to_string(),
+            created: 0,
+            model: resp.model,
+            choices: vec![crate::Choice {
+                index: 0,
+                message: crate::Message {
+                    role: crate::Role::Assistant,
+                    content: resp.content,
+                },
+                finish_reason,
+                logprobs: None,
+            }],
+            usage: Some(crate::OpenAiUsage::from(&crate::Usage::from(&resp.usage))),
+            system_fingerprint: None,
+        }
+    }
+}
+
 fn flatten_text_blocks(blocks: &[AnthropicContentBlock]) -> String {
     let mut out = String::new();
     for block in blocks {
@@ -129,29 +155,24 @@ fn flatten_text_blocks(blocks: &[AnthropicContentBlock]) -> String {
     out
 }
 
-fn translate_tool_choice(value: &serde_json::Value) -> Option<ToolChoice> {
-    let kind = value.get("type")?.as_str()?;
-    match kind {
-        "auto" => Some(ToolChoice::Auto),
-        "any" => Some(ToolChoice::Required),
-        "tool" => value
-            .get("name")
-            .and_then(|n| n.as_str())
-            .map(|name| ToolChoice::Function {
-                name: name.to_string(),
-            }),
-        "none" => Some(ToolChoice::Disabled),
-        _ => None,
-    }
-}
+impl TryFrom<&serde_json::Value> for ToolChoice {
+    type Error = ();
 
-fn finish_reason_to_stop(reason: &FinishReason) -> String {
-    match reason {
-        FinishReason::Stop => "end_turn".to_string(),
-        FinishReason::Length => "max_tokens".to_string(),
-        FinishReason::ToolCalls => "tool_use".to_string(),
-        FinishReason::ContentFilter => "content_filter".to_string(),
-        FinishReason::Custom(s) => s.clone(),
+    fn try_from(value: &serde_json::Value) -> Result<Self, ()> {
+        let kind = value.get("type").and_then(|v| v.as_str()).ok_or(())?;
+        match kind {
+            "auto" => Ok(Self::Auto),
+            "any" => Ok(Self::Required),
+            "tool" => value
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(|name| Self::Function {
+                    name: name.to_string(),
+                })
+                .ok_or(()),
+            "none" => Ok(Self::Disabled),
+            _ => Err(()),
+        }
     }
 }
 
@@ -189,7 +210,7 @@ impl From<&GeminiRequest> for AnthropicRequest {
                         "dropping Gemini thought_signature on Gemini→Anthropic conversion"
                     );
                 }
-                blocks.extend(part_to_blocks(part, &mut pending_calls, &mut call_counter));
+                blocks.extend(part.to_content_blocks(&mut pending_calls, &mut call_counter));
             }
             if !blocks.is_empty() {
                 messages.push(AnthropicMessage {
@@ -211,7 +232,14 @@ impl From<&GeminiRequest> for AnthropicRequest {
         let (max_tokens, temperature, top_p, stop_sequences) = req
             .generation_config
             .as_ref()
-            .map(generation_config_fields)
+            .map(|cfg| {
+                (
+                    cfg.max_output_tokens,
+                    cfg.temperature,
+                    cfg.top_p,
+                    cfg.stop_sequences.clone(),
+                )
+            })
             .unwrap_or_default();
 
         let tools = req.tools.as_ref().map(|defs| {
@@ -244,59 +272,50 @@ impl From<&GeminiRequest> for AnthropicRequest {
     }
 }
 
-fn part_to_blocks(
-    part: &GeminiPart,
-    pending_calls: &mut HashMap<String, VecDeque<String>>,
-    call_counter: &mut u32,
-) -> Vec<ContentBlock> {
-    let mut out = Vec::new();
-    if let Some(text) = &part.text
-        && !text.is_empty()
-    {
-        out.push(ContentBlock::text(text.clone()));
+impl GeminiPart {
+    fn to_content_blocks(
+        &self,
+        pending_calls: &mut HashMap<String, VecDeque<String>>,
+        call_counter: &mut u32,
+    ) -> Vec<ContentBlock> {
+        let mut out = Vec::new();
+        if let Some(text) = &self.text
+            && !text.is_empty()
+        {
+            out.push(ContentBlock::text(text.clone()));
+        }
+        if let Some(fc) = &self.function_call {
+            let id = format!("call_{call_counter}");
+            *call_counter += 1;
+            pending_calls
+                .entry(fc.name.clone())
+                .or_default()
+                .push_back(id.clone());
+            out.push(ContentBlock::ToolUse {
+                id,
+                name: fc.name.clone(),
+                input: fc.args.clone(),
+                cache_control: None,
+            });
+        }
+        if let Some(fr) = &self.function_response {
+            let tool_use_id = pending_calls
+                .get_mut(&fr.name)
+                .and_then(|q| q.pop_front())
+                .unwrap_or_default();
+            let text = match &fr.response {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            out.push(ContentBlock::ToolResult {
+                tool_use_id,
+                name: Some(fr.name.clone()),
+                content: ToolResultContent::Text(text),
+                cache_control: None,
+            });
+        }
+        out
     }
-    if let Some(fc) = &part.function_call {
-        let id = format!("call_{call_counter}");
-        *call_counter += 1;
-        pending_calls
-            .entry(fc.name.clone())
-            .or_default()
-            .push_back(id.clone());
-        out.push(ContentBlock::ToolUse {
-            id,
-            name: fc.name.clone(),
-            input: fc.args.clone(),
-            cache_control: None,
-        });
-    }
-    if let Some(fr) = &part.function_response {
-        let tool_use_id = pending_calls
-            .get_mut(&fr.name)
-            .and_then(|q| q.pop_front())
-            .unwrap_or_default();
-        let text = match &fr.response {
-            serde_json::Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
-        out.push(ContentBlock::ToolResult {
-            tool_use_id,
-            name: Some(fr.name.clone()),
-            content: ToolResultContent::Text(text),
-            cache_control: None,
-        });
-    }
-    out
-}
-
-fn generation_config_fields(
-    cfg: &GenerationConfig,
-) -> (Option<u32>, Option<f64>, Option<f64>, Option<Vec<String>>) {
-    (
-        cfg.max_output_tokens,
-        cfg.temperature,
-        cfg.top_p,
-        cfg.stop_sequences.clone(),
-    )
 }
 
 impl TryFrom<AnthropicResponse> for GeminiResponse {
@@ -347,7 +366,7 @@ impl TryFrom<AnthropicResponse> for GeminiResponse {
                 role: Some(GeminiRole::Model),
                 parts,
             }),
-            finish_reason: resp.stop_reason.as_deref().map(stop_reason_to_gemini),
+            finish_reason: resp.stop_reason.as_deref().map(GeminiFinishReason::from),
         };
 
         Ok(GeminiResponse {
@@ -357,11 +376,3 @@ impl TryFrom<AnthropicResponse> for GeminiResponse {
     }
 }
 
-fn stop_reason_to_gemini(reason: &str) -> GeminiFinishReason {
-    match reason {
-        "end_turn" | "tool_use" | "stop_sequence" => GeminiFinishReason::Stop,
-        "max_tokens" => GeminiFinishReason::MaxTokens,
-        "content_filter" => GeminiFinishReason::Safety,
-        _ => GeminiFinishReason::Other,
-    }
-}

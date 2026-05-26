@@ -5,8 +5,8 @@ use crabllm_core::{
     AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicRequest,
     AnthropicResponse, AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage,
     BlockDelta, BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    Choice, ChunkChoice, ContentBlock, DEFAULT_MAX_TOKENS, Delta, Error, FinishReason,
-    FunctionCallDelta, Message, MessageDeltaPayload, OpenAiUsage, Provider, Role, Stop,
+    ChunkChoice, ContentBlock, DEFAULT_MAX_TOKENS, Delta, Error, FinishReason,
+    FunctionCallDelta, MessageDeltaPayload, OpenAiUsage, Provider, Role, Stop,
     ThinkingConfig, ToolCallDelta, ToolChoice, ToolType, Usage,
 };
 use futures::stream::{self, Stream, StreamExt};
@@ -326,39 +326,6 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
     }
 }
 
-fn map_usage(u: &AnthropicUsage) -> OpenAiUsage {
-    OpenAiUsage::from(&Usage::from(u))
-}
-
-fn map_stop_reason(stop_reason: &Option<String>) -> Option<FinishReason> {
-    stop_reason.as_ref().map(|r| match r.as_str() {
-        "end_turn" => FinishReason::Stop,
-        "max_tokens" => FinishReason::Length,
-        "tool_use" => FinishReason::ToolCalls,
-        other => FinishReason::Custom(other.to_string()),
-    })
-}
-
-fn translate_response(resp: AnthropicResponse) -> ChatCompletionResponse {
-    ChatCompletionResponse {
-        id: resp.id,
-        object: "chat.completion".to_string(),
-        created: 0,
-        model: resp.model,
-        choices: vec![Choice {
-            index: 0,
-            message: Message {
-                role: Role::Assistant,
-                content: resp.content,
-            },
-            finish_reason: map_stop_reason(&resp.stop_reason),
-            logprobs: None,
-        }],
-        usage: Some(map_usage(&resp.usage)),
-        system_fingerprint: None,
-    }
-}
-
 // ── Auth helpers ──
 
 fn is_oauth_token(api_key: &str) -> bool {
@@ -474,7 +441,7 @@ pub async fn chat_completion(
     let anthropic_resp: AnthropicResponse =
         crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
 
-    Ok(translate_response(anthropic_resp))
+    Ok(ChatCompletionResponse::from(anthropic_resp))
 }
 
 /// Parse an Anthropic SSE byte stream into native `AnthropicStreamEvent`s.
