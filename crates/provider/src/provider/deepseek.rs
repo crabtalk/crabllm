@@ -1,10 +1,10 @@
-use crate::provider::{anthropic::anthropic_event_stream, openai};
+use crate::provider::openai;
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    Provider,
+    Provider, codec::anthropic::anthropic_event_stream,
 };
 use futures::stream::StreamExt;
 

@@ -13,18 +13,16 @@ mod provider;
 mod registry;
 
 pub use client::{ByteStream, HttpClient};
+pub use crabllm_core::codec::anthropic::{
+    anthropic_event_stream, anthropic_events_to_chunks, chunks_to_anthropic_events,
+};
+pub use crabllm_core::codec::gemini::{
+    chunks_to_gemini_responses, gemini_event_stream, gemini_responses_to_chunks,
+};
 pub use provider::schema;
 pub use provider::{
-    anthropic::{
-        AnthropicProvider, anthropic_event_stream, anthropic_events_to_chunks,
-        chunks_to_anthropic_events,
-    },
-    azure::AzureProvider,
-    deepseek::DeepseekProvider,
-    google::{
-        GoogleProvider, chunks_to_gemini_responses, gemini_event_stream, gemini_responses_to_chunks,
-    },
-    openai::OpenaiProvider,
+    anthropic::AnthropicProvider, azure::AzureProvider, deepseek::DeepseekProvider,
+    google::GoogleProvider, openai::OpenaiProvider,
 };
 
 #[cfg(feature = "bedrock")]

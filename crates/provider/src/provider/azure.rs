@@ -1,5 +1,4 @@
 use crate::HttpClient;
-use crate::provider::openai;
 use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
@@ -331,5 +330,5 @@ pub async fn chat_completion_stream(
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
     let byte_stream = client.post_stream(&url, &headers, body.into()).await?;
 
-    Ok(openai::sse_stream(byte_stream))
+    Ok(crabllm_core::codec::openai::sse_stream(byte_stream))
 }
