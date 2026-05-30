@@ -34,8 +34,15 @@ pub(crate) struct RawClient {
 
 impl RawClient {
     pub(crate) fn new(base_url: String, api_key: String, auth: Auth) -> Self {
+        // `base_url` is the gateway *origin*; the SDK owns the route paths
+        // (`/v1/...` and `/v1beta/...`), so a single `/v1`-inclusive base
+        // can't serve the gemini route. A trailing `/v1` is tolerated and
+        // stripped so existing OpenAI/Anthropic-style configs don't become
+        // `…/v1/v1/messages`.
+        let trimmed = base_url.trim_end_matches('/');
+        let origin = trimmed.strip_suffix("/v1").unwrap_or(trimmed);
         Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_url: origin.to_string(),
             api_key,
             auth,
             http: HttpClient::new(),
@@ -106,8 +113,12 @@ pub struct Client {
 }
 
 impl Client {
-    /// Client for `base_url` (the gateway origin) with `api_key`, `Bearer`
-    /// auth, and the default retry policy (2 retries, 30s per-attempt timeout).
+    /// Client for `base_url` with `api_key`, `Bearer` auth, and the default
+    /// retry policy (2 retries, 30s per-attempt timeout).
+    ///
+    /// `base_url` is the gateway **origin** (e.g. `https://api.example.com`) —
+    /// the SDK appends the route paths (`/v1/messages`, `/v1beta/...`). A
+    /// trailing `/v1` is accepted and stripped.
     pub fn new(base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
         Self::builder(base_url, api_key).build()
     }
