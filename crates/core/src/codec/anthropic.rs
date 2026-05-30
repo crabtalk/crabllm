@@ -3,7 +3,6 @@ use crate::{
     ByteStream, ChatCompletionChunk, ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta,
     MessageDeltaPayload, OpenAiUsage, Role, ToolCallDelta, ToolType, Usage,
 };
-use bytes::{Buf, BytesMut};
 use futures::stream::{self, Stream, StreamExt};
 use serde::Deserialize;
 
@@ -93,10 +92,10 @@ pub fn anthropic_event_stream(
         input_usage: AnthropicUsage,
     }
 
+    let lines = crate::codec::sse::data_lines(byte_stream).boxed();
     stream::unfold(
         (
-            byte_stream,
-            BytesMut::new(),
+            lines,
             model,
             State {
                 next_index: 0,
@@ -108,183 +107,144 @@ pub fn anthropic_event_stream(
                 },
             },
         ),
-        |(mut byte_stream, mut buffer, model, mut state)| async move {
-            use futures::StreamExt;
-
+        |(mut lines, model, mut state)| async move {
             loop {
-                if let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
-                    let mut line_end = newline_pos;
-                    if line_end > 0 && buffer[line_end - 1] == b'\r' {
-                        line_end -= 1;
-                    }
-                    let line = &buffer[..line_end];
-
-                    if line.is_empty() {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    }
-
-                    let Some(data) = line.strip_prefix(b"data: ") else {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    };
-                    let Ok(data) = std::str::from_utf8(data) else {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    };
-                    let data = data.trim();
-
-                    let Ok(event) = crate::json::from_str::<SseEvent>(data) else {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    };
-                    buffer.advance(newline_pos + 1);
-
-                    match event.kind.as_str() {
-                        "message_start" => {
-                            if let Some(msg) = &event.message
-                                && let Some(usage) = &msg.usage
-                            {
-                                state.input_usage = usage.clone();
-                            }
-                            let out = AnthropicStreamEvent::MessageStart {
-                                message: AnthropicResponse {
-                                    id: String::new(),
-                                    r#type: "message".to_string(),
-                                    role: "assistant".to_string(),
-                                    model: model.clone(),
-                                    content: Vec::new(),
-                                    stop_reason: None,
-                                    stop_sequence: None,
-                                    usage: state.input_usage.clone(),
-                                },
-                            };
-                            return Some((Ok(out), (byte_stream, buffer, model, state)));
-                        }
-                        "error" => {
-                            let (status, body) = match &event.error {
-                                Some(err) => {
-                                    (anthropic_error_status(&err.kind), err.message.clone())
-                                }
-                                None => (502, "unknown stream error".to_string()),
-                            };
-                            return Some((
-                                Err(Error::Provider {
-                                    status,
-                                    body,
-                                    retry_after: None,
-                                }),
-                                (byte_stream, buffer, model, state),
-                            ));
-                        }
-                        "content_block_start" => {
-                            let Some(cb) = &event.content_block else {
-                                continue;
-                            };
-                            let index = state.next_index;
-                            state.next_index += 1;
-                            let content_block = match cb.kind.as_str() {
-                                "text" => AnthropicContentBlock::text(""),
-                                "thinking" => AnthropicContentBlock::Thinking {
-                                    thinking: String::new(),
-                                    signature: None,
-                                },
-                                "tool_use" => AnthropicContentBlock::ToolUse {
-                                    id: cb.id.clone().unwrap_or_default(),
-                                    name: cb.name.clone().unwrap_or_default(),
-                                    input: serde_json::json!({}),
-                                    cache_control: None,
-                                },
-                                _ => continue,
-                            };
-                            let out = AnthropicStreamEvent::ContentBlockStart {
-                                index,
-                                content_block,
-                            };
-                            return Some((Ok(out), (byte_stream, buffer, model, state)));
-                        }
-                        "content_block_stop" => {
-                            let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
-                            let out = AnthropicStreamEvent::ContentBlockStop { index };
-                            return Some((Ok(out), (byte_stream, buffer, model, state)));
-                        }
-                        "content_block_delta" => {
-                            let Some(delta) = &event.delta else {
-                                continue;
-                            };
-                            let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
-                            let block_delta = match delta.kind.as_str() {
-                                "text_delta" => BlockDelta::Text {
-                                    text: delta.text.clone(),
-                                },
-                                "thinking_delta" => BlockDelta::Thinking {
-                                    thinking: delta
-                                        .thinking
-                                        .clone()
-                                        .unwrap_or_else(|| delta.text.clone()),
-                                },
-                                "input_json_delta" => {
-                                    let Some(partial) = &delta.partial_json else {
-                                        continue;
-                                    };
-                                    BlockDelta::InputJson {
-                                        partial_json: partial.clone(),
-                                    }
-                                }
-                                _ => continue,
-                            };
-                            let out = AnthropicStreamEvent::ContentBlockDelta {
-                                index,
-                                delta: block_delta,
-                            };
-                            return Some((Ok(out), (byte_stream, buffer, model, state)));
-                        }
-                        "message_delta" => {
-                            let stop_reason =
-                                event.delta.as_ref().and_then(|d| d.stop_reason.clone());
-                            let usage = AnthropicUsage {
-                                input_tokens: state.input_usage.input_tokens,
-                                output_tokens: event
-                                    .usage
-                                    .as_ref()
-                                    .map(|u| u.output_tokens)
-                                    .unwrap_or(0),
-                                cache_read_input_tokens: state.input_usage.cache_read_input_tokens,
-                                cache_creation_input_tokens: state
-                                    .input_usage
-                                    .cache_creation_input_tokens,
-                            };
-                            let out = AnthropicStreamEvent::MessageDelta {
-                                delta: MessageDeltaPayload {
-                                    stop_reason,
-                                    stop_sequence: None,
-                                },
-                                usage,
-                            };
-                            return Some((Ok(out), (byte_stream, buffer, model, state)));
-                        }
-                        "message_stop" => {
-                            return Some((
-                                Ok(AnthropicStreamEvent::MessageStop),
-                                (byte_stream, buffer, model, state),
-                            ));
-                        }
-                        _ => {}
-                    }
+                let data = match lines.next().await {
+                    Some(Ok(d)) => d,
+                    Some(Err(e)) => return Some((Err(e), (lines, model, state))),
+                    None => return None,
+                };
+                let Ok(event) = crate::json::from_str::<SseEvent>(&data) else {
                     continue;
-                }
+                };
 
-                match byte_stream.next().await {
-                    Some(Ok(bytes)) => {
-                        buffer.extend_from_slice(&bytes);
+                match event.kind.as_str() {
+                    "message_start" => {
+                        if let Some(msg) = &event.message
+                            && let Some(usage) = &msg.usage
+                        {
+                            state.input_usage = usage.clone();
+                        }
+                        let out = AnthropicStreamEvent::MessageStart {
+                            message: AnthropicResponse {
+                                id: String::new(),
+                                r#type: "message".to_string(),
+                                role: "assistant".to_string(),
+                                model: model.clone(),
+                                content: Vec::new(),
+                                stop_reason: None,
+                                stop_sequence: None,
+                                usage: state.input_usage.clone(),
+                            },
+                        };
+                        return Some((Ok(out), (lines, model, state)));
                     }
-                    Some(Err(e)) => {
+                    "error" => {
+                        let (status, body) = match &event.error {
+                            Some(err) => (anthropic_error_status(&err.kind), err.message.clone()),
+                            None => (502, "unknown stream error".to_string()),
+                        };
                         return Some((
-                            Err(Error::Network(e.to_string())),
-                            (byte_stream, buffer, model, state),
+                            Err(Error::Provider {
+                                status,
+                                body,
+                                retry_after: None,
+                            }),
+                            (lines, model, state),
                         ));
                     }
-                    None => return None,
+                    "content_block_start" => {
+                        let Some(cb) = &event.content_block else {
+                            continue;
+                        };
+                        let index = state.next_index;
+                        state.next_index += 1;
+                        let content_block = match cb.kind.as_str() {
+                            "text" => AnthropicContentBlock::text(""),
+                            "thinking" => AnthropicContentBlock::Thinking {
+                                thinking: String::new(),
+                                signature: None,
+                            },
+                            "tool_use" => AnthropicContentBlock::ToolUse {
+                                id: cb.id.clone().unwrap_or_default(),
+                                name: cb.name.clone().unwrap_or_default(),
+                                input: serde_json::json!({}),
+                                cache_control: None,
+                            },
+                            _ => continue,
+                        };
+                        let out = AnthropicStreamEvent::ContentBlockStart {
+                            index,
+                            content_block,
+                        };
+                        return Some((Ok(out), (lines, model, state)));
+                    }
+                    "content_block_stop" => {
+                        let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
+                        let out = AnthropicStreamEvent::ContentBlockStop { index };
+                        return Some((Ok(out), (lines, model, state)));
+                    }
+                    "content_block_delta" => {
+                        let Some(delta) = &event.delta else {
+                            continue;
+                        };
+                        let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
+                        let block_delta = match delta.kind.as_str() {
+                            "text_delta" => BlockDelta::Text {
+                                text: delta.text.clone(),
+                            },
+                            "thinking_delta" => BlockDelta::Thinking {
+                                thinking: delta
+                                    .thinking
+                                    .clone()
+                                    .unwrap_or_else(|| delta.text.clone()),
+                            },
+                            "input_json_delta" => {
+                                let Some(partial) = &delta.partial_json else {
+                                    continue;
+                                };
+                                BlockDelta::InputJson {
+                                    partial_json: partial.clone(),
+                                }
+                            }
+                            _ => continue,
+                        };
+                        let out = AnthropicStreamEvent::ContentBlockDelta {
+                            index,
+                            delta: block_delta,
+                        };
+                        return Some((Ok(out), (lines, model, state)));
+                    }
+                    "message_delta" => {
+                        let stop_reason = event.delta.as_ref().and_then(|d| d.stop_reason.clone());
+                        let usage = AnthropicUsage {
+                            input_tokens: state.input_usage.input_tokens,
+                            output_tokens: event
+                                .usage
+                                .as_ref()
+                                .map(|u| u.output_tokens)
+                                .unwrap_or(0),
+                            cache_read_input_tokens: state.input_usage.cache_read_input_tokens,
+                            cache_creation_input_tokens: state
+                                .input_usage
+                                .cache_creation_input_tokens,
+                        };
+                        let out = AnthropicStreamEvent::MessageDelta {
+                            delta: MessageDeltaPayload {
+                                stop_reason,
+                                stop_sequence: None,
+                            },
+                            usage,
+                        };
+                        return Some((Ok(out), (lines, model, state)));
+                    }
+                    "message_stop" => {
+                        return Some((
+                            Ok(AnthropicStreamEvent::MessageStop),
+                            (lines, model, state),
+                        ));
+                    }
+                    _ => {}
                 }
             }
         },

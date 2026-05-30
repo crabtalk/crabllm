@@ -3,7 +3,6 @@ use crate::{
     GeminiCandidate, GeminiContent, GeminiFunctionCall, GeminiPart, GeminiResponse, GeminiRole,
     OpenAiUsage, Role, ToolCallDelta, Usage,
 };
-use bytes::{Buf, BytesMut};
 use futures::stream::{self, Stream, StreamExt};
 
 // Gemini 2.5+ thinking models attach a `thoughtSignature` (base64) to
@@ -66,60 +65,16 @@ pub fn candidate_to_blocks(candidate: &GeminiCandidate) -> Vec<ContentBlock> {
 pub fn gemini_event_stream(
     byte_stream: ByteStream,
 ) -> impl Stream<Item = Result<GeminiResponse, Error>> {
-    stream::unfold(
-        (byte_stream, BytesMut::new()),
-        |(mut byte_stream, mut buffer)| async move {
-            use futures::StreamExt;
-
-            loop {
-                if let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
-                    let mut line_end = newline_pos;
-                    if line_end > 0 && buffer[line_end - 1] == b'\r' {
-                        line_end -= 1;
-                    }
-                    let line = &buffer[..line_end];
-
-                    if line.is_empty() {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    }
-
-                    let Some(data) = line.strip_prefix(b"data: ") else {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    };
-                    let Ok(data) = std::str::from_utf8(data) else {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    };
-                    let data = data.trim();
-
-                    let Ok(gemini_resp) = crate::json::from_str::<GeminiResponse>(data) else {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    };
-
-                    if gemini_resp.candidates.is_empty() {
-                        buffer.advance(newline_pos + 1);
-                        continue;
-                    }
-
-                    buffer.advance(newline_pos + 1);
-                    return Some((Ok(gemini_resp), (byte_stream, buffer)));
-                }
-
-                match byte_stream.next().await {
-                    Some(Ok(bytes)) => {
-                        buffer.extend_from_slice(&bytes);
-                    }
-                    Some(Err(e)) => {
-                        return Some((Err(Error::Network(e.to_string())), (byte_stream, buffer)));
-                    }
-                    None => return None,
-                }
-            }
-        },
-    )
+    crate::codec::sse::data_lines(byte_stream).filter_map(|line| async move {
+        match line {
+            Err(e) => Some(Err(e)),
+            // Unparseable payloads and candidate-less chunks are skipped.
+            Ok(data) => match crate::json::from_str::<GeminiResponse>(&data) {
+                Ok(resp) if !resp.candidates.is_empty() => Some(Ok(resp)),
+                _ => None,
+            },
+        }
+    })
 }
 
 /// Convert a stream of native `GeminiResponse` items into OpenAI-shaped
