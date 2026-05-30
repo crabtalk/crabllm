@@ -43,6 +43,7 @@ http = "1"
 tokio = { version = "1", features = ["full"] }
 dashmap = "6"
 toml = "0.8"
+thiserror = "2"
 tower = "0.5"
 rand = "0.9"
 tracing = "0.1"

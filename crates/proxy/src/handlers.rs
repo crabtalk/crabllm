@@ -33,12 +33,9 @@ pub(crate) fn record_duration(ctx: &RequestContext, status: &'static str) {
 }
 
 pub(crate) fn error_status(e: &crabllm_core::Error) -> &'static str {
-    match e {
-        crabllm_core::Error::Provider { status, .. } => match status {
-            429 => "429",
-            400..=499 => "4xx",
-            _ => "5xx",
-        },
+    match e.http_status() {
+        429 => "429",
+        400..=499 => "4xx",
         _ => "5xx",
     }
 }
@@ -116,14 +113,6 @@ pub(crate) async fn usage<S: Storage + 'static, P: Provider + 'static>(
     .await
 }
 
-fn http_status_from_error(e: &crabllm_core::Error) -> u16 {
-    match e {
-        crabllm_core::Error::Provider { status, .. } => *status,
-        crabllm_core::Error::Timeout => 504,
-        _ => 500,
-    }
-}
-
 pub(crate) fn emit_usage_error<S: Storage, P: Provider>(
     state: &AppState<S, P>,
     ctx: &RequestContext,
@@ -136,7 +125,7 @@ pub(crate) fn emit_usage_error<S: Storage, P: Provider>(
         endpoint,
         RequestOutcome {
             usage: crabllm_core::Usage::default(),
-            status: http_status_from_error(e),
+            status: e.http_status(),
             error: Some(e.to_string()),
         },
     );
@@ -290,7 +279,7 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
     }
 
     let e = last_err
-        .unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".to_string()));
+        .unwrap_or_else(|| crabllm_core::Error::Routing("no providers available".to_string()));
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
@@ -335,7 +324,7 @@ fn openai_raw_sse(
                     Some(Ok(chunk)) => buf.extend_from_slice(&chunk),
                     Some(Err(e)) => {
                         return Some((
-                            Err(crabllm_core::Error::Internal(format!("stream error: {e}"))),
+                            Err(crabllm_core::Error::Network(e.to_string())),
                             (bytes, buf),
                         ));
                     }
@@ -384,7 +373,7 @@ async fn handle_raw_stream_passthrough<S: Storage + 'static, P: Provider + 'stat
     let deployment = match deployments.iter().find(|d| d.provider.is_openai_compat()) {
         Some(d) => d,
         None => {
-            let e = crabllm_core::Error::Internal("no compatible providers available".to_string());
+            let e = crabllm_core::Error::Routing("no compatible providers available".to_string());
             record_duration(&ctx, "5xx");
             emit_usage_error(state, &ctx, "chat.completions", &e);
             return error_response(e);
@@ -563,7 +552,7 @@ where
     }
 
     let e =
-        last_err.unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".into()));
+        last_err.unwrap_or_else(|| crabllm_core::Error::Routing("no providers available".into()));
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
@@ -718,7 +707,7 @@ where
     }
 
     let e =
-        last_err.unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".into()));
+        last_err.unwrap_or_else(|| crabllm_core::Error::Routing("no providers available".into()));
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
@@ -801,7 +790,7 @@ where
     }
 
     let e =
-        last_err.unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".into()));
+        last_err.unwrap_or_else(|| crabllm_core::Error::Routing("no providers available".into()));
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
@@ -934,7 +923,7 @@ where
     }
 
     let e =
-        last_err.unwrap_or_else(|| crabllm_core::Error::Internal("no providers available".into()));
+        last_err.unwrap_or_else(|| crabllm_core::Error::Routing("no providers available".into()));
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
     }
@@ -1066,21 +1055,14 @@ async fn try_embedding_with_retries<P: Provider>(
     Err(last_err)
 }
 
-/// Map a provider Error to an HTTP error response.
+/// Map a provider Error to an HTTP error response. Status and `type` come from
+/// the error variant ([`Error::http_status`]/[`Error::kind`]); the message is
+/// the upstream's own body for `Provider`, the error's `Display` otherwise.
 pub(crate) fn error_response(e: crabllm_core::Error) -> Response {
-    let (status, api_error) = match &e {
-        crabllm_core::Error::Provider { status, body, .. } => (
-            StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY),
-            ApiError::new(body.clone(), "upstream_error"),
-        ),
-        crabllm_core::Error::Timeout => (
-            StatusCode::GATEWAY_TIMEOUT,
-            ApiError::new(e.to_string(), "timeout_error"),
-        ),
-        _ => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ApiError::new(e.to_string(), "server_error"),
-        ),
+    let status = StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let message = match &e {
+        crabllm_core::Error::Provider { body, .. } => body.clone(),
+        _ => e.to_string(),
     };
-    (status, Json(api_error)).into_response()
+    (status, Json(ApiError::new(message, e.kind()))).into_response()
 }

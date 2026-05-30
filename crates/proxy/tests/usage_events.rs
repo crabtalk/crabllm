@@ -158,7 +158,7 @@ async fn chat_completion_emits_one_usage_event() {
 
     let body = serde_json::json!({
         "model": "fake-model",
-        "messages": [{ "role": "user", "content": "hi" }],
+        "messages": [{ "role": "user", "content": [{ "type": "text", "text": "hi" }] }],
     });
     let request = Request::builder()
         .method("POST")
@@ -224,7 +224,7 @@ async fn none_usage_events_is_zero_cost() {
     let app = router(state, vec![]);
     let body = serde_json::json!({
         "model": "fake-model",
-        "messages": [{ "role": "user", "content": "hi" }],
+        "messages": [{ "role": "user", "content": [{ "type": "text", "text": "hi" }] }],
     });
     let request = Request::builder()
         .method("POST")

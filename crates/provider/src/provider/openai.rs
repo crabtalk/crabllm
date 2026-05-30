@@ -144,15 +144,12 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client
-        .post(&url, &headers, body.into())
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, body.into()).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -163,7 +160,7 @@ pub async fn chat_completion(
         });
     }
 
-    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }
 
 /// Send an embedding request to an OpenAI-compatible endpoint.
@@ -174,15 +171,12 @@ pub async fn embedding(
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingResponse, Error> {
     let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
-    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client
-        .post(&url, &headers, body.into())
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, body.into()).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -193,7 +187,7 @@ pub async fn embedding(
         });
     }
 
-    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }
 
 /// Forward raw JSON bytes to an OpenAI-compatible chat completions
@@ -209,10 +203,7 @@ pub async fn chat_completion_raw(
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client
-        .post(&url, &headers, raw_body)
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, raw_body).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -250,7 +241,7 @@ pub async fn chat_completion_stream(
     request: &ChatCompletionRequest,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
@@ -298,15 +289,12 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
     api_key: &str,
     request: &T,
 ) -> Result<(Bytes, String), Error> {
-    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+    let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
     let headers = [
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client
-        .post(url, &headers, body.into())
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(url, &headers, body.into()).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -338,10 +326,7 @@ pub async fn audio_transcription(
         ("content-type", content_type_header.as_str()),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client
-        .post(&url, &headers, body)
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, body).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -394,7 +379,7 @@ pub(crate) fn sse_stream(
                         let result = match crabllm_core::json::from_str::<ChatCompletionChunk>(data)
                         {
                             Ok(chunk) => Ok(chunk),
-                            Err(e) => Err(Error::Internal(format!("SSE parse error: {e}"))),
+                            Err(e) => Err(Error::Decode(format!("SSE parse error: {e}"))),
                         };
                         buffer.advance(newline_pos + 1);
                         return Some((result, (byte_stream, buffer)));
@@ -410,10 +395,7 @@ pub(crate) fn sse_stream(
                         buffer.extend_from_slice(&bytes);
                     }
                     Some(Err(e)) => {
-                        return Some((
-                            Err(Error::Internal(format!("stream error: {e}"))),
-                            (byte_stream, buffer),
-                        ));
+                        return Some((Err(Error::Network(e.to_string())), (byte_stream, buffer)));
                     }
                     None => return None,
                 }

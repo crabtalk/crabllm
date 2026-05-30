@@ -83,7 +83,7 @@ impl HttpClient {
 
         let resp = self.inner.request(req).await.map_err(|e| {
             tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider GET failed");
-            Error::Internal(e.to_string())
+            Error::Network(e.to_string())
         })?;
 
         let status = resp.status().as_u16();
@@ -101,7 +101,7 @@ impl HttpClient {
             .into_body()
             .collect()
             .await
-            .map_err(|e| Error::Internal(e.to_string()))?
+            .map_err(|e| Error::Network(e.to_string()))?
             .to_bytes();
 
         tracing::debug!(
@@ -143,7 +143,7 @@ impl HttpClient {
 
         let resp = self.inner.request(req).await.map_err(|e| {
             tracing::debug!(url, request_bytes, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider call failed");
-            Error::Internal(e.to_string())
+            Error::Network(e.to_string())
         })?;
 
         let status = resp.status().as_u16();
@@ -161,7 +161,7 @@ impl HttpClient {
             .into_body()
             .collect()
             .await
-            .map_err(|e| Error::Internal(e.to_string()))?
+            .map_err(|e| Error::Network(e.to_string()))?
             .to_bytes();
 
         tracing::debug!(
@@ -222,7 +222,7 @@ impl HttpClient {
 
         let resp = self.inner.request(req).await.map_err(|e| {
             tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
-            Error::Internal(e.to_string())
+            Error::Network(e.to_string())
         })?;
 
         let status = resp.status().as_u16();
@@ -236,7 +236,7 @@ impl HttpClient {
                 .into_body()
                 .collect()
                 .await
-                .map_err(|e| Error::Internal(e.to_string()))?
+                .map_err(|e| Error::Network(e.to_string()))?
                 .to_bytes();
             let text = String::from_utf8_lossy(&body).into_owned();
             tracing::debug!(

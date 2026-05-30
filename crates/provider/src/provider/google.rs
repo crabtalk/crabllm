@@ -25,7 +25,7 @@ impl Provider for GoogleProvider {
         let gemini_req = translate_request(request);
         let url = format!("{BASE_URL}/models/{}:generateContent", request.model);
         let body =
-            crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+            crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Encode(e.to_string()))?;
         let headers = [
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
@@ -38,8 +38,8 @@ impl Provider for GoogleProvider {
                 retry_after: resp.retry_after,
             });
         }
-        let gemini_resp: GeminiResponse = crabllm_core::json::from_slice(&resp.body)
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        let gemini_resp: GeminiResponse =
+            crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
         Ok(translate_response(gemini_resp, &request.model))
     }
 
@@ -53,7 +53,7 @@ impl Provider for GoogleProvider {
             request.model
         );
         let body =
-            crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Internal(e.to_string()))?;
+            crabllm_core::json::to_vec(&gemini_req).map_err(|e| Error::Encode(e.to_string()))?;
         let headers = [
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
@@ -86,8 +86,7 @@ impl Provider for GoogleProvider {
         request: &GeminiRequest,
     ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
         let url = format!("{BASE_URL}/models/{model}:streamGenerateContent?alt=sse");
-        let body =
-            crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+        let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let headers = [
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
@@ -137,11 +136,7 @@ impl Provider for GoogleProvider {
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
         ];
-        let resp = self
-            .client
-            .post(&url, &headers, raw_body)
-            .await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        let resp = self.client.post(&url, &headers, raw_body).await?;
         if resp.status >= 400 {
             return Err(Error::Provider {
                 status: resp.status,
@@ -495,10 +490,7 @@ pub fn gemini_event_stream(
                         buffer.extend_from_slice(&bytes);
                     }
                     Some(Err(e)) => {
-                        return Some((
-                            Err(Error::Internal(format!("stream error: {e}"))),
-                            (byte_stream, buffer),
-                        ));
+                        return Some((Err(Error::Network(e.to_string())), (byte_stream, buffer)));
                     }
                     None => return None,
                 }

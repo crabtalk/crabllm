@@ -34,8 +34,8 @@ impl Provider for AnthropicProvider {
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
         let mut anthropic_req = translate_request(request);
         anthropic_req.stream = Some(true);
-        let body = crabllm_core::json::to_vec(&anthropic_req)
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        let body =
+            crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Encode(e.to_string()))?;
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
@@ -57,8 +57,7 @@ impl Provider for AnthropicProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        let body =
-            crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+        let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
@@ -71,11 +70,7 @@ impl Provider for AnthropicProvider {
         if request.thinking.is_some() {
             headers.push(("anthropic-beta", THINKING_BETA));
         }
-        let resp = self
-            .client
-            .post(&url, &headers, body.into())
-            .await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        let resp = self.client.post(&url, &headers, body.into()).await?;
         if resp.status >= 400 {
             let body = String::from_utf8_lossy(&resp.body).into_owned();
             return Err(Error::Provider {
@@ -84,7 +79,7 @@ impl Provider for AnthropicProvider {
                 retry_after: resp.retry_after,
             });
         }
-        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
     }
 
     async fn anthropic_messages_stream(
@@ -93,7 +88,7 @@ impl Provider for AnthropicProvider {
     ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut req = request.clone();
         req.stream = Some(true);
-        let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Internal(e.to_string()))?;
+        let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Encode(e.to_string()))?;
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
@@ -360,6 +355,23 @@ fn is_oauth_token(api_key: &str) -> bool {
     api_key.starts_with(OAUTH_TOKEN_PREFIX)
 }
 
+/// Map an Anthropic error `type` (from a streamed `error` event) to an HTTP
+/// status, so the gateway's retry and client-facing status logic can treat a
+/// mid-stream failure exactly like a non-stream one. `overloaded_error` maps to
+/// 503 (not Anthropic's native 529) so it lands in the transient retry set.
+fn anthropic_error_status(kind: &str) -> u16 {
+    match kind {
+        "invalid_request_error" => 400,
+        "authentication_error" => 401,
+        "permission_error" => 403,
+        "not_found_error" => 404,
+        "request_too_large" => 413,
+        "rate_limit_error" => 429,
+        "overloaded_error" => 503,
+        _ => 500,
+    }
+}
+
 fn auth_headers(api_key: &str) -> Vec<(&'static str, String)> {
     if is_oauth_token(api_key) {
         vec![
@@ -390,10 +402,7 @@ pub async fn anthropic_messages_raw(
     for (k, v) in &auth {
         headers.push((k, v.as_str()));
     }
-    let resp = client
-        .post(&url, &headers, raw_body)
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, raw_body).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -433,7 +442,7 @@ pub async fn chat_completion(
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
     if is_oauth_token(api_key) {
-        return Err(Error::Internal(
+        return Err(Error::Invalid(
             "OAuth tokens only support streaming; set stream: true".into(),
         ));
     }
@@ -442,7 +451,7 @@ pub async fn chat_completion(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
 
     let body =
-        crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Encode(e.to_string()))?;
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
         ("anthropic-version", "2023-06-01"),
@@ -454,10 +463,7 @@ pub async fn chat_completion(
     if anthropic_req.thinking.is_some() {
         headers.push(("anthropic-beta", THINKING_BETA));
     }
-    let resp = client
-        .post(&url, &headers, body.into())
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, body.into()).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -469,7 +475,7 @@ pub async fn chat_completion(
     }
 
     let anthropic_resp: AnthropicResponse =
-        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
     let ir_resp = crabllm_core::ir::Response::from(anthropic_resp);
     Ok(ChatCompletionResponse::from(&ir_resp))
 }
@@ -553,13 +559,18 @@ pub fn anthropic_event_stream(
                             return Some((Ok(out), (byte_stream, buffer, model, state)));
                         }
                         "error" => {
-                            let msg = if let Some(err) = &event.error {
-                                format!("anthropic stream error: {}: {}", err.kind, err.message)
-                            } else {
-                                "anthropic stream error: unknown".to_string()
+                            let (status, body) = match &event.error {
+                                Some(err) => {
+                                    (anthropic_error_status(&err.kind), err.message.clone())
+                                }
+                                None => (502, "unknown stream error".to_string()),
                             };
                             return Some((
-                                Err(Error::Internal(msg)),
+                                Err(Error::Provider {
+                                    status,
+                                    body,
+                                    retry_after: None,
+                                }),
                                 (byte_stream, buffer, model, state),
                             ));
                         }
@@ -666,7 +677,7 @@ pub fn anthropic_event_stream(
                     }
                     Some(Err(e)) => {
                         return Some((
-                            Err(Error::Internal(format!("stream error: {e}"))),
+                            Err(Error::Network(e.to_string())),
                             (byte_stream, buffer, model, state),
                         ));
                     }

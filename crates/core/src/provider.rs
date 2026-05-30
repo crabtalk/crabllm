@@ -180,10 +180,10 @@ pub trait Provider: Send + Sync {
     ) -> impl Future<Output = Result<Bytes, Error>> + Send {
         async move {
             let request: ChatCompletionRequest =
-                crate::json::from_slice(&raw_body).map_err(|e| Error::Internal(e.to_string()))?;
+                crate::json::from_slice(&raw_body).map_err(|e| Error::Invalid(e.to_string()))?;
             let resp = self.chat_completion(&request).await?;
             Ok(Bytes::from(
-                crate::json::to_vec(&resp).map_err(|e| Error::Internal(e.to_string()))?,
+                crate::json::to_vec(&resp).map_err(|e| Error::Encode(e.to_string()))?,
             ))
         }
     }
@@ -216,10 +216,10 @@ pub trait Provider: Send + Sync {
     ) -> impl Future<Output = Result<Bytes, Error>> + Send {
         async move {
             let request: GeminiRequest =
-                crate::json::from_slice(&raw_body).map_err(|e| Error::Internal(e.to_string()))?;
+                crate::json::from_slice(&raw_body).map_err(|e| Error::Invalid(e.to_string()))?;
             let resp = self.gemini_generate_content(model, &request).await?;
             Ok(Bytes::from(
-                crate::json::to_vec(&resp).map_err(|e| Error::Internal(e.to_string()))?,
+                crate::json::to_vec(&resp).map_err(|e| Error::Encode(e.to_string()))?,
             ))
         }
     }

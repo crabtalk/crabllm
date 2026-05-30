@@ -459,10 +459,9 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
 }
 
 fn model_not_registered(model: &str) -> Error {
-    // Not `Error::Config`: this is a runtime routing miss, not a TOML parse
-    // problem. The taxonomy is missing a real `NotFound` variant — see the
-    // follow-up issue. `Internal` is the lesser evil among existing variants.
-    Error::Internal(format!(
+    // A runtime routing miss (unknown model), not a TOML parse problem — so
+    // `Routing` (404), not `Config`.
+    Error::Routing(format!(
         "model '{model}' not registered in provider registry"
     ))
 }
