@@ -643,6 +643,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabllm-sdk"
+version = "0.0.21"
+dependencies = [
+ "bytes",
+ "crabllm-core",
+ "futures",
+ "reqwest 0.13.2",
+]
+
+[[package]]
 name = "crc"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
