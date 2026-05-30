@@ -547,6 +547,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabllm-http"
+version = "0.0.21"
+dependencies = [
+ "bytes",
+ "crabllm-core",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-tls",
+ "hyper-util",
+ "native-tls",
+ "reqwest 0.13.2",
+ "tracing",
+]
+
+[[package]]
 name = "crabllm-llamacpp"
 version = "0.0.21"
 dependencies = [
@@ -595,18 +614,11 @@ version = "0.0.21"
 dependencies = [
  "bytes",
  "crabllm-core",
+ "crabllm-http",
  "futures",
  "hmac 0.13.0",
  "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-tls",
- "hyper-util",
- "native-tls",
  "rand 0.9.2",
- "reqwest 0.13.2",
  "serde",
  "serde_json",
  "sha2 0.11.0",

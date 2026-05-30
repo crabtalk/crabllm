@@ -1,4 +1,4 @@
-use crate::client::{ByteStream, RawResponse, parse_retry_after};
+use crate::{ByteStream, RawResponse, parse_retry_after};
 use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::StreamExt;

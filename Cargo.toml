@@ -19,6 +19,7 @@ crabllm-bench = { version = "0.0.21", path = "crates/bench" }
 crabllm = { version = "0.0.21", path = "crates/crabllm" }
 crabllm-llamacpp = { version = "0.0.21", path = "crates/llamacpp" }
 crabllm-mlx = { version = "0.0.21", path = "crates/mlx" }
+crabllm-http = { version = "0.0.21", path = "crates/http", default-features = false }
 crabllm-sdk = { version = "0.0.21", path = "crates/sdk", default-features = false }
 crabctl = { version = "0.0.21", path = "crates/crabctl" }
 

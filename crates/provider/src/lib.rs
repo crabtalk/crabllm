@@ -8,11 +8,10 @@ use crabllm_core::{
 use futures::StreamExt;
 pub use registry::{Deployment, ProviderRegistry};
 
-mod client;
 mod provider;
 mod registry;
 
-pub use client::{ByteStream, HttpClient};
+pub use crabllm_http::{ByteStream, HttpClient};
 pub use crabllm_core::codec::anthropic::{
     anthropic_event_stream, anthropic_events_to_chunks, chunks_to_anthropic_events,
 };
