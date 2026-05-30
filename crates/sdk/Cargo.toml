@@ -10,14 +10,17 @@ keywords = ["llm", "client", "sdk", "openai", "anthropic"]
 categories = ["api-bindings", "web-programming::http-client"]
 
 [features]
-default = ["native-tls"]
-native-tls = ["reqwest/native-tls"]
-rustls = ["reqwest/rustls"]
+default = ["hyper", "native-tls", "http2"]
+hyper = ["crabllm-http/hyper"]
+reqwest = ["crabllm-http/reqwest"]
+http2 = ["crabllm-http/http2"]
+native-tls = ["crabllm-http/native-tls"]
+rustls = ["crabllm-http/rustls"]
 
 [dependencies]
 # crabllm
 crabllm-core.workspace = true
+crabllm-http.workspace = true
 # crates-io
 bytes.workspace = true
 futures.workspace = true
-reqwest.workspace = true

@@ -660,8 +660,8 @@ version = "0.0.21"
 dependencies = [
  "bytes",
  "crabllm-core",
+ "crabllm-http",
  "futures",
- "reqwest 0.13.2",
 ]
 
 [[package]]
