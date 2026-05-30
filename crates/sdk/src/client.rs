@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use crabllm_core::{ByteStream, Error, Retrying};
+use crabllm_core::{ByteStream, Error, ModelList, Retrying};
 use crabllm_http::HttpClient;
 use std::time::Duration;
 
@@ -98,6 +98,23 @@ impl RawClient {
         headers.extend_from_slice(extra);
         self.http.post_stream(&self.url(path), &headers, body).await
     }
+
+    /// `GET /v1/models`. Returns the OpenAI-shaped [`ModelList`]; with
+    /// [`Auth::ApiKey`] the gateway answers in Anthropic shape instead, so this
+    /// is meaningful only for the default [`Auth::Bearer`].
+    pub(crate) async fn models(&self) -> Result<ModelList, Error> {
+        let (name, value) = self.auth_header();
+        let headers = [("content-type", JSON), (name, value.as_str())];
+        let resp = self.http.get(&self.url("/v1/models"), &headers).await?;
+        if resp.status >= 400 {
+            return Err(Error::Provider {
+                status: resp.status,
+                body: String::from_utf8_lossy(&resp.body).into_owned(),
+                retry_after: resp.retry_after,
+            });
+        }
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
+    }
 }
 
 /// A typed client for a crabllm-compatible gateway (a deployed `crabllm-proxy`).
@@ -121,6 +138,12 @@ impl Client {
     /// trailing `/v1` is accepted and stripped.
     pub fn new(base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
         Self::builder(base_url, api_key).build()
+    }
+
+    /// List the models the gateway exposes (`GET /v1/models`). Not retried —
+    /// it's an idempotent listing, and not part of the `Provider` trait.
+    pub async fn models(&self) -> Result<ModelList, Error> {
+        self.inner.get_ref().models().await
     }
 
     /// Start configuring a client — auth scheme, retries, timeout.
