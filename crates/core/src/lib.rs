@@ -24,6 +24,7 @@ pub use types::{
 };
 pub use usage::Usage;
 
+pub mod codec;
 mod config;
 mod error;
 mod extension;

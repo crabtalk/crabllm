@@ -38,6 +38,25 @@ impl<P: Provider> Retrying<P> {
         }
     }
 
+    /// Borrow the wrapped provider — e.g. to call inherent (non-`Provider`)
+    /// methods on it that the retry wrapper doesn't forward.
+    pub fn get_ref(&self) -> &P {
+        &self.inner
+    }
+
+    /// Override the maximum number of retries. `0` disables retrying — each
+    /// call is attempted exactly once (still bounded by the timeout).
+    pub fn max_retries(mut self, n: u32) -> Self {
+        self.max_retries = n;
+        self
+    }
+
+    /// Override the per-attempt timeout. Zero disables the timeout.
+    pub fn timeout(mut self, d: Duration) -> Self {
+        self.timeout = d;
+        self
+    }
+
     /// Override the maximum `Retry-After` duration this wrapper will honor.
     /// 429s above this threshold are propagated as non-retryable.
     pub fn max_retry_after(mut self, d: Duration) -> Self {

@@ -138,7 +138,7 @@ where
     }
 
     let e = last_err.unwrap_or_else(|| {
-        crabllm_core::Error::Internal("no compatible providers available".into())
+        crabllm_core::Error::Routing("no compatible providers available".into())
     });
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
@@ -233,7 +233,7 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
     }
 
     let e = last_err.unwrap_or_else(|| {
-        crabllm_core::Error::Internal("no compatible providers available".to_string())
+        crabllm_core::Error::Routing("no compatible providers available".to_string())
     });
     for ext in state.extensions.iter() {
         ext.on_error(&ctx, &e).await;
@@ -375,7 +375,7 @@ fn anthropic_raw_sse(
                     Some(Ok(chunk)) => buf.extend_from_slice(&chunk),
                     Some(Err(e)) => {
                         return Some((
-                            Err(crabllm_core::Error::Internal(format!("stream error: {e}"))),
+                            Err(crabllm_core::Error::Network(e.to_string())),
                             (bytes, buf, event_name, data),
                         ));
                     }

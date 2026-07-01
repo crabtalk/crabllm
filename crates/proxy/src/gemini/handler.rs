@@ -145,7 +145,7 @@ where
     }
 
     let e = last_err.unwrap_or_else(|| {
-        crabllm_core::Error::Internal("no compatible providers available".into())
+        crabllm_core::Error::Routing("no compatible providers available".into())
     });
     record_duration(&ctx, error_status(&e));
     emit_usage_error(state, &ctx, ENDPOINT, &e);
@@ -199,7 +199,7 @@ where
     }
 
     let e = last_err.unwrap_or_else(|| {
-        crabllm_core::Error::Internal("no compatible providers available".into())
+        crabllm_core::Error::Routing("no compatible providers available".into())
     });
     record_duration(&ctx, error_status(&e));
     emit_usage_error(state, &ctx, ENDPOINT, &e);

@@ -1,0 +1,44 @@
+[package]
+name = "crabllm-http"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "Outbound HTTP client (hyper or reqwest) for the crabllm workspace"
+keywords = ["llm", "http", "client", "hyper", "reqwest"]
+categories = ["web-programming::http-client", "network-programming"]
+
+[features]
+default = ["hyper", "native-tls", "http2"]
+hyper = ["dep:hyper", "dep:hyper-util", "dep:http", "dep:http-body", "dep:http-body-util"]
+reqwest = ["dep:reqwest"]
+http2 = [
+    "hyper?/http2",
+    "hyper-util?/http2",
+    "hyper-rustls?/http2",
+    "reqwest?/http2",
+]
+native-tls = ["dep:hyper-tls", "dep:native-tls", "reqwest?/native-tls"]
+rustls = ["dep:hyper-rustls", "reqwest?/rustls"]
+
+[dependencies]
+crabllm-core.workspace = true
+
+# crates-io
+bytes.workspace = true
+futures.workspace = true
+tracing.workspace = true
+
+# hyper backend
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+http-body = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
+hyper-rustls = { workspace = true, optional = true }
+hyper-tls = { workspace = true, optional = true }
+native-tls = { workspace = true, optional = true }
+
+# reqwest backend
+reqwest = { workspace = true, optional = true }

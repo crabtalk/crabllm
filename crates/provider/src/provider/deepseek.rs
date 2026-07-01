@@ -1,10 +1,10 @@
-use crate::provider::{anthropic::anthropic_event_stream, openai};
+use crate::provider::openai;
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    Provider,
+    Provider, codec::anthropic::anthropic_event_stream,
 };
 use futures::stream::StreamExt;
 
@@ -48,8 +48,7 @@ impl Provider for DeepseekProvider {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        let body =
-            crabllm_core::json::to_vec(request).map_err(|e| Error::Internal(e.to_string()))?;
+        let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let resp_bytes = anthropic_messages_raw(
             &self.client,
             &self.anthropic_base_url,
@@ -57,7 +56,7 @@ impl Provider for DeepseekProvider {
             body.into(),
         )
         .await?;
-        crabllm_core::json::from_slice(&resp_bytes).map_err(|e| Error::Internal(e.to_string()))
+        crabllm_core::json::from_slice(&resp_bytes).map_err(|e| Error::Decode(e.to_string()))
     }
 
     async fn anthropic_messages_stream(
@@ -66,7 +65,7 @@ impl Provider for DeepseekProvider {
     ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
         let mut req = request.clone();
         req.stream = Some(true);
-        let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Internal(e.to_string()))?;
+        let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Encode(e.to_string()))?;
         let byte_stream = anthropic_messages_stream(
             &self.client,
             &self.anthropic_base_url,
@@ -138,10 +137,7 @@ pub async fn anthropic_messages_raw(
         ("content-type", "application/json"),
         ("authorization", bearer.as_str()),
     ];
-    let resp = client
-        .post(&url, &headers, raw_body)
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, raw_body).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();

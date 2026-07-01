@@ -369,7 +369,7 @@ pub async fn chat_completion(
 ) -> Result<ChatCompletionResponse, Error> {
     let bedrock_req = translate_request(request);
     let body =
-        crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Encode(e.to_string()))?;
     let url = format!(
         "{BASE_URL}.{region}.amazonaws.com/model/{}/converse",
         request.model
@@ -380,10 +380,7 @@ pub async fn chat_completion(
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
-    let resp = client
-        .post(&url, &headers, body.into())
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+    let resp = client.post(&url, &headers, body.into()).await?;
 
     if resp.status >= 400 {
         let body = String::from_utf8_lossy(&resp.body).into_owned();
@@ -395,7 +392,7 @@ pub async fn chat_completion(
     }
 
     let bedrock_resp: ConverseResponse =
-        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
 
     Ok(translate_response(bedrock_resp, &request.model))
 }
@@ -506,7 +503,7 @@ pub async fn chat_completion_stream(
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
     let bedrock_req = translate_request(request);
     let body =
-        crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Internal(e.to_string()))?;
+        crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Encode(e.to_string()))?;
     let url = format!(
         "{BASE_URL}.{region}.amazonaws.com/model/{}/converse-stream",
         request.model
@@ -671,7 +668,7 @@ fn bedrock_event_stream(
                     Some(Ok(bytes)) => buf.extend_from_slice(&bytes),
                     Some(Err(e)) => {
                         return Some((
-                            Err(Error::Internal(format!("stream error: {e}"))),
+                            Err(Error::Network(e.to_string())),
                             (byte_stream, buf, model, state),
                         ));
                     }

@@ -1,47 +1,77 @@
 use serde::{Deserialize, Serialize};
-use std::{fmt, time::Duration};
+use std::time::Duration;
 
 /// Shared error type for the crabllm workspace.
-#[derive(Debug)]
+///
+/// Every variant carries enough structure that retry semantics
+/// ([`Error::is_transient`]), HTTP status ([`Error::http_status`]), and the
+/// client-facing error `type` ([`Error::kind`]) are derivable from the variant
+/// alone — never from string contents. Layers must NOT stringify-and-rewrap an
+/// inner error (`Error::Internal(format!("...: {e}"))`); propagate the inner
+/// `Error` or classify the cause into the right variant instead.
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// TOML config parse error or missing env var.
+    /// TOML config parse error or missing env var. Startup only.
+    #[error("config error: {0}")]
     Config(String),
-    /// Upstream provider returned an error status.
+
+    /// Upstream provider returned (or streamed) an error. `body` is the
+    /// upstream's own message, passed through verbatim — never prefixed.
+    #[error("provider error (HTTP {status}): {body}")]
     Provider {
         status: u16,
         body: String,
         retry_after: Option<Duration>,
     },
-    /// JSON serialization/deserialization error.
-    Json(serde_json::Error),
-    /// Catch-all for internal errors.
-    Internal(String),
-    /// Request to upstream provider timed out.
-    Timeout,
-}
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Config(msg) => write!(f, "config error: {msg}"),
-            Error::Provider { status, body, .. } => {
-                write!(f, "provider error (HTTP {status}): {body}")
-            }
-            Error::Json(e) => write!(f, "json error: {e}"),
-            Error::Internal(msg) => write!(f, "internal error: {msg}"),
-            Error::Timeout => write!(f, "request timed out"),
-        }
-    }
+    /// Transport failure talking to the upstream: connect, send, or reading a
+    /// (possibly mid-stream) response body. Transient.
+    #[error("network error: {0}")]
+    Network(String),
+
+    /// An upstream response body could not be deserialized into our types.
+    /// Not transient — retrying yields the same unparsable bytes.
+    #[error("decode error: {0}")]
+    Decode(String),
+
+    /// Our own request could not be serialized. A bug on our side, not the
+    /// upstream's. Not transient.
+    #[error("encode error: {0}")]
+    Encode(String),
+
+    /// The client's request is malformed or violates a precondition (e.g. a
+    /// body that doesn't match the schema, or an unsupported option
+    /// combination). The client's fault — not transient, 400.
+    #[error("invalid request: {0}")]
+    Invalid(String),
+
+    /// A provider does not implement the requested operation.
+    #[error("unsupported: {0}")]
+    Unsupported(String),
+
+    /// Request could not be routed: unknown model or no matching deployment.
+    #[error("routing error: {0}")]
+    Routing(String),
+
+    /// Request to upstream provider timed out.
+    #[error("request timed out")]
+    Timeout,
+
+    /// Genuine catch-all for internal bugs. Not transient — if it happens,
+    /// retrying won't help.
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 impl Error {
     /// Whether this error is transient and the request should be retried.
-    /// Transient: 429 (rate limit), 500, 502, 503, 504 (server errors),
-    /// and connection/internal errors.
+    /// Only network failures, timeouts, and upstream 429/5xx are transient;
+    /// everything else (decode, encode, unsupported, routing, internal) is
+    /// deterministic and must not be retried.
     pub fn is_transient(&self) -> bool {
         match self {
             Error::Provider { status, .. } => matches!(status, 429 | 500 | 502 | 503 | 504),
-            Error::Internal(_) | Error::Timeout => true,
+            Error::Network(_) | Error::Timeout => true,
             _ => false,
         }
     }
@@ -54,21 +84,39 @@ impl Error {
         }
     }
 
+    /// HTTP status to return to the client for this error. Single source of
+    /// truth for the proxy's error-to-response mapping.
+    pub fn http_status(&self) -> u16 {
+        match self {
+            Error::Provider { status, .. } => *status,
+            Error::Network(_) | Error::Decode(_) => 502,
+            Error::Unsupported(_) => 501,
+            Error::Routing(_) => 404,
+            Error::Invalid(_) => 400,
+            Error::Timeout => 504,
+            Error::Config(_) | Error::Encode(_) | Error::Internal(_) => 500,
+        }
+    }
+
+    /// OpenAI-compatible error `type` for the client-facing `ApiError`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Error::Provider { .. } => "upstream_error",
+            Error::Network(_) => "network_error",
+            Error::Decode(_) => "decode_error",
+            Error::Routing(_) | Error::Invalid(_) => "invalid_request_error",
+            Error::Unsupported(_) => "unsupported_error",
+            Error::Timeout => "timeout_error",
+            Error::Config(_) | Error::Encode(_) | Error::Internal(_) => "server_error",
+        }
+    }
+
     /// Build an "operation not supported" error for a provider trait method
     /// that has no implementation. Used by `Provider` trait default impls.
     /// Distinct from per-provider rejection messages so log lines can be
     /// disambiguated by grep.
     pub fn not_implemented(method: &str) -> Self {
-        Error::Internal(format!("provider method '{method}' not implemented"))
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Json(e) => Some(e),
-            _ => None,
-        }
+        Error::Unsupported(format!("provider method '{method}' not implemented"))
     }
 }
 
@@ -76,12 +124,6 @@ impl std::error::Error for Error {
 impl From<toml::de::Error> for Error {
     fn from(e: toml::de::Error) -> Self {
         Error::Config(e.to_string())
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Error::Json(e)
     }
 }
 

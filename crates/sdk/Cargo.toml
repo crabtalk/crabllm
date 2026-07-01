@@ -1,0 +1,26 @@
+[package]
+name = "crabllm-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "Typed Rust client for the crabllm LLM API gateway"
+keywords = ["llm", "client", "sdk", "openai", "anthropic"]
+categories = ["api-bindings", "web-programming::http-client"]
+
+[features]
+default = ["hyper", "native-tls", "http2"]
+hyper = ["crabllm-http/hyper"]
+reqwest = ["crabllm-http/reqwest"]
+http2 = ["crabllm-http/http2"]
+native-tls = ["crabllm-http/native-tls"]
+rustls = ["crabllm-http/rustls"]
+
+[dependencies]
+# crabllm
+crabllm-core.workspace = true
+crabllm-http.workspace = true
+# crates-io
+bytes.workspace = true
+futures.workspace = true

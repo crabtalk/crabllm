@@ -55,4 +55,6 @@ pub struct AnthropicTool {
     pub description: Option<String>,
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub input_schema: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<serde_json::Value>,
 }

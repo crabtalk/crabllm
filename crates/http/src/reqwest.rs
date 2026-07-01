@@ -1,4 +1,4 @@
-use crate::client::{ByteStream, RawResponse, parse_retry_after};
+use crate::{ByteStream, RawResponse, parse_retry_after};
 use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::StreamExt;
@@ -39,7 +39,7 @@ impl HttpClient {
         }
         let resp = req.send().await.map_err(|e| {
             tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider GET failed");
-            Error::Internal(e.to_string())
+            Error::Network(e.to_string())
         })?;
         let status = resp.status().as_u16();
         let content_type = resp
@@ -55,7 +55,7 @@ impl HttpClient {
         let body = resp
             .bytes()
             .await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+            .map_err(|e| Error::Network(e.to_string()))?;
         tracing::debug!(
             url,
             status,
@@ -85,7 +85,7 @@ impl HttpClient {
         }
         let resp = req.send().await.map_err(|e| {
             tracing::debug!(url, request_bytes, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider call failed");
-            Error::Internal(e.to_string())
+            Error::Network(e.to_string())
         })?;
         let status = resp.status().as_u16();
         let content_type = resp
@@ -101,7 +101,7 @@ impl HttpClient {
         let body = resp
             .bytes()
             .await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+            .map_err(|e| Error::Network(e.to_string()))?;
         tracing::debug!(
             url,
             status,
@@ -151,7 +151,7 @@ impl HttpClient {
         }
         let resp = req.send().await.map_err(|e| {
             tracing::debug!(url, latency_ms = start.elapsed().as_millis() as u64, error = %e, "provider stream failed");
-            Error::Internal(e.to_string())
+            Error::Network(e.to_string())
         })?;
         let status = resp.status().as_u16();
         if status >= 400 {
@@ -163,7 +163,7 @@ impl HttpClient {
             let body = resp
                 .bytes()
                 .await
-                .map_err(|e| Error::Internal(e.to_string()))?;
+                .map_err(|e| Error::Network(e.to_string()))?;
             let text = String::from_utf8_lossy(&body).into_owned();
             tracing::debug!(
                 url,
