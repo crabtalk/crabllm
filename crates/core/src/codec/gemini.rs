@@ -68,7 +68,7 @@ pub fn gemini_event_stream(
     crate::codec::sse::data_lines(byte_stream).filter_map(|line| async move {
         match line {
             Err(e) => Some(Err(e)),
-            // Unparseable payloads and candidate-less chunks are skipped.
+            // Unparsable payloads and candidate-less chunks are skipped.
             Ok(data) => match crate::json::from_str::<GeminiResponse>(&data) {
                 Ok(resp) if !resp.candidates.is_empty() => Some(Ok(resp)),
                 _ => None,

@@ -342,4 +342,3 @@ pub async fn audio_transcription(
         .unwrap_or_else(|| "application/json".to_string());
     Ok((resp.body, content_type))
 }
-

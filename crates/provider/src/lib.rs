@@ -11,13 +11,13 @@ pub use registry::{Deployment, ProviderRegistry};
 mod provider;
 mod registry;
 
-pub use crabllm_http::{ByteStream, HttpClient};
 pub use crabllm_core::codec::anthropic::{
     anthropic_event_stream, anthropic_events_to_chunks, chunks_to_anthropic_events,
 };
 pub use crabllm_core::codec::gemini::{
     chunks_to_gemini_responses, gemini_event_stream, gemini_responses_to_chunks,
 };
+pub use crabllm_http::{ByteStream, HttpClient};
 pub use provider::schema;
 pub use provider::{
     anthropic::AnthropicProvider, azure::AzureProvider, deepseek::DeepseekProvider,

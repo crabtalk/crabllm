@@ -40,7 +40,9 @@ impl Provider for RawClient {
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
         let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
-        let bytes = self.post_checked("/v1/messages", ANTHROPIC, body.into()).await?;
+        let bytes = self
+            .post_checked("/v1/messages", ANTHROPIC, body.into())
+            .await?;
         crabllm_core::json::from_slice(&bytes).map_err(|e| Error::Decode(e.to_string()))
     }
 
@@ -52,13 +54,17 @@ impl Provider for RawClient {
         req.stream = Some(true);
         let model = req.model.clone();
         let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Encode(e.to_string()))?;
-        let byte_stream = self.post_sse("/v1/messages", ANTHROPIC, body.into()).await?;
+        let byte_stream = self
+            .post_sse("/v1/messages", ANTHROPIC, body.into())
+            .await?;
         Ok(codec::anthropic::anthropic_event_stream(byte_stream, model).boxed())
     }
 
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
-        let bytes = self.post_checked("/v1/embeddings", &[], body.into()).await?;
+        let bytes = self
+            .post_checked("/v1/embeddings", &[], body.into())
+            .await?;
         crabllm_core::json::from_slice(&bytes).map_err(|e| Error::Decode(e.to_string()))
     }
 
@@ -114,6 +120,8 @@ impl Provider for Client {
         model: &str,
         request: &GeminiRequest,
     ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
-        self.inner.gemini_generate_content_stream(model, request).await
+        self.inner
+            .gemini_generate_content_stream(model, request)
+            .await
     }
 }

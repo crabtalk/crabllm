@@ -30,7 +30,7 @@ pub enum Error {
     Network(String),
 
     /// An upstream response body could not be deserialized into our types.
-    /// Not transient — retrying yields the same unparseable bytes.
+    /// Not transient — retrying yields the same unparsable bytes.
     #[error("decode error: {0}")]
     Decode(String),
 
