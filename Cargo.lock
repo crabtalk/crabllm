@@ -562,6 +562,7 @@ dependencies = [
  "hyper-util",
  "native-tls",
  "reqwest 0.13.2",
+ "tokio",
  "tracing",
 ]
 

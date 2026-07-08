@@ -2,7 +2,11 @@ use crate::{ByteStream, RawResponse, parse_retry_after};
 use bytes::Bytes;
 use crabllm_core::Error;
 use futures::stream::StreamExt;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Idle timeout between reads (resets on each); bounds a stalled stream without capping long ones.
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// reqwest client. No redirects, no cookies, no decompression.
 #[derive(Clone, Debug)]
@@ -20,6 +24,8 @@ impl HttpClient {
     pub fn new() -> Self {
         let builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(CONNECT_TIMEOUT)
+            .read_timeout(READ_TIMEOUT)
             .no_gzip()
             .no_brotli()
             .no_deflate();

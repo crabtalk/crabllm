@@ -15,6 +15,9 @@ const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 /// A `Provider` wrapper that retries transient failures with exponential
 /// backoff and full jitter, and bounds each attempt with a per-call timeout.
 ///
+/// For streaming methods the per-attempt timeout covers only opening the
+/// stream; a mid-stream stall is bounded by the transport's read timeout.
+///
 /// 429s whose `retry_after` exceeds `max_retry_after` are propagated
 /// immediately — the upstream is signalling a wait longer than this wrapper
 /// is willing to block for.
