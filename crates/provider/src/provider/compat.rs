@@ -38,6 +38,20 @@ pub const COMPAT: &[CompatSpec] = &[
         openai_base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         anthropic_base_url: "https://dashscope-intl.aliyuncs.com/apps/anthropic/v1",
     },
+    CompatSpec {
+        name: "minimax",
+        openai_base_url: "https://api.minimax.io/v1",
+        anthropic_base_url: "https://api.minimax.io/anthropic/v1",
+    },
+    CompatSpec {
+        name: "kimi",
+        openai_base_url: "https://api.moonshot.ai/v1",
+        anthropic_base_url: "https://api.moonshot.ai/anthropic/v1",
+    },
+    // NOTE: no grok here — xAI's native API is OpenAI-only (no Anthropic
+    // /messages endpoint; Anthropic-SDK access exists only via a translating
+    // gateway). Configure Grok as `kind = "openai"` with base_url
+    // https://api.x.ai/v1 instead.
 ];
 
 /// Resolve a `kind`/name string to its compat spec, if it names one.

@@ -18,6 +18,8 @@
 - [DeepSeek](providers/deepseek.md)
 - [z.ai](providers/zai.md)
 - [Qwen](providers/qwen.md)
+- [MiniMax](providers/minimax.md)
+- [Kimi](providers/kimi.md)
 
 # Features
 
