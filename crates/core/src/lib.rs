@@ -14,7 +14,7 @@ pub use types::{
     AnthropicResponse, AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage,
     AudioSpeechRequest, BlockDelta, ChatCompletionChunk, ChatCompletionRequest,
     ChatCompletionResponse, Choice, ChunkChoice, CompletionTokensDetails, ContentBlock,
-    DEFAULT_MAX_TOKENS, Delta, Embedding, EmbeddingInput, EmbeddingRequest, EmbeddingResponse,
+    DEFAULT_MAX_TOKENS, Delta, Dialect, Embedding, EmbeddingInput, EmbeddingRequest, EmbeddingResponse,
     EmbeddingUsage, FinishReason, FunctionCall, FunctionCallDelta, FunctionDef, GeminiCandidate,
     GeminiContent, GeminiFinishReason, GeminiFunctionCall, GeminiFunctionDecl,
     GeminiFunctionResponse, GeminiPart, GeminiRequest, GeminiResponse, GeminiRole, GeminiToolDef,

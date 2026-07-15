@@ -600,6 +600,7 @@ where
         .into_iter()
         .map(|name| {
             let info = state.config.models.get(name.as_str());
+            let dialects = registry.model_dialects(&name);
             Model {
                 id: name,
                 object: "model".to_string(),
@@ -608,6 +609,7 @@ where
                 context_length: info.and_then(|i| i.context_length),
                 pricing: info.and_then(|i| i.pricing.clone()),
                 vision: info.and_then(|i| i.vision),
+                dialects,
             }
         })
         .collect();

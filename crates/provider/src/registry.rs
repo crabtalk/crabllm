@@ -3,7 +3,7 @@ use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
+    Dialect, EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
     ProviderConfig, ProviderKind,
 };
 use rand::Rng;
@@ -248,6 +248,28 @@ impl<P> ProviderRegistry<P> {
         }
 
         Ok(Self::new(providers, aliases.clone(), model_providers))
+    }
+}
+
+impl<P: Provider> ProviderRegistry<P> {
+    /// Native dialects for a model — the union of `is_*_compat` across all of
+    /// its deployments. Empty if the model isn't registered. Reported by
+    /// `/v1/models` so a client can choose the right endpoint or translate.
+    pub fn model_dialects(&self, model: &str) -> Vec<Dialect> {
+        let Some(list) = self.providers.get(self.resolve(model)) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if list.iter().any(|d| d.provider.is_openai_compat()) {
+            out.push(Dialect::Openai);
+        }
+        if list.iter().any(|d| d.provider.is_anthropic_compat()) {
+            out.push(Dialect::Anthropic);
+        }
+        if list.iter().any(|d| d.provider.is_gemini_compat()) {
+            out.push(Dialect::Gemini);
+        }
+        out
     }
 }
 
