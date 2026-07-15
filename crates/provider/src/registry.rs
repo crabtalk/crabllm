@@ -2,8 +2,8 @@ use crate::{RemoteProvider, compat, make_client};
 use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    Dialect, EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Dialect, EmbeddingRequest,
+    EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
     ProviderConfig, ProviderKind,
 };
 use rand::Rng;
@@ -222,8 +222,11 @@ impl<P> ProviderRegistry<P> {
         let mut providers: HashMap<String, Vec<Arc<Deployment<P>>>> = HashMap::new();
 
         for (provider_name, provider_config) in providers_config {
-            let provider =
-                wrap(RemoteProvider::new(provider_name, provider_config, client.clone()));
+            let provider = wrap(RemoteProvider::new(
+                provider_name,
+                provider_config,
+                client.clone(),
+            ));
 
             let deployment = Arc::new(Deployment {
                 provider,
