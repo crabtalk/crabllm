@@ -6,7 +6,7 @@ use crabllm_core::{
     Provider, ProviderConfig, ProviderKind, ir,
 };
 use futures::StreamExt;
-pub use registry::{Deployment, ProviderRegistry};
+pub use registry::{Deployment, ProviderRegistry, validate_provider};
 
 mod provider;
 mod registry;

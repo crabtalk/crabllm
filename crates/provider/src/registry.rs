@@ -277,9 +277,17 @@ impl<P: Provider> ProviderRegistry<P> {
 }
 
 /// Validate provider-specific required fields against the raw config.
-fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
+/// Validate a provider's config: it must serve at least one model, and its
+/// kind-specific fields (api_key / base_url / bedrock creds, compat-aware) must
+/// be present. This is the **single** provider validator — the registry runs it
+/// at build time and the proxy's admin API runs it before accepting a new
+/// provider, so the two can't disagree.
+pub fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
     fn is_blank(opt: &Option<String>) -> bool {
         opt.as_ref().is_none_or(|s| s.is_empty())
+    }
+    if config.models.is_empty() {
+        return Err(Error::Config(format!("provider '{name}' has no models")));
     }
     let kind = config.effective_kind(name);
     match kind {

@@ -238,46 +238,6 @@ impl ProviderConfig {
         }
         kind
     }
-
-    /// Validate field combinations.
-    pub fn validate(&self, provider_name: &str) -> Result<(), String> {
-        if self.models.is_empty() {
-            return Err(format!("provider '{provider_name}' has no models"));
-        }
-        match self.effective_kind(provider_name) {
-            ProviderKind::Bedrock => {
-                if self.region.is_none() {
-                    return Err(format!(
-                        "provider '{provider_name}' (bedrock) requires region"
-                    ));
-                }
-                if self.access_key.is_none() {
-                    return Err(format!(
-                        "provider '{provider_name}' (bedrock) requires access_key"
-                    ));
-                }
-                if self.secret_key.is_none() {
-                    return Err(format!(
-                        "provider '{provider_name}' (bedrock) requires secret_key"
-                    ));
-                }
-            }
-            ProviderKind::Ollama => {
-                // Ollama doesn't require api_key or base_url.
-            }
-            // Custom covers both a compat provider (api_key, URLs from the
-            // table) and a bare OpenAI-compatible endpoint (base_url) — the
-            // provider crate enforces which; here we only reject the empty case.
-            _ => {
-                if self.api_key.is_none() && self.base_url.is_none() {
-                    return Err(format!(
-                        "provider '{provider_name}' requires api_key or base_url"
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 /// Per-key rate limit override. When set on a key, these values take

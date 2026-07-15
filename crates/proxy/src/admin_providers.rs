@@ -581,7 +581,7 @@ fn from_value_opt<T: for<'de> Deserialize<'de>>(
 }
 
 fn validate_single(name: &str, config: &ProviderConfig) -> Result<(), String> {
-    config.validate(name)
+    crabllm_provider::validate_provider(name, config).map_err(|e| e.to_string())
 }
 
 /// If `config.models` is empty, query the provider's `GET {base_url}/models`

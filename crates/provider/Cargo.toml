@@ -34,3 +34,6 @@ serde_json.workspace = true
 http = { workspace = true, optional = true }
 hmac = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+
+[dev-dependencies]
+crabllm-core.workspace = true
