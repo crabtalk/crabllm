@@ -135,6 +135,37 @@ pub async fn gemini_stream_via_chat(
     Ok(chunks_to_gemini_responses(chunks).boxed())
 }
 
+/// Shared `complete` for OpenAI-shaped providers: IR → chat completion → IR.
+/// Not a trait default — Anthropic/Bedrock providers complete natively, so the
+/// OpenAI-style body would be wrong there.
+pub async fn complete_via_chat(
+    provider: &(impl Provider + ?Sized),
+    request: &ir::Request,
+) -> Result<ir::Response, Error> {
+    let native = ChatCompletionRequest::from(request);
+    let resp = provider.chat_completion(&native).await?;
+    Ok(ir::Response::from(resp))
+}
+
+/// Streaming counterpart of [`complete_via_chat`].
+pub async fn complete_stream_via_chat(
+    provider: &(impl Provider + ?Sized),
+    request: &ir::Request,
+) -> Result<BoxStream<'static, Result<ir::StreamEvent, Error>>, Error> {
+    let mut native = ChatCompletionRequest::from(request);
+    native.stream = Some(true);
+    let stream = provider.chat_completion_stream(&native).await?;
+    Ok(stream
+        .flat_map(|result| {
+            let events: Vec<Result<ir::StreamEvent, Error>> = match result {
+                Ok(chunk) => chunk.to_ir_events().into_iter().map(Ok).collect(),
+                Err(e) => vec![Err(e)],
+            };
+            futures::stream::iter(events)
+        })
+        .boxed())
+}
+
 /// A configured remote-API provider, ready to dispatch requests.
 ///
 /// Each variant wraps a provider struct that implements `Provider`
