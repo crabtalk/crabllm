@@ -1,6 +1,7 @@
 use crate::{
-    AnthropicContent, AnthropicMessage, AnthropicResponse, AnthropicStreamEvent, AnthropicSystem,
-    AnthropicTool, AnthropicUsage, BlockDelta, ContentBlock, ThinkingConfig, Usage,
+    AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicResponse, AnthropicStreamEvent,
+    AnthropicSystem, AnthropicTool, AnthropicUsage, BlockDelta, ContentBlock, ThinkingConfig,
+    Usage,
     ir::{self, Content, Message, Role, StopReason, StreamEvent},
 };
 
@@ -79,7 +80,7 @@ impl From<&ir::Request> for crate::AnthropicRequest {
             .as_ref()
             .map(|blocks| AnthropicSystem::Blocks(blocks.iter().map(ContentBlock::from).collect()));
 
-        let messages = req
+        let mut messages: Vec<AnthropicMessage> = req
             .messages
             .iter()
             .map(|msg| {
@@ -95,6 +96,10 @@ impl From<&ir::Request> for crate::AnthropicRequest {
                 }
             })
             .collect();
+        // Parallel tool calls arrive as one user message per tool_result; Anthropic
+        // requires them merged into the single user message after the assistant.
+        messages.coalesce_tool_results();
+        messages.ensure_tool_pairing();
 
         let tools = req.tools.as_ref().map(|tools| {
             tools

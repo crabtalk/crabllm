@@ -2,10 +2,10 @@ use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicResponse, AnthropicStreamEvent,
-    AnthropicSystem, AnthropicTool, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, ContentBlock, DEFAULT_MAX_TOKENS, Error, Provider, Role, Stop,
-    ThinkingConfig, ToolChoice,
+    AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicResponse,
+    AnthropicStreamEvent, AnthropicSystem, AnthropicTool, BoxStream, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, ContentBlock, DEFAULT_MAX_TOKENS, Error,
+    Provider, Role, Stop, ThinkingConfig, ToolChoice,
     codec::anthropic::{anthropic_event_stream, anthropic_events_to_chunks},
 };
 use futures::stream::StreamExt;
@@ -175,6 +175,10 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
             });
         }
     }
+    // Parallel tool calls arrive as one user message per tool_result; Anthropic
+    // requires them merged into the single user message after the assistant.
+    messages.coalesce_tool_results();
+    messages.ensure_tool_pairing();
 
     let system = if system_blocks.is_empty() {
         None
