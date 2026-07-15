@@ -1,10 +1,46 @@
 use bytes::Bytes;
-use crabllm_core::{ByteStream, Error, ModelList, Retrying};
+use crabllm_core::{
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ByteStream,
+    ChatCompletionRequest, Dialect, Error, ModelList, Provider, Retrying,
+    codec::anthropic::chunks_to_anthropic_events, ir,
+};
 use crabllm_http::HttpClient;
+use futures::StreamExt;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 /// `content-type` sent on every request.
 pub(crate) const JSON: &str = "application/json";
+
+/// Shared `model → native dialects` cache, populated lazily from `/v1/models`.
+type DialectCache = Arc<RwLock<Option<HashMap<String, Vec<Dialect>>>>>;
+
+/// How `bridge` mode dispatches an Anthropic request, given the target model's
+/// native dialects. Exposed (with [`route`]) so callers can predict or test the
+/// routing without issuing a request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Route {
+    /// Forward 1:1 to `/v1/messages` — the model is Anthropic-native.
+    Native,
+    /// Translate through `/v1/chat/completions` — no native Anthropic endpoint.
+    Translate,
+    /// Unknown model (catalog miss/fetch failure): try native, else translate.
+    NativeElseTranslate,
+}
+
+/// Decide how to route an Anthropic request for a model with these native
+/// dialects. Anthropic-native wins (full fidelity); an OpenAI-only model
+/// translates; anything else is unknown and tries native first.
+pub fn route(dialects: &[Dialect]) -> Route {
+    if dialects.contains(&Dialect::Anthropic) {
+        Route::Native
+    } else if dialects.contains(&Dialect::Openai) {
+        Route::Translate
+    } else {
+        Route::NativeElseTranslate
+    }
+}
 
 /// Anthropic API version sent with `/v1/messages` requests, matching the value
 /// the native Anthropic API and crabllm's own Anthropic provider use.
@@ -127,6 +163,79 @@ impl RawClient {
 #[derive(Debug, Clone)]
 pub struct Client {
     pub(crate) inner: Retrying<RawClient>,
+    /// When set, `anthropic_messages`/`_stream` route by the model's native
+    /// dialects (`/v1/models`): forward 1:1 to `/v1/messages` if the model is
+    /// Anthropic-native, otherwise translate through `/v1/chat/completions`.
+    /// Off by default — the client forwards 1:1 with no translation.
+    pub(crate) bridge: bool,
+    /// Cached `model → native dialects`, populated from `/v1/models` on first
+    /// need. `None` until fetched; shared across clones.
+    pub(crate) dialects: DialectCache,
+}
+
+impl Client {
+    /// Native dialects for `model`, from `/v1/models` (cached). Empty if the
+    /// model isn't listed or the catalog couldn't be fetched — the caller then
+    /// treats it as unknown (try native, fall back to translation).
+    ///
+    /// The catalog is fetched once and never invalidated for the client's
+    /// lifetime. That's fine for models added after the fetch (they read as
+    /// unknown and take the fallback path), but a model that was cached as
+    /// Anthropic-native and later loses that endpoint would forward natively
+    /// and fail with no fallback. Recreate the client if the deployment's model
+    /// routing changes under it. Bridging assumes `Auth::Bearer`; with
+    /// `Auth::ApiKey` the gateway answers `/v1/models` in Anthropic shape, the
+    /// parse below fails, and every model degrades to the unknown fallback.
+    pub(crate) async fn model_dialects(&self, model: &str) -> Vec<Dialect> {
+        // Read under an explicit scope so the guard can't be held across the
+        // `.await` below, no matter how this is edited later.
+        {
+            let cache = self.dialects.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map.get(model).cloned().unwrap_or_default();
+            }
+        }
+        // First need: fetch the catalog once. On failure, cache an empty map so
+        // we don't refetch on every call, and warn rather than degrade in
+        // silence — every model then takes the unknown (native-then-translate)
+        // path.
+        let map: HashMap<String, Vec<Dialect>> = match self.models().await {
+            Ok(list) => list.data.into_iter().map(|m| (m.id, m.dialects)).collect(),
+            Err(e) => {
+                tracing::warn!(
+                    "dialect capability fetch from /v1/models failed; bridging degraded: {e}"
+                );
+                HashMap::new()
+            }
+        };
+        let hit = map.get(model).cloned().unwrap_or_default();
+        *self.dialects.write().unwrap() = Some(map);
+        hit
+    }
+
+    /// Translate an Anthropic request through the OpenAI endpoint:
+    /// `AnthropicRequest → IR → chat completion → IR → AnthropicResponse`.
+    /// Lossy (the IR normalizes), so it's the fallback for OpenAI-only models,
+    /// never the path for Anthropic-native ones.
+    pub(crate) async fn translate_anthropic(
+        &self,
+        request: &AnthropicRequest,
+    ) -> Result<AnthropicResponse, Error> {
+        let chat_req = ChatCompletionRequest::from(&ir::Request::from(request.clone()));
+        let chat_resp = self.inner.chat_completion(&chat_req).await?;
+        Ok(AnthropicResponse::from(&ir::Response::from(chat_resp)))
+    }
+
+    /// Streaming counterpart: chat-completion chunks re-encoded as Anthropic
+    /// stream events.
+    pub(crate) async fn translate_anthropic_stream(
+        &self,
+        request: &AnthropicRequest,
+    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        let chat_req = ChatCompletionRequest::from(&ir::Request::from(request.clone()));
+        let chunks = self.inner.chat_completion_stream(&chat_req).await?;
+        Ok(chunks_to_anthropic_events(chunks).boxed())
+    }
 }
 
 impl Client {
@@ -155,6 +264,7 @@ impl Client {
             max_retries: None,
             timeout: None,
             max_retry_after: None,
+            bridge: false,
         }
     }
 }
@@ -167,6 +277,7 @@ pub struct ClientBuilder {
     max_retries: Option<u32>,
     timeout: Option<Duration>,
     max_retry_after: Option<Duration>,
+    bridge: bool,
 }
 
 impl ClientBuilder {
@@ -194,6 +305,16 @@ impl ClientBuilder {
         self
     }
 
+    /// Enable dialect bridging: `anthropic_messages`/`_stream` consult
+    /// `/v1/models` and translate through `/v1/chat/completions` for models
+    /// that aren't Anthropic-native. Off by default (1:1 forwarding). Native
+    /// models always pass through untranslated; translation is lossy, so it's
+    /// only used when a model has no native Anthropic endpoint.
+    pub fn bridge(mut self, on: bool) -> Self {
+        self.bridge = on;
+        self
+    }
+
     pub fn build(self) -> Client {
         let raw = RawClient::new(self.base_url, self.api_key, self.auth);
         let mut retrying = Retrying::new(raw);
@@ -206,6 +327,10 @@ impl ClientBuilder {
         if let Some(m) = self.max_retry_after {
             retrying = retrying.max_retry_after(m);
         }
-        Client { inner: retrying }
+        Client {
+            inner: retrying,
+            bridge: self.bridge,
+            dialects: Arc::new(RwLock::new(None)),
+        }
     }
 }
