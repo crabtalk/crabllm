@@ -96,9 +96,12 @@ pub struct GatewayConfig {
 /// Configuration for a single LLM provider.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
-    /// Provider kind determines the dispatch path.
-    #[serde(default, skip_serializing_if = "ProviderKind::is_default")]
-    pub kind: ProviderKind,
+    /// Provider kind determines the dispatch path. When omitted, the
+    /// provider's map key doubles as the kind — `[providers.zai]` with no
+    /// `kind` resolves to kind `zai`. Set it explicitly only when the
+    /// instance name differs from the kind (e.g. two `openai` instances).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ProviderKind>,
     /// API key (supports `${ENV_VAR}` interpolation).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
@@ -158,13 +161,14 @@ pub enum ProviderKind {
     #[default]
     Openai,
     Anthropic,
-    Deepseek,
     Google,
     Bedrock,
     Ollama,
     Azure,
     /// Self-defined kind — any string that doesn't match a known variant.
-    /// Dispatched through the OpenAI-compatible path; `base_url` required.
+    /// Dispatched through the OpenAI-compatible path, unless it names a
+    /// built-in OpenAI+Anthropic provider (see the provider crate's compat
+    /// table), in which case its endpoints come from that table.
     Custom(String),
 }
 
@@ -173,7 +177,6 @@ impl ProviderKind {
         match self {
             Self::Openai => "openai",
             Self::Anthropic => "anthropic",
-            Self::Deepseek => "deepseek",
             Self::Google => "google",
             Self::Bedrock => "bedrock",
             Self::Ollama => "ollama",
@@ -194,6 +197,20 @@ impl std::fmt::Display for ProviderKind {
     }
 }
 
+impl From<String> for ProviderKind {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "openai" => Self::Openai,
+            "anthropic" => Self::Anthropic,
+            "google" => Self::Google,
+            "bedrock" => Self::Bedrock,
+            "ollama" => Self::Ollama,
+            "azure" => Self::Azure,
+            _ => Self::Custom(s),
+        }
+    }
+}
+
 impl serde::Serialize for ProviderKind {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(self.as_str())
@@ -202,36 +219,29 @@ impl serde::Serialize for ProviderKind {
 
 impl<'de> serde::Deserialize<'de> for ProviderKind {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(d)?;
-        Ok(match s.as_str() {
-            "openai" => Self::Openai,
-            "anthropic" => Self::Anthropic,
-            "deepseek" => Self::Deepseek,
-            "google" => Self::Google,
-            "bedrock" => Self::Bedrock,
-            "ollama" => Self::Ollama,
-            "azure" => Self::Azure,
-            _ => Self::Custom(s),
-        })
+        Ok(Self::from(String::deserialize(d)?))
     }
 }
 
 impl ProviderConfig {
-    /// Resolve the effective provider kind.
-    ///
-    /// Returns `Anthropic` if the field is explicitly set to `Anthropic`,
-    /// or if `base_url` contains "anthropic". Otherwise returns the
-    /// configured kind.
-    pub fn effective_kind(&self) -> ProviderKind {
-        if self.kind != ProviderKind::Openai {
-            return self.kind.clone();
-        }
-        if let Some(url) = &self.base_url
-            && url.contains("anthropic")
+    /// Resolve the effective provider kind. When `kind` is omitted, the
+    /// provider's map key (`name`) is used as the kind string. As a final
+    /// nudge, an OpenAI kind whose `base_url` points at an Anthropic
+    /// endpoint resolves to `Anthropic`.
+    pub fn effective_kind(&self, name: &str) -> ProviderKind {
+        let kind = self
+            .kind
+            .clone()
+            .unwrap_or_else(|| ProviderKind::from(name.to_string()));
+        if kind == ProviderKind::Openai
+            && self
+                .base_url
+                .as_deref()
+                .is_some_and(|url| url.contains("anthropic"))
         {
             return ProviderKind::Anthropic;
         }
-        self.kind.clone()
+        kind
     }
 
     /// Validate field combinations.
@@ -239,7 +249,7 @@ impl ProviderConfig {
         if self.models.is_empty() {
             return Err(format!("provider '{provider_name}' has no models"));
         }
-        match &self.kind {
+        match self.effective_kind(provider_name) {
             ProviderKind::Bedrock => {
                 if self.region.is_none() {
                     return Err(format!(
@@ -260,13 +270,9 @@ impl ProviderConfig {
             ProviderKind::Ollama => {
                 // Ollama doesn't require api_key or base_url.
             }
-            ProviderKind::Custom(name) => {
-                if self.base_url.is_none() {
-                    return Err(format!(
-                        "provider '{provider_name}' (custom kind '{name}') requires base_url"
-                    ));
-                }
-            }
+            // Custom covers both a compat provider (api_key, URLs from the
+            // table) and a bare OpenAI-compatible endpoint (base_url) — the
+            // provider crate enforces which; here we only reject the empty case.
             _ => {
                 if self.api_key.is_none() && self.base_url.is_none() {
                     return Err(format!(

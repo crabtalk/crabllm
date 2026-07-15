@@ -101,7 +101,7 @@ async fn admin_auth<P: Provider>(
 pub(crate) struct CreateProviderRequest {
     name: String,
     #[serde(default, alias = "standard")]
-    kind: ProviderKind,
+    kind: Option<ProviderKind>,
     #[serde(default)]
     api_key: Option<String>,
     #[serde(default)]
@@ -177,7 +177,7 @@ pub(crate) struct ProviderSummary {
 fn summarize(name: &str, cfg: &ProviderConfig, source: &'static str) -> ProviderSummary {
     ProviderSummary {
         name: name.to_string(),
-        kind: cfg.kind.clone(),
+        kind: cfg.effective_kind(name),
         api_key_prefix: cfg.api_key.as_deref().map(mask),
         base_url: cfg.base_url.clone(),
         models: cfg.models.clone(),
@@ -309,7 +309,7 @@ async fn create_provider<P: Provider>(
         Ok(None) => {}
     }
 
-    if let Err(e) = autofill_models(&mut config).await {
+    if let Err(e) = autofill_models(&name, &mut config).await {
         return crate::admin::err_response(StatusCode::BAD_REQUEST, &e, "invalid_request_error");
     }
 
@@ -588,27 +588,34 @@ fn validate_single(name: &str, config: &ProviderConfig) -> Result<(), String> {
 /// and populate from the response. Only OpenAI-compatible kinds expose a
 /// standard models endpoint — other kinds error out asking for an explicit
 /// `--models`.
-async fn autofill_models(config: &mut ProviderConfig) -> Result<(), String> {
+async fn autofill_models(name: &str, config: &mut ProviderConfig) -> Result<(), String> {
     if !config.models.is_empty() {
         return Ok(());
     }
 
-    let base_url = match &config.kind {
+    let kind = config.effective_kind(name);
+    let base_url: String = match kind {
         crabllm_core::ProviderKind::Openai => config
             .base_url
-            .as_deref()
-            .unwrap_or("https://api.openai.com/v1"),
+            .clone()
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
         crabllm_core::ProviderKind::Ollama => config
             .base_url
-            .as_deref()
-            .unwrap_or("http://localhost:11434/v1"),
-        crabllm_core::ProviderKind::Custom(_) => config.base_url.as_deref().ok_or_else(|| {
-            "models is empty and base_url is not set; cannot auto-fetch".to_string()
-        })?,
+            .clone()
+            .unwrap_or_else(|| "http://localhost:11434/v1".to_string()),
+        crabllm_core::ProviderKind::Custom(ref s) => match crabllm_provider::compat::lookup(s) {
+            Some(spec) => config
+                .base_url
+                .clone()
+                .unwrap_or_else(|| spec.openai_base_url.to_string()),
+            None => config.base_url.clone().ok_or_else(|| {
+                "models is empty and base_url is not set; cannot auto-fetch".to_string()
+            })?,
+        },
         other => {
             return Err(format!(
                 "models is required for kind '{other}' — auto-fetch only supported for \
-                 openai, ollama, and custom kinds"
+                 openai, ollama, and compat/custom kinds"
             ));
         }
     };
@@ -652,7 +659,7 @@ async fn autofill_models(config: &mut ProviderConfig) -> Result<(), String> {
     }
 
     tracing::info!(
-        kind = %config.kind,
+        kind = %kind,
         base_url,
         count = models.len(),
         "auto-fetched models from provider",

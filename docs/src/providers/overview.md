@@ -14,6 +14,9 @@ OpenAI-compatible format your application uses and the provider's native format.
 | `azure` | Azure OpenAI | URL + auth rewrite |
 | `bedrock` | AWS Bedrock Converse API | Full translation + SigV4 signing |
 | `ollama` | Ollama (local models) | Pass-through (OpenAI-compatible) |
+| `deepseek` | DeepSeek models | Pass-through (OpenAI + native Anthropic) |
+| `zai` | z.ai GLM models | Pass-through (OpenAI + native Anthropic) |
+| `qwen` | Alibaba Qwen (DashScope) models | Pass-through (OpenAI + native Anthropic) |
 
 ## Common Fields
 
@@ -21,7 +24,7 @@ Every provider supports these fields:
 
 ```toml
 [providers.name]
-kind = "..."           # required
+kind = "..."           # optional — defaults to the section name (`name`)
 api_key = "..."        # API key (supports ${ENV_VAR})
 base_url = "..."       # base URL override
 models = ["..."]       # model names this provider serves
@@ -29,6 +32,10 @@ weight = 1             # routing weight (higher = more traffic)
 max_retries = 2        # retries on transient errors (429, 5xx)
 timeout = 30           # per-request timeout in seconds
 ```
+
+When `kind` is omitted, the section name is used as the kind — `[providers.zai]`
+resolves to kind `zai`. Set `kind` explicitly only when the section name isn't
+the kind, e.g. running two `openai` instances under different names for routing.
 
 ## Multiple Providers for the Same Model
 
@@ -52,12 +59,12 @@ weight = 1
 
 ## Endpoint Support
 
-| Endpoint | OpenAI | Anthropic | Google | Azure | Bedrock | Ollama |
-|----------|:------:|:---------:|:------:|:-----:|:-------:|:------:|
-| Chat completions | yes | yes | yes | yes | yes | yes |
-| Streaming | yes | yes | yes | yes | yes | yes |
-| Embeddings | yes | — | — | yes | — | yes |
-| Image generation | yes | — | — | yes | — | — |
-| Audio speech | yes | — | — | yes | — | — |
-| Audio transcription | yes | — | — | yes | — | — |
-| Tool/function calling | yes | yes | yes | yes | yes | yes |
+| Endpoint | OpenAI | Anthropic | Google | Azure | Bedrock | Ollama | DeepSeek | z.ai | Qwen |
+|----------|:------:|:---------:|:------:|:-----:|:-------:|:------:|:--------:|:----:|:----:|
+| Chat completions | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Streaming | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Embeddings | yes | — | — | yes | — | yes | — | yes | yes |
+| Image generation | yes | — | — | yes | — | — | — | — | — |
+| Audio speech | yes | — | — | yes | — | — | — | — | — |
+| Audio transcription | yes | — | — | yes | — | — | — | — | — |
+| Tool/function calling | yes | yes | yes | yes | yes | yes | yes | yes | yes |
