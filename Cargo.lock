@@ -511,7 +511,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "utoipa",
  "utoipa-scalar",
 ]
 
@@ -542,7 +541,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml",
- "tracing",
  "utoipa",
 ]
 
@@ -605,7 +603,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
- "tracing",
  "tracing-subscriber",
 ]
 
@@ -623,8 +620,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "tokio",
- "tracing",
 ]
 
 [[package]]

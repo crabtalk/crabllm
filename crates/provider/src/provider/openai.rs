@@ -149,16 +149,10 @@ pub async fn chat_completion(
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client.post(&url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }
@@ -176,16 +170,10 @@ pub async fn embedding(
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client.post(&url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }
@@ -203,16 +191,10 @@ pub async fn chat_completion_raw(
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client.post(&url, &headers, raw_body).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, raw_body)
+        .await?
+        .error_for_status()?;
 
     Ok(resp.body)
 }
@@ -294,16 +276,10 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
         ("content-type", "application/json"),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client.post(url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     let content_type = resp
         .content_type
@@ -326,16 +302,10 @@ pub async fn audio_transcription(
         ("content-type", content_type_header.as_str()),
         ("authorization", &format!("Bearer {api_key}")),
     ];
-    let resp = client.post(&url, &headers, body).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body)
+        .await?
+        .error_for_status()?;
 
     let content_type = resp
         .content_type

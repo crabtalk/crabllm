@@ -8,7 +8,8 @@
 pub use message::{AnthropicContent, AnthropicMessage};
 pub use messages::AnthropicMessages;
 pub use request::{
-    AnthropicRequest, AnthropicSystem, AnthropicTool, DEFAULT_MAX_TOKENS, ThinkingConfig,
+    ANTHROPIC_VERSION, AnthropicRequest, AnthropicSystem, AnthropicTool, DEFAULT_MAX_TOKENS,
+    ThinkingConfig,
 };
 pub use response::{AnthropicResponse, AnthropicUsage};
 pub use stream::{AnthropicStreamEvent, BlockDelta, MessageDeltaPayload};

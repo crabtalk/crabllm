@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MAX_TOKENS: u32 = 4096;
 
+/// The `anthropic-version` header value the gateway and its clients send on
+/// Anthropic Messages requests. Single source so the two can't drift.
+pub const ANTHROPIC_VERSION: &str = "2023-06-01";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ThinkingConfig {

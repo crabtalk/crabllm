@@ -31,14 +31,11 @@ impl Provider for GoogleProvider {
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
         ];
-        let resp = self.client.post(&url, &headers, body.into()).await?;
-        if resp.status >= 400 {
-            return Err(Error::Provider {
-                status: resp.status,
-                body: String::from_utf8_lossy(&resp.body).into_owned(),
-                retry_after: resp.retry_after,
-            });
-        }
+        let resp = self
+            .client
+            .post(&url, &headers, body.into())
+            .await?
+            .error_for_status()?;
         let gemini_resp: GeminiResponse =
             crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
         Ok(translate_response(gemini_resp, &request.model))
@@ -137,14 +134,11 @@ impl Provider for GoogleProvider {
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
         ];
-        let resp = self.client.post(&url, &headers, raw_body).await?;
-        if resp.status >= 400 {
-            return Err(Error::Provider {
-                status: resp.status,
-                body: String::from_utf8_lossy(&resp.body).into_owned(),
-                retry_after: resp.retry_after,
-            });
-        }
+        let resp = self
+            .client
+            .post(&url, &headers, raw_body)
+            .await?
+            .error_for_status()?;
         Ok(resp.body)
     }
 

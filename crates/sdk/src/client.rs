@@ -42,9 +42,9 @@ pub fn route(dialects: &[Dialect]) -> Route {
     }
 }
 
-/// Anthropic API version sent with `/v1/messages` requests, matching the value
-/// the native Anthropic API and crabllm's own Anthropic provider use.
-pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
+/// Anthropic API version sent with `/v1/messages` requests. Re-exported from
+/// core so the gateway and this client can't drift.
+pub(crate) use crabllm_core::ANTHROPIC_VERSION;
 
 /// How the client authenticates to the gateway. The gateway accepts both, so
 /// pick whichever matches the calling convention you're emulating.

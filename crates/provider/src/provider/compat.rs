@@ -182,20 +182,14 @@ pub async fn anthropic_messages_raw(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let bearer = format!("Bearer {api_key}");
     let headers = [
-        ("anthropic-version", "2023-06-01"),
+        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
         ("content-type", "application/json"),
         ("authorization", bearer.as_str()),
     ];
-    let resp = client.post(&url, &headers, raw_body).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, raw_body)
+        .await?
+        .error_for_status()?;
 
     Ok(resp.body)
 }
@@ -210,7 +204,7 @@ pub async fn anthropic_messages_stream(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let bearer = format!("Bearer {api_key}");
     let headers = [
-        ("anthropic-version", "2023-06-01"),
+        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
         ("content-type", "application/json"),
         ("authorization", bearer.as_str()),
     ];

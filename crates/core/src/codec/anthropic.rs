@@ -12,7 +12,6 @@ use serde::Deserialize;
 struct SseEvent {
     #[serde(rename = "type")]
     kind: String,
-    #[allow(dead_code)]
     #[serde(default)]
     index: Option<u32>,
     #[serde(default)]

@@ -161,16 +161,10 @@ pub async fn chat_completion(
     let url = azure_url(base_url, &request.model, "chat/completions", api_version);
     let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
-    let resp = client.post(&url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }
@@ -187,16 +181,10 @@ pub async fn chat_completion_raw(
 ) -> Result<Bytes, Error> {
     let url = azure_url(base_url, model, "chat/completions", api_version);
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
-    let resp = client.post(&url, &headers, raw_body).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, raw_body)
+        .await?
+        .error_for_status()?;
 
     Ok(resp.body)
 }
@@ -212,16 +200,10 @@ pub async fn embedding(
     let url = azure_url(base_url, &request.model, "embeddings", api_version);
     let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
-    let resp = client.post(&url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }
@@ -265,16 +247,10 @@ pub(crate) async fn raw_pass_through<T: serde::Serialize>(
 ) -> Result<(Bytes, String), Error> {
     let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
     let headers = [("content-type", "application/json"), ("api-key", api_key)];
-    let resp = client.post(url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     let content_type = resp
         .content_type
@@ -299,16 +275,10 @@ pub async fn audio_transcription(
         ("content-type", content_type_header.as_str()),
         ("api-key", api_key),
     ];
-    let resp = client.post(&url, &headers, body).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body)
+        .await?
+        .error_for_status()?;
 
     let content_type = resp
         .content_type

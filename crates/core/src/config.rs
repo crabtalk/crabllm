@@ -152,8 +152,8 @@ fn default_listen() -> String {
 }
 
 /// Which provider implementation to use. Known variants map to named
-/// dispatch paths. A self-defined name deserializes to [`Custom`], which
-/// dispatches as OpenAI-compatible and requires `base_url` at validation.
+/// dispatch paths; a self-defined name deserializes to [`Custom`] — see its
+/// note for how it resolves (compat-table entry vs. bare OpenAI-compatible).
 ///
 /// [`Custom`]: ProviderKind::Custom
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -183,11 +183,6 @@ impl ProviderKind {
             Self::Azure => "azure",
             Self::Custom(s) => s,
         }
-    }
-
-    /// Returns true if this is the default variant (Openai).
-    pub fn is_default(&self) -> bool {
-        matches!(self, Self::Openai)
     }
 }
 

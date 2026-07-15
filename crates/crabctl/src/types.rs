@@ -70,9 +70,11 @@ pub struct BudgetEntry {
 }
 
 /// Provider implementation kind — mirrors server-side `ProviderKind`.
-/// Known kinds (openai, anthropic, google, bedrock, ollama, azure) pick
-/// named dispatch paths; any other string is treated by the server as a
-/// self-defined OpenAI-compatible kind and requires `base_url`.
+/// Known kinds (openai, anthropic, google, bedrock, ollama, azure) pick named
+/// dispatch paths. Any other string is either a built-in compat provider
+/// (deepseek, zai, qwen, …) — endpoints from the server's compat table, needs
+/// `api_key`, no `base_url` — or a bare self-defined OpenAI-compatible kind,
+/// which needs `base_url`.
 pub type ProviderKind = String;
 
 /// POST /v1/admin/providers request body.
