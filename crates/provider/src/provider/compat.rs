@@ -8,17 +8,66 @@ use crabllm_core::{
 };
 use futures::stream::StreamExt;
 
-pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
+/// A built-in provider that speaks OpenAI-compat + native Anthropic. Every
+/// such provider differs only by these three strings, so they are data, not
+/// code — add a row to [`COMPAT`] to add a provider. A provider that needs
+/// genuinely different *behavior* graduates out of this table into its own
+/// module; none do today.
+pub struct CompatSpec {
+    /// The `kind` string that selects this provider (also the natural map key).
+    pub name: &'static str,
+    /// OpenAI-compatible base — `/chat/completions` is appended.
+    pub openai_base_url: &'static str,
+    /// Anthropic-compatible base — `/messages` is appended, so include `/v1`.
+    pub anthropic_base_url: &'static str,
+}
+
+pub const COMPAT: &[CompatSpec] = &[
+    CompatSpec {
+        name: "deepseek",
+        openai_base_url: "https://api.deepseek.com/v1",
+        anthropic_base_url: "https://api.deepseek.com/anthropic",
+    },
+    CompatSpec {
+        name: "zai",
+        openai_base_url: "https://api.z.ai/api/paas/v4",
+        anthropic_base_url: "https://api.z.ai/api/anthropic/v1",
+    },
+    CompatSpec {
+        name: "qwen",
+        openai_base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        anthropic_base_url: "https://dashscope-intl.aliyuncs.com/apps/anthropic/v1",
+    },
+    CompatSpec {
+        name: "minimax",
+        openai_base_url: "https://api.minimax.io/v1",
+        anthropic_base_url: "https://api.minimax.io/anthropic/v1",
+    },
+    CompatSpec {
+        name: "kimi",
+        openai_base_url: "https://api.moonshot.ai/v1",
+        anthropic_base_url: "https://api.moonshot.ai/anthropic/v1",
+    },
+    // NOTE: no grok here — xAI's native API is OpenAI-only (no Anthropic
+    // /messages endpoint; Anthropic-SDK access exists only via a translating
+    // gateway). Configure Grok as `kind = "openai"` with base_url
+    // https://api.x.ai/v1 instead.
+];
+
+/// Resolve a `kind`/name string to its compat spec, if it names one.
+pub fn lookup(name: &str) -> Option<&'static CompatSpec> {
+    COMPAT.iter().find(|s| s.name == name)
+}
 
 #[derive(Debug, Clone)]
-pub struct DeepseekProvider {
+pub struct CompatProvider {
     pub(crate) client: HttpClient,
     pub(crate) openai_base_url: String,
     pub(crate) anthropic_base_url: String,
     pub(crate) api_key: String,
 }
 
-impl Provider for DeepseekProvider {
+impl Provider for CompatProvider {
     async fn chat_completion(
         &self,
         request: &ChatCompletionRequest,
@@ -121,9 +170,9 @@ impl Provider for DeepseekProvider {
     }
 }
 
-/// Forward raw Anthropic-format JSON bytes to DeepSeek's Anthropic-
-/// compatible endpoint. Uses `Authorization: Bearer` (not `x-api-key`)
-/// because DeepSeek unifies auth across both endpoints.
+/// Forward raw Anthropic-format JSON bytes to a compat provider's
+/// Anthropic-compatible endpoint. Uses `Authorization: Bearer` — every compat
+/// provider accepts it (some also accept `x-api-key`).
 pub async fn anthropic_messages_raw(
     client: &HttpClient,
     base_url: &str,
@@ -133,25 +182,19 @@ pub async fn anthropic_messages_raw(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let bearer = format!("Bearer {api_key}");
     let headers = [
-        ("anthropic-version", "2023-06-01"),
+        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
         ("content-type", "application/json"),
         ("authorization", bearer.as_str()),
     ];
-    let resp = client.post(&url, &headers, raw_body).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, raw_body)
+        .await?
+        .error_for_status()?;
 
     Ok(resp.body)
 }
 
-/// Stream raw Anthropic SSE bytes from DeepSeek's Anthropic-compatible endpoint.
+/// Stream raw Anthropic SSE bytes from a compat provider's Anthropic endpoint.
 pub async fn anthropic_messages_stream(
     client: &HttpClient,
     base_url: &str,
@@ -161,7 +204,7 @@ pub async fn anthropic_messages_stream(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let bearer = format!("Bearer {api_key}");
     let headers = [
-        ("anthropic-version", "2023-06-01"),
+        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
         ("content-type", "application/json"),
         ("authorization", bearer.as_str()),
     ];

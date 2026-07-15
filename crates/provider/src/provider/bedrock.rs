@@ -380,16 +380,10 @@ pub async fn chat_completion(
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
-    let resp = client.post(&url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     let bedrock_resp: ConverseResponse =
         crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;

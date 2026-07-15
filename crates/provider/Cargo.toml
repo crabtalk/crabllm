@@ -29,10 +29,11 @@ futures.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
-tracing.workspace = true
 
 # optional (bedrock SigV4 URL parsing)
 http = { workspace = true, optional = true }
 hmac = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+
+[dev-dependencies]
+crabllm-core.workspace = true

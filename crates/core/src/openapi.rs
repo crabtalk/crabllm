@@ -4,9 +4,8 @@
 //! directly. Types with custom impls need manual schemas here because utoipa's
 //! derive macro can't infer the schema from custom serialization logic.
 
-use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
-
 use crate::{EmbeddingInput, FinishReason, ProviderKind, Role, Stop, ToolChoice};
+use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
 
 macro_rules! string_schema {
     ($ty:ty, $desc:expr, $($variant:literal),+ $(,)?) => {
@@ -63,5 +62,5 @@ any_schema!(
 any_schema!(EmbeddingInput, "A string or array of strings to embed");
 any_schema!(
     ProviderKind,
-    "One of: openai, anthropic, google, bedrock, ollama, azure — or any self-defined name (requires base_url, dispatched as OpenAI-compatible)"
+    "One of: openai, anthropic, google, bedrock, ollama, azure; a built-in compat provider (e.g. deepseek, zai, qwen — OpenAI + native Anthropic, no base_url needed); or any self-defined name (requires base_url, dispatched as OpenAI-compatible). Omit to use the provider's config key as the kind."
 );

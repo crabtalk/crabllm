@@ -249,6 +249,7 @@ fn canned_models() -> ModelList {
                 context_length: None,
                 pricing: None,
                 vision: None,
+                dialects: vec![],
             },
             Model {
                 id: "bench-embed".into(),
@@ -258,6 +259,7 @@ fn canned_models() -> ModelList {
                 context_length: None,
                 pricing: None,
                 vision: None,
+                dialects: vec![],
             },
         ],
     }

@@ -28,6 +28,7 @@ crabllm-core.workspace = true
 # crates-io
 bytes.workspace = true
 futures.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 
 # hyper backend

@@ -1,8 +1,8 @@
-use crate::{RemoteProvider, make_client};
+use crate::{RemoteProvider, compat, make_client};
 use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Dialect, EmbeddingRequest,
     EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
     ProviderConfig, ProviderKind,
 };
@@ -221,8 +221,12 @@ impl<P> ProviderRegistry<P> {
 
         let mut providers: HashMap<String, Vec<Arc<Deployment<P>>>> = HashMap::new();
 
-        for provider_config in providers_config.values() {
-            let provider = wrap(RemoteProvider::new(provider_config, client.clone()));
+        for (provider_name, provider_config) in providers_config {
+            let provider = wrap(RemoteProvider::new(
+                provider_name,
+                provider_config,
+                client.clone(),
+            ));
 
             let deployment = Arc::new(Deployment {
                 provider,
@@ -250,21 +254,51 @@ impl<P> ProviderRegistry<P> {
     }
 }
 
+impl<P: Provider> ProviderRegistry<P> {
+    /// Native dialects for a model — the union of `is_*_compat` across all of
+    /// its deployments. Empty if the model isn't registered. Reported by
+    /// `/v1/models` so a client can choose the right endpoint or translate.
+    pub fn model_dialects(&self, model: &str) -> Vec<Dialect> {
+        let Some(list) = self.providers.get(self.resolve(model)) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        if list.iter().any(|d| d.provider.is_openai_compat()) {
+            out.push(Dialect::Openai);
+        }
+        if list.iter().any(|d| d.provider.is_anthropic_compat()) {
+            out.push(Dialect::Anthropic);
+        }
+        if list.iter().any(|d| d.provider.is_gemini_compat()) {
+            out.push(Dialect::Gemini);
+        }
+        out
+    }
+}
+
 /// Validate provider-specific required fields against the raw config.
-fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
+/// Validate a provider's config: it must serve at least one model, and its
+/// kind-specific fields (api_key / base_url / bedrock creds, compat-aware) must
+/// be present. This is the **single** provider validator — the registry runs it
+/// at build time and the proxy's admin API runs it before accepting a new
+/// provider, so the two can't disagree.
+pub fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
     fn is_blank(opt: &Option<String>) -> bool {
         opt.as_ref().is_none_or(|s| s.is_empty())
     }
-    match &config.kind {
+    if config.models.is_empty() {
+        return Err(Error::Config(format!("provider '{name}' has no models")));
+    }
+    let kind = config.effective_kind(name);
+    match kind {
         ProviderKind::Openai | ProviderKind::Ollama => {
             // Both have a sensible default base_url; nothing to require.
             Ok(())
         }
-        ProviderKind::Anthropic | ProviderKind::Deepseek | ProviderKind::Google => {
+        ProviderKind::Anthropic | ProviderKind::Google => {
             if is_blank(&config.api_key) {
                 return Err(Error::Config(format!(
-                    "provider '{name}' ({}) requires an api_key",
-                    config.kind,
+                    "provider '{name}' ({kind}) requires an api_key"
                 )));
             }
             Ok(())
@@ -277,8 +311,16 @@ fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Error> {
             }
             Ok(())
         }
-        ProviderKind::Custom(kind_name) => {
-            if is_blank(&config.base_url) {
+        // A compat-table provider needs an api_key (its URLs come from the
+        // table); a bare custom OpenAI-compat provider needs a base_url.
+        ProviderKind::Custom(ref kind_name) => {
+            if compat::lookup(kind_name).is_some() {
+                if is_blank(&config.api_key) {
+                    return Err(Error::Config(format!(
+                        "provider '{name}' ({kind_name}) requires an api_key"
+                    )));
+                }
+            } else if is_blank(&config.base_url) {
                 return Err(Error::Config(format!(
                     "provider '{name}' (custom kind '{kind_name}') requires a base_url"
                 )));

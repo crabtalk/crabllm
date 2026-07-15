@@ -1,7 +1,8 @@
 pub use anthropic::{
-    AnthropicContent, AnthropicContentBlock, AnthropicMessage, AnthropicMessages, AnthropicRequest,
-    AnthropicResponse, AnthropicStreamEvent, AnthropicSystem, AnthropicTool, AnthropicUsage,
-    BlockDelta, DEFAULT_MAX_TOKENS, MessageDeltaPayload, ThinkingConfig,
+    ANTHROPIC_VERSION, AnthropicContent, AnthropicContentBlock, AnthropicMessage,
+    AnthropicMessages, AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AnthropicSystem,
+    AnthropicTool, AnthropicUsage, BlockDelta, DEFAULT_MAX_TOKENS, MessageDeltaPayload,
+    ThinkingConfig,
 };
 pub use audio::AudioSpeechRequest;
 pub use embedding::{
@@ -13,7 +14,7 @@ pub use gemini::{
     GeminiUsage, GenerationConfig,
 };
 pub use image::ImageRequest;
-pub use model::{Model, ModelList};
+pub use model::{Dialect, Model, ModelList};
 pub use multipart::MultipartField;
 pub use openai::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,

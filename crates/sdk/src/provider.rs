@@ -1,4 +1,4 @@
-use crate::client::{ANTHROPIC_VERSION, Client, RawClient};
+use crate::client::{ANTHROPIC_VERSION, Client, RawClient, Route, route};
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
@@ -101,14 +101,53 @@ impl Provider for Client {
         &self,
         request: &AnthropicRequest,
     ) -> Result<AnthropicResponse, Error> {
-        self.inner.anthropic_messages(request).await
+        if !self.bridge {
+            return self.inner.anthropic_messages(request).await;
+        }
+        match route(&self.model_dialects(&request.model).await) {
+            Route::Native => self.inner.anthropic_messages(request).await,
+            Route::Translate => self.translate_anthropic(request).await,
+            // Unknown model: try native, and on *any* native failure fall back
+            // to translation. We deliberately don't distinguish a dialect miss
+            // from other errors (that means sniffing the error body), so we log
+            // the native error rather than drop it before translating.
+            Route::NativeElseTranslate => match self.inner.anthropic_messages(request).await {
+                Ok(resp) => Ok(resp),
+                Err(native_err) => {
+                    tracing::debug!(
+                        model = %request.model,
+                        "native /v1/messages failed for unknown model, translating: {native_err}"
+                    );
+                    self.translate_anthropic(request).await
+                }
+            },
+        }
     }
 
     async fn anthropic_messages_stream(
         &self,
         request: &AnthropicRequest,
     ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
-        self.inner.anthropic_messages_stream(request).await
+        if !self.bridge {
+            return self.inner.anthropic_messages_stream(request).await;
+        }
+        // Parallel to `anthropic_messages` above — keep the two in sync.
+        match route(&self.model_dialects(&request.model).await) {
+            Route::Native => self.inner.anthropic_messages_stream(request).await,
+            Route::Translate => self.translate_anthropic_stream(request).await,
+            Route::NativeElseTranslate => {
+                match self.inner.anthropic_messages_stream(request).await {
+                    Ok(stream) => Ok(stream),
+                    Err(native_err) => {
+                        tracing::debug!(
+                            model = %request.model,
+                            "native /v1/messages failed for unknown model, translating: {native_err}"
+                        );
+                        self.translate_anthropic_stream(request).await
+                    }
+                }
+            }
+        }
     }
 
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {

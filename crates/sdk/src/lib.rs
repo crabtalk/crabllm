@@ -20,7 +20,7 @@
 mod client;
 mod provider;
 
-pub use client::{Auth, Client, ClientBuilder};
+pub use client::{Auth, Client, ClientBuilder, Route, route};
 
 /// Re-export of `crabllm-core` so consumers get the wire types, the
 /// [`Provider`](crabllm_core::Provider) trait, and [`Retrying`](crabllm_core::Retrying)

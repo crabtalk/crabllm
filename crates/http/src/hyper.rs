@@ -5,7 +5,11 @@ use futures::stream::StreamExt;
 use http_body::Frame;
 use http_body_util::{BodyExt, BodyStream, Full, StreamBody, combinators::UnsyncBoxBody};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Max idle gap between response frames; without it a stalled stream hangs `next()` forever.
+const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[cfg(feature = "rustls")]
 type Connector = hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
@@ -42,6 +46,9 @@ impl HttpClient {
 
     #[cfg(feature = "rustls")]
     fn connector() -> Connector {
+        let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
+        http.enforce_http(false);
+        http.set_connect_timeout(Some(CONNECT_TIMEOUT));
         let builder = hyper_rustls::HttpsConnectorBuilder::new()
             .with_native_roots()
             .expect("crabllm: failed to load native TLS roots")
@@ -49,13 +56,14 @@ impl HttpClient {
             .enable_http1();
         #[cfg(feature = "http2")]
         let builder = builder.enable_http2();
-        builder.build()
+        builder.wrap_connector(http)
     }
 
     #[cfg(feature = "native-tls")]
     fn connector() -> Connector {
         let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
         http.enforce_http(false);
+        http.set_connect_timeout(Some(CONNECT_TIMEOUT));
         #[cfg(feature = "http2")]
         let alpns = ["h2", "http/1.1"];
         #[cfg(not(feature = "http2"))]
@@ -259,14 +267,27 @@ impl HttpClient {
             "provider stream opened"
         );
 
-        Ok(Box::pin(BodyStream::new(resp.into_body()).filter_map(
-            |frame| {
-                let result = match frame {
-                    Ok(f) => f.into_data().ok().map(Ok),
-                    Err(e) => Some(Err(std::io::Error::other(e))),
-                };
-                std::future::ready(result)
-            },
-        )))
+        let frames = BodyStream::new(resp.into_body()).filter_map(|frame| {
+            let result = match frame {
+                Ok(f) => f.into_data().ok().map(Ok),
+                Err(e) => Some(Err(std::io::Error::other(e))),
+            };
+            std::future::ready(result)
+        });
+
+        let guarded = futures::stream::unfold(Some(Box::pin(frames)), |state| async move {
+            let mut inner = state?;
+            match tokio::time::timeout(READ_TIMEOUT, inner.next()).await {
+                Ok(Some(item)) => Some((item, Some(inner))),
+                Ok(None) => None,
+                Err(_) => {
+                    let err =
+                        std::io::Error::new(std::io::ErrorKind::TimedOut, "provider stream idle");
+                    Some((Err(err), None))
+                }
+            }
+        });
+
+        Ok(Box::pin(guarded))
     }
 }

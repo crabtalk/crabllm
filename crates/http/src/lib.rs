@@ -21,6 +21,22 @@ pub struct RawResponse {
     pub retry_after: Option<Duration>,
 }
 
+impl RawResponse {
+    /// Return the response unchanged on a 2xx/3xx status, or map a 4xx/5xx to
+    /// [`Error::Provider`](crabllm_core::Error::Provider) carrying the body
+    /// verbatim. Lets callers write `client.post(..).await?.error_for_status()?`.
+    pub fn error_for_status(self) -> Result<Self, crabllm_core::Error> {
+        if self.status >= 400 {
+            return Err(crabllm_core::Error::Provider {
+                status: self.status,
+                body: String::from_utf8_lossy(&self.body).into_owned(),
+                retry_after: self.retry_after,
+            });
+        }
+        Ok(self)
+    }
+}
+
 /// Parse a `retry-after` header value into a Duration.
 /// Handles integer seconds only; HTTP-date values are ignored.
 pub fn parse_retry_after(value: &str) -> Option<Duration> {

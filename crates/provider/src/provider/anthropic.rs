@@ -2,10 +2,10 @@ use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicResponse, AnthropicStreamEvent,
-    AnthropicSystem, AnthropicTool, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, ContentBlock, DEFAULT_MAX_TOKENS, Error, Provider, Role, Stop,
-    ThinkingConfig, ToolChoice,
+    AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicResponse,
+    AnthropicStreamEvent, AnthropicSystem, AnthropicTool, BoxStream, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, ContentBlock, DEFAULT_MAX_TOKENS, Error,
+    Provider, Role, Stop, ThinkingConfig, ToolChoice,
     codec::anthropic::{anthropic_event_stream, anthropic_events_to_chunks},
 };
 use futures::stream::StreamExt;
@@ -38,7 +38,7 @@ impl Provider for AnthropicProvider {
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
-            ("anthropic-version", "2023-06-01"),
+            ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
             ("content-type", "application/json"),
         ];
         for (k, v) in &auth {
@@ -60,7 +60,7 @@ impl Provider for AnthropicProvider {
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
-            ("anthropic-version", "2023-06-01"),
+            ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
             ("content-type", "application/json"),
         ];
         for (k, v) in &auth {
@@ -69,15 +69,11 @@ impl Provider for AnthropicProvider {
         if request.thinking.is_some() {
             headers.push(("anthropic-beta", THINKING_BETA));
         }
-        let resp = self.client.post(&url, &headers, body.into()).await?;
-        if resp.status >= 400 {
-            let body = String::from_utf8_lossy(&resp.body).into_owned();
-            return Err(Error::Provider {
-                status: resp.status,
-                body,
-                retry_after: resp.retry_after,
-            });
-        }
+        let resp = self
+            .client
+            .post(&url, &headers, body.into())
+            .await?
+            .error_for_status()?;
         crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
     }
 
@@ -91,7 +87,7 @@ impl Provider for AnthropicProvider {
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
-            ("anthropic-version", "2023-06-01"),
+            ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
             ("content-type", "application/json"),
         ];
         for (k, v) in &auth {
@@ -179,6 +175,10 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
             });
         }
     }
+    // Parallel tool calls arrive as one user message per tool_result; Anthropic
+    // requires them merged into the single user message after the assistant.
+    messages.coalesce_tool_results();
+    messages.ensure_tool_pairing();
 
     let system = if system_blocks.is_empty() {
         None
@@ -204,7 +204,8 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
         Some(AnthropicSystem::Text(joined))
     };
 
-    // B2: When tool_choice is "none", omit tools and tool_choice entirely.
+    // Anthropic rejects `tool_choice: "none"` sent alongside a tools array, so
+    // when the choice is "none" we omit both tools and tool_choice entirely.
     let is_none = request.tool_choice.as_ref() == Some(&ToolChoice::Disabled);
 
     let tools = if is_none {
@@ -319,22 +320,16 @@ pub async fn anthropic_messages_raw(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
-        ("anthropic-version", "2023-06-01"),
+        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
         ("content-type", "application/json"),
     ];
     for (k, v) in &auth {
         headers.push((k, v.as_str()));
     }
-    let resp = client.post(&url, &headers, raw_body).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, raw_body)
+        .await?
+        .error_for_status()?;
 
     Ok(resp.body)
 }
@@ -349,7 +344,7 @@ pub async fn anthropic_messages_stream(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
-        ("anthropic-version", "2023-06-01"),
+        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
         ("content-type", "application/json"),
     ];
     for (k, v) in &auth {
@@ -377,7 +372,7 @@ pub async fn chat_completion(
         crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Encode(e.to_string()))?;
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
-        ("anthropic-version", "2023-06-01"),
+        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
         ("content-type", "application/json"),
     ];
     for (k, v) in &auth {
@@ -386,16 +381,10 @@ pub async fn chat_completion(
     if anthropic_req.thinking.is_some() {
         headers.push(("anthropic-beta", THINKING_BETA));
     }
-    let resp = client.post(&url, &headers, body.into()).await?;
-
-    if resp.status >= 400 {
-        let body = String::from_utf8_lossy(&resp.body).into_owned();
-        return Err(Error::Provider {
-            status: resp.status,
-            body,
-            retry_after: resp.retry_after,
-        });
-    }
+    let resp = client
+        .post(&url, &headers, body.into())
+        .await?
+        .error_for_status()?;
 
     let anthropic_resp: AnthropicResponse =
         crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;

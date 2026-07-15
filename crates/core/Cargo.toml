@@ -26,5 +26,4 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 sonic-rs = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
-tracing.workspace = true
 utoipa = { workspace = true, optional = true }

@@ -5,6 +5,7 @@
 - Always use group imports: `use foo::{Bar, Baz};` — never individual `use` lines for the same crate.
 - No empty lines between `use` items. `mod` / `pub mod` declarations go after all `use` items.
 - Never use `super::` in imports — always use `crate::`.
+- **Re-export module facades with a glob, not a hand-maintained list.** When a parent module re-exports a submodule's public surface (e.g. `lib.rs` re-exporting `types`), write `pub use types::*;` — not an exhaustive `pub use types::{A, B, C, …};`. The submodule already decides its own public API; restating every name is pure churn (every new type means editing the list, often in several files) and adds nothing. The explicit-list form is only warranted when you deliberately re-export a *subset*.
 
 ## File Organization
 

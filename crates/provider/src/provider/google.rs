@@ -31,14 +31,11 @@ impl Provider for GoogleProvider {
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
         ];
-        let resp = self.client.post(&url, &headers, body.into()).await?;
-        if resp.status >= 400 {
-            return Err(Error::Provider {
-                status: resp.status,
-                body: String::from_utf8_lossy(&resp.body).into_owned(),
-                retry_after: resp.retry_after,
-            });
-        }
+        let resp = self
+            .client
+            .post(&url, &headers, body.into())
+            .await?
+            .error_for_status()?;
         let gemini_resp: GeminiResponse =
             crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
         Ok(translate_response(gemini_resp, &request.model))
@@ -100,27 +97,14 @@ impl Provider for GoogleProvider {
         &self,
         request: &crabllm_core::ir::Request,
     ) -> Result<crabllm_core::ir::Response, Error> {
-        let native = ChatCompletionRequest::from(request);
-        let resp = self.chat_completion(&native).await?;
-        Ok(crabllm_core::ir::Response::from(resp))
+        crate::complete_via_chat(self, request).await
     }
 
     async fn complete_stream(
         &self,
         request: &crabllm_core::ir::Request,
     ) -> Result<BoxStream<'static, Result<crabllm_core::ir::StreamEvent, Error>>, Error> {
-        let mut native = ChatCompletionRequest::from(request);
-        native.stream = Some(true);
-        let stream = self.chat_completion_stream(&native).await?;
-        Ok(stream
-            .flat_map(|result| {
-                let events: Vec<Result<crabllm_core::ir::StreamEvent, Error>> = match result {
-                    Ok(chunk) => chunk.to_ir_events().into_iter().map(Ok).collect(),
-                    Err(e) => vec![Err(e)],
-                };
-                futures::stream::iter(events)
-            })
-            .boxed())
+        crate::complete_stream_via_chat(self, request).await
     }
 
     fn is_gemini_compat(&self) -> bool {
@@ -137,14 +121,11 @@ impl Provider for GoogleProvider {
             ("x-goog-api-key", self.api_key.as_str()),
             ("content-type", "application/json"),
         ];
-        let resp = self.client.post(&url, &headers, raw_body).await?;
-        if resp.status >= 400 {
-            return Err(Error::Provider {
-                status: resp.status,
-                body: String::from_utf8_lossy(&resp.body).into_owned(),
-                retry_after: resp.retry_after,
-            });
-        }
+        let resp = self
+            .client
+            .post(&url, &headers, raw_body)
+            .await?
+            .error_for_status()?;
         Ok(resp.body)
     }
 
