@@ -113,11 +113,7 @@ where
 
     for ext in state.extensions.iter() {
         if let Err(ext_err) = ext.on_request(&ctx).await {
-            return (
-                StatusCode::from_u16(ext_err.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                Json(ext_err.body),
-            )
-                .into_response();
+            return crate::ext_response(ext_err);
         }
     }
 
@@ -173,11 +169,7 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
 
     for ext in state.extensions.iter() {
         if let Err(ext_err) = ext.on_request(&ctx).await {
-            return (
-                StatusCode::from_u16(ext_err.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                Json(ext_err.body),
-            )
-                .into_response();
+            return crate::ext_response(ext_err);
         }
     }
 

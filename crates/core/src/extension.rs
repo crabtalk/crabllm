@@ -16,9 +16,20 @@ pub struct RequestContext {
 
 /// Error returned by `Extension::on_request` to short-circuit the pipeline.
 /// Converted to an HTTP response in the handler.
+///
+/// `body` is the gateway's own envelope, which suits an extension whose
+/// refusals are the gateway's to describe. An extension written for one
+/// deployment usually isn't: its clients already switch on that product's
+/// error contract, and answering in a second shape for these few codes would
+/// make them handle both. Such an extension sets [`json`](Self::json) and
+/// [`headers`](Self::headers) to answer in the shape its callers expect.
 pub struct ExtensionError {
     pub status: u16,
     pub body: ApiError,
+    /// Serialized in place of `body` when set.
+    pub json: Option<serde_json::Value>,
+    /// Extra response headers, e.g. `retry-after` on a quota refusal.
+    pub headers: Vec<(String, String)>,
 }
 
 impl ExtensionError {
@@ -26,7 +37,30 @@ impl ExtensionError {
         Self {
             status,
             body: ApiError::new(message, kind),
+            json: None,
+            headers: Vec::new(),
         }
+    }
+
+    /// Answer with `json` verbatim instead of the gateway's envelope.
+    pub fn with_json(mut self, json: serde_json::Value) -> Self {
+        self.json = Some(json);
+        self
+    }
+
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.push((name.into(), value.into()));
+        self
+    }
+
+    /// The body to serialize: the override when present, the envelope
+    /// otherwise. Callers render the response; core stays free of a web
+    /// framework.
+    pub fn into_json(self) -> (u16, serde_json::Value, Vec<(String, String)>) {
+        let body = self
+            .json
+            .unwrap_or_else(|| serde_json::to_value(&self.body).unwrap_or(serde_json::Value::Null));
+        (self.status, body, self.headers)
     }
 }
 
