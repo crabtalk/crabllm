@@ -119,10 +119,13 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
         let mut messages = Vec::new();
 
         if let Some(system) = &req.system {
-            messages.push(crate::Message {
-                role: crate::Role::System,
-                content: system.iter().map(ContentBlock::from).collect(),
-            });
+            let content = openai_content_blocks(system);
+            if !content.is_empty() {
+                messages.push(crate::Message {
+                    role: crate::Role::System,
+                    content,
+                });
+            }
         }
 
         for msg in &req.messages {
@@ -131,10 +134,13 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
                 Role::User => crate::Role::User,
                 Role::Assistant => crate::Role::Assistant,
             };
-            messages.push(crate::Message {
-                role,
-                content: msg.content.iter().map(ContentBlock::from).collect(),
-            });
+            // Reasoning blocks are the model's private scratchpad — OpenAI-style
+            // endpoints reject them in replayed history (no schema for them).
+            let content = openai_content_blocks(&msg.content);
+            if content.is_empty() {
+                continue;
+            }
+            messages.push(crate::Message { role, content });
         }
 
         let stop = req.stop.as_ref().map(|seqs| {
@@ -192,6 +198,33 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
             extra: serde_json::Map::new(),
         }
     }
+}
+
+/// Convert IR content to OpenAI request blocks without leaking Anthropic
+/// thinking blocks into the OpenAI wire format. Tool results may contain
+/// nested blocks, so sanitizing only the message's top level is insufficient.
+fn openai_content_blocks(contents: &[Content]) -> Vec<ContentBlock> {
+    contents
+        .iter()
+        .filter_map(|content| match content {
+            Content::Reasoning { .. } => None,
+            Content::ToolResult { call_id, content } => {
+                let nested = openai_content_blocks(content);
+                let content = if let [ContentBlock::Text { text, .. }] = nested.as_slice() {
+                    ToolResultContent::Text(text.clone())
+                } else {
+                    ToolResultContent::Blocks(nested)
+                };
+                Some(ContentBlock::ToolResult {
+                    tool_use_id: call_id.clone(),
+                    name: None,
+                    content,
+                    cache_control: None,
+                })
+            }
+            _ => Some(ContentBlock::from(content)),
+        })
+        .collect()
 }
 
 impl From<ContentBlock> for Content {
