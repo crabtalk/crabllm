@@ -238,6 +238,29 @@ impl Provider for Dispatch {
         }
     }
 
+    async fn chat_completion_stream_passthrough(
+        &self,
+        model: &str,
+        body_stream: crabllm_core::ByteStream,
+    ) -> Result<crabllm_core::ByteStream, Error> {
+        match self {
+            Self::Remote(p) => {
+                p.chat_completion_stream_passthrough(model, body_stream)
+                    .await
+            }
+        }
+    }
+
+    async fn chat_completion_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<ByteStream, Error> {
+        match self {
+            Self::Remote(p) => p.chat_completion_stream_raw(model, raw_body).await,
+        }
+    }
+
     async fn anthropic_messages(
         &self,
         request: &AnthropicRequest,
