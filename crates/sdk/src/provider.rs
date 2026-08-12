@@ -2,7 +2,7 @@ use crate::client::{ANTHROPIC_VERSION, Client, RawClient, Route, route};
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    GeminiRequest, GeminiResponse, Provider, codec,
+    GeminiRequest, GeminiResponse, ModelList, Provider, codec,
 };
 use futures::StreamExt;
 
@@ -66,6 +66,10 @@ impl Provider for RawClient {
             .post_checked("/v1/embeddings", &[], body.into())
             .await?;
         crabllm_core::json::from_slice(&bytes).map_err(|e| Error::Decode(e.to_string()))
+    }
+
+    async fn models(&self) -> Result<ModelList, Error> {
+        self.get_models().await
     }
 
     async fn gemini_generate_content_stream(
@@ -152,6 +156,10 @@ impl Provider for Client {
 
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         self.inner.embedding(request).await
+    }
+
+    async fn models(&self) -> Result<ModelList, Error> {
+        self.inner.models().await
     }
 
     async fn gemini_generate_content_stream(

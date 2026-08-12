@@ -4,8 +4,8 @@ use bytes::Bytes;
 use crabllm_core::{
     AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicResponse,
     AnthropicStreamEvent, AnthropicSystem, AnthropicTool, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, ContentBlock, DEFAULT_MAX_TOKENS, Error,
-    Provider, Role, Stop, ThinkingConfig, ToolChoice,
+    ChatCompletionRequest, ChatCompletionResponse, ContentBlock, DEFAULT_MAX_TOKENS, Error, Model,
+    ModelList, Provider, Role, Stop, ThinkingConfig, ToolChoice,
     codec::anthropic::{anthropic_event_stream, anthropic_events_to_chunks},
 };
 use futures::stream::StreamExt;
@@ -133,6 +133,10 @@ impl Provider for AnthropicProvider {
                 futures::stream::iter(events)
             })
             .boxed())
+    }
+
+    async fn models(&self) -> Result<ModelList, Error> {
+        models(&self.client, &self.base_url, &self.api_key).await
     }
 
     fn is_anthropic_compat(&self) -> bool {
@@ -308,6 +312,50 @@ fn auth_headers(api_key: &str) -> Vec<(&'static str, String)> {
 }
 
 // ── Public API ──
+
+/// Anthropic's list rows: `{type, id, display_name, created_at}`. Only the id
+/// survives translation — `created_at` is RFC 3339 where canonical `created`
+/// is an epoch, and the gateway already emits 0 there.
+#[derive(serde::Deserialize)]
+struct ModelsResponse {
+    data: Vec<ModelEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct ModelEntry {
+    id: String,
+}
+
+/// List the models the key grants. The endpoint pages at 20 by default, so
+/// ask for the documented maximum rather than silently truncating.
+pub async fn models(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+) -> Result<ModelList, Error> {
+    let url = format!("{}/models?limit=1000", base_url.trim_end_matches('/'));
+    let auth = auth_headers(api_key);
+    let mut headers: Vec<(&str, &str)> =
+        vec![("anthropic-version", crabllm_core::ANTHROPIC_VERSION)];
+    for (k, v) in &auth {
+        headers.push((k, v.as_str()));
+    }
+    let resp = client.get(&url, &headers).await?.error_for_status()?;
+
+    let list: ModelsResponse =
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+    Ok(ModelList {
+        object: "list".to_string(),
+        data: list
+            .data
+            .into_iter()
+            .map(|m| Model {
+                owned_by: "anthropic".to_string(),
+                ..Model::new(m.id)
+            })
+            .collect(),
+    })
+}
 
 /// Forward raw Anthropic-format JSON bytes to the Messages API,
 /// returning the response bytes without deserialization.

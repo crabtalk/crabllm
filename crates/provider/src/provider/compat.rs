@@ -4,7 +4,7 @@ use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    Provider, codec::anthropic::anthropic_event_stream,
+    ModelList, Provider, codec::anthropic::anthropic_event_stream,
 };
 use futures::stream::StreamExt;
 
@@ -91,6 +91,10 @@ impl Provider for CompatProvider {
 
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         openai::embedding(&self.client, &self.openai_base_url, &self.api_key, request).await
+    }
+
+    async fn models(&self) -> Result<ModelList, Error> {
+        openai::models(&self.client, &self.openai_base_url, &self.api_key).await
     }
 
     async fn anthropic_messages(

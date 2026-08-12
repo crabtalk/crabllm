@@ -3,7 +3,7 @@ use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, ImageRequest, MultipartField, Provider,
+    EmbeddingResponse, Error, ImageRequest, ModelList, MultipartField, Provider,
 };
 use futures::stream::{Stream, StreamExt};
 
@@ -33,6 +33,10 @@ impl Provider for OpenaiProvider {
 
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         embedding(&self.client, &self.base_url, &self.api_key, request).await
+    }
+
+    async fn models(&self) -> Result<ModelList, Error> {
+        models(&self.client, &self.base_url, &self.api_key).await
     }
 
     async fn image_generation(&self, request: &ImageRequest) -> Result<(Bytes, String), Error> {
@@ -140,6 +144,23 @@ pub async fn chat_completion(
         .post(&url, &headers, body.into())
         .await?
         .error_for_status()?;
+
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
+}
+
+/// List the models an OpenAI-compatible endpoint exposes. Third parties send
+/// leaner rows than the gateway does — `id` is the only field guaranteed.
+pub async fn models(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+) -> Result<ModelList, Error> {
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let headers = [
+        ("content-type", "application/json"),
+        ("authorization", &format!("Bearer {api_key}")),
+    ];
+    let resp = client.get(&url, &headers).await?.error_for_status()?;
 
     crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }

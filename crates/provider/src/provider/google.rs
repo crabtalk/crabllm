@@ -7,8 +7,8 @@ use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
     ChatCompletionRequest, ChatCompletionResponse, Choice, ContentBlock, Error, GeminiContent,
     GeminiFunctionCall, GeminiFunctionDecl, GeminiFunctionResponse, GeminiPart, GeminiRequest,
-    GeminiResponse, GeminiRole, GeminiToolDef, GenerationConfig, Message, OpenAiUsage, Provider,
-    Role, ToolResultContent, Usage,
+    GeminiResponse, GeminiRole, GeminiToolDef, GenerationConfig, Message, Model, ModelList,
+    OpenAiUsage, Provider, Role, ToolResultContent, Usage,
 };
 use futures::StreamExt;
 
@@ -111,6 +111,10 @@ impl Provider for GoogleProvider {
         true
     }
 
+    async fn models(&self) -> Result<ModelList, Error> {
+        models(&self.client, &self.api_key).await
+    }
+
     async fn gemini_generate_content_raw(
         &self,
         model: &str,
@@ -144,6 +148,39 @@ impl Provider for GoogleProvider {
 }
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+
+/// Gemini's list rows carry the id as a resource name — `models/gemini-3-pro`
+/// — while every request path spells it bare.
+#[derive(serde::Deserialize)]
+struct ModelsResponse {
+    models: Vec<ModelEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct ModelEntry {
+    name: String,
+}
+
+/// List the models the key grants. Pages at 50 by default, 1000 max.
+pub async fn models(client: &HttpClient, api_key: &str) -> Result<ModelList, Error> {
+    let url = format!("{BASE_URL}/models?pageSize=1000");
+    let headers = [("x-goog-api-key", api_key)];
+    let resp = client.get(&url, &headers).await?.error_for_status()?;
+
+    let list: ModelsResponse =
+        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+    Ok(ModelList {
+        object: "list".to_string(),
+        data: list
+            .models
+            .into_iter()
+            .map(|m| Model {
+                owned_by: "google".to_string(),
+                ..Model::new(m.name.trim_start_matches("models/"))
+            })
+            .collect(),
+    })
+}
 
 /// Sentinel asking Gemini to skip signature validation. Required for
 /// gemini-3+ when no real signature is available (e.g. fresh

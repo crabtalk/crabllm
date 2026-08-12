@@ -1,7 +1,8 @@
 use crate::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField, ir,
+    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, ModelList,
+    MultipartField, ir,
 };
 use bytes::Bytes;
 use futures_core::Stream;
@@ -31,7 +32,7 @@ pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> +
 /// borrow from the request reference.
 ///
 /// The optional methods (`embedding`, `image_generation`, `audio_speech`,
-/// `audio_transcription`) default to returning `Error::not_implemented`, so
+/// `audio_transcription`, `models`) default to returning `Error::not_implemented`, so
 /// concrete providers only override the methods they actually support.
 /// Overrides are free to capture `self` or the request reference — only the
 /// default impl bodies happen to capture nothing, and that's an
@@ -129,6 +130,13 @@ pub trait Provider: Send + Sync {
         _fields: &[MultipartField],
     ) -> impl Future<Output = Result<(Bytes, String), Error>> + Send {
         async { Err(Error::not_implemented("audio_transcription")) }
+    }
+
+    /// The models these credentials actually grant, in canonical shape.
+    /// Providers whose list endpoint speaks another dialect translate here,
+    /// the same way they translate requests.
+    fn models(&self) -> impl Future<Output = Result<ModelList, Error>> + Send {
+        async { Err(Error::not_implemented("models")) }
     }
 
     /// Whether this provider speaks the OpenAI wire format and can forward

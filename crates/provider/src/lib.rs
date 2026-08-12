@@ -2,8 +2,8 @@ use bytes::Bytes;
 use crabllm_core::{
     AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
-    Provider, ProviderConfig, ProviderKind, ir,
+    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, ModelList,
+    MultipartField, Provider, ProviderConfig, ProviderKind, ir,
 };
 use futures::StreamExt;
 pub use registry::{Deployment, ProviderRegistry, validate_provider};
@@ -421,6 +421,17 @@ impl Provider for RemoteProvider {
             Self::Google(p) => p.embedding(request).await,
             Self::Bedrock(p) => p.embedding(request).await,
             Self::Azure(p) => p.embedding(request).await,
+        }
+    }
+
+    async fn models(&self) -> Result<ModelList, Error> {
+        match self {
+            Self::Openai(p) => p.models().await,
+            Self::Anthropic(p) => p.models().await,
+            Self::Compat(p) => p.models().await,
+            Self::Google(p) => p.models().await,
+            Self::Bedrock(p) => p.models().await,
+            Self::Azure(p) => p.models().await,
         }
     }
 

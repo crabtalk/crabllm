@@ -135,10 +135,10 @@ impl RawClient {
         self.http.post_stream(&self.url(path), &headers, body).await
     }
 
-    /// `GET /v1/models`. Returns the OpenAI-shaped [`ModelList`]; with
-    /// [`Auth::ApiKey`] the gateway answers in Anthropic shape instead, so this
-    /// is meaningful only for the default [`Auth::Bearer`].
-    pub(crate) async fn models(&self) -> Result<ModelList, Error> {
+    /// `GET /v1/models`, the request half of [`Provider::models`]. With
+    /// [`Auth::ApiKey`] the gateway answers in Anthropic shape instead, so
+    /// this is meaningful only for the default [`Auth::Bearer`].
+    pub(crate) async fn get_models(&self) -> Result<ModelList, Error> {
         let (name, value) = self.auth_header();
         let headers = [("content-type", JSON), (name, value.as_str())];
         let resp = self.http.get(&self.url("/v1/models"), &headers).await?;
@@ -252,7 +252,7 @@ impl Client {
     /// List the models the gateway exposes (`GET /v1/models`). Not retried —
     /// it's an idempotent listing, and not part of the `Provider` trait.
     pub async fn models(&self) -> Result<ModelList, Error> {
-        self.inner.get_ref().models().await
+        self.inner.get_ref().get_models().await
     }
 
     /// Start configuring a client — auth scheme, retries, timeout.

@@ -207,6 +207,12 @@ impl<P: Provider> Provider for Retrying<P> {
         self.inner.embedding(request).await
     }
 
+    /// Passed through unretried — an idempotent listing that callers make
+    /// once, and a failure here is the answer, not something to sit through.
+    async fn models(&self) -> Result<crate::ModelList, Error> {
+        self.inner.models().await
+    }
+
     async fn image_generation(
         &self,
         request: &ImageRequest,
