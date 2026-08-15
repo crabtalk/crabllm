@@ -150,6 +150,34 @@ impl Provider for CompatProvider {
             .await
     }
 
+    async fn chat_completion_stream_passthrough(
+        &self,
+        _model: &str,
+        body_stream: ByteStream,
+    ) -> Result<ByteStream, Error> {
+        openai::chat_completion_stream_passthrough(
+            &self.client,
+            &self.openai_base_url,
+            &self.api_key,
+            body_stream,
+        )
+        .await
+    }
+
+    async fn chat_completion_stream_raw(
+        &self,
+        _model: &str,
+        raw_body: Bytes,
+    ) -> Result<ByteStream, Error> {
+        openai::chat_completion_stream_raw(
+            &self.client,
+            &self.openai_base_url,
+            &self.api_key,
+            raw_body,
+        )
+        .await
+    }
+
     async fn anthropic_messages_raw(&self, raw_body: Bytes) -> Result<Bytes, Error> {
         anthropic_messages_raw(
             &self.client,

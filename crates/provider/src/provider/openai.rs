@@ -104,13 +104,7 @@ impl Provider for OpenaiProvider {
         _model: &str,
         body_stream: crabllm_core::ByteStream,
     ) -> Result<crabllm_core::ByteStream, Error> {
-        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        let headers = [
-            ("content-type", "application/json"),
-            ("authorization", &format!("Bearer {}", self.api_key)),
-        ];
-        self.client
-            .post_stream_body(&url, &headers, body_stream)
+        chat_completion_stream_passthrough(&self.client, &self.base_url, &self.api_key, body_stream)
             .await
     }
 
@@ -205,6 +199,23 @@ pub async fn chat_completion_raw(
         .error_for_status()?;
 
     Ok(resp.body)
+}
+
+/// Stream a client body straight through to an OpenAI-compatible chat
+/// completions endpoint. The body is consumed as it arrives — no buffering,
+/// so no retries.
+pub async fn chat_completion_stream_passthrough(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+    body_stream: ByteStream,
+) -> Result<ByteStream, Error> {
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let headers = [
+        ("content-type", "application/json"),
+        ("authorization", &format!("Bearer {api_key}")),
+    ];
+    client.post_stream_body(&url, &headers, body_stream).await
 }
 
 /// Stream raw SSE bytes from an OpenAI-compatible chat completions endpoint.

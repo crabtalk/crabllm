@@ -1,11 +1,6 @@
 use arc_swap::ArcSwap;
-use bytes::Bytes;
 use clap::{Parser, Subcommand};
-use crabllm_core::{
-    AudioSpeechRequest, BoxStream, ByteStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, Extension, GatewayConfig,
-    ImageRequest, MultipartField, Provider, Storage, anthropic,
-};
+use crabllm_core::{Extension, GatewayConfig, Storage};
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use crabllm_proxy::{
     AppState,
@@ -17,6 +12,7 @@ use crabllm_proxy::{
 };
 use std::{
     collections::HashMap,
+    convert::identity,
     path::PathBuf,
     sync::{Arc, RwLock},
     time::Duration,
@@ -207,159 +203,6 @@ models = ["*"]
     eprintln!("these values are also in the config file above; keep them safe.");
 }
 
-/// Concrete provider type the gateway binary composes.
-///
-/// The proxy crate is generic over `P: Provider`; the binary picks
-/// this enum as `P` so dispatch monomorphizes through a match/delegate
-/// with no dyn or per-call boxing. Currently a single-variant wrapper
-/// around [`RemoteProvider`] — local backends (MLX, llama.cpp) are
-/// separate binaries, not compiled into the gateway.
-enum Dispatch {
-    Remote(RemoteProvider),
-}
-
-impl Provider for Dispatch {
-    async fn chat_completion(
-        &self,
-        request: &ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, Error> {
-        match self {
-            Self::Remote(p) => p.chat_completion(request).await,
-        }
-    }
-
-    async fn chat_completion_stream(
-        &self,
-        request: &ChatCompletionRequest,
-    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
-        match self {
-            Self::Remote(p) => p.chat_completion_stream(request).await,
-        }
-    }
-
-    async fn anthropic_messages(
-        &self,
-        request: &anthropic::Request,
-    ) -> Result<anthropic::Response, Error> {
-        match self {
-            Self::Remote(p) => p.anthropic_messages(request).await,
-        }
-    }
-
-    async fn anthropic_messages_stream(
-        &self,
-        request: &anthropic::Request,
-    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
-        match self {
-            Self::Remote(p) => p.anthropic_messages_stream(request).await,
-        }
-    }
-
-    async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
-        match self {
-            Self::Remote(p) => p.embedding(request).await,
-        }
-    }
-
-    async fn image_generation(&self, request: &ImageRequest) -> Result<(Bytes, String), Error> {
-        match self {
-            Self::Remote(p) => p.image_generation(request).await,
-        }
-    }
-
-    async fn audio_speech(&self, request: &AudioSpeechRequest) -> Result<(Bytes, String), Error> {
-        match self {
-            Self::Remote(p) => p.audio_speech(request).await,
-        }
-    }
-
-    async fn audio_transcription(
-        &self,
-        model: &str,
-        fields: &[MultipartField],
-    ) -> Result<(Bytes, String), Error> {
-        match self {
-            Self::Remote(p) => p.audio_transcription(model, fields).await,
-        }
-    }
-
-    fn is_openai_compat(&self) -> bool {
-        match self {
-            Self::Remote(p) => p.is_openai_compat(),
-        }
-    }
-
-    fn is_anthropic_compat(&self) -> bool {
-        match self {
-            Self::Remote(p) => p.is_anthropic_compat(),
-        }
-    }
-
-    fn is_gemini_compat(&self) -> bool {
-        match self {
-            Self::Remote(p) => p.is_gemini_compat(),
-        }
-    }
-
-    async fn gemini_generate_content(
-        &self,
-        model: &str,
-        request: &crabllm_core::gemini::Request,
-    ) -> Result<crabllm_core::gemini::Response, Error> {
-        match self {
-            Self::Remote(p) => p.gemini_generate_content(model, request).await,
-        }
-    }
-
-    async fn gemini_generate_content_stream(
-        &self,
-        model: &str,
-        request: &crabllm_core::gemini::Request,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
-        match self {
-            Self::Remote(p) => p.gemini_generate_content_stream(model, request).await,
-        }
-    }
-
-    async fn gemini_generate_content_raw(
-        &self,
-        model: &str,
-        raw_body: Bytes,
-    ) -> Result<Bytes, Error> {
-        match self {
-            Self::Remote(p) => p.gemini_generate_content_raw(model, raw_body).await,
-        }
-    }
-
-    async fn gemini_generate_content_stream_raw(
-        &self,
-        model: &str,
-        raw_body: Bytes,
-    ) -> Result<ByteStream, Error> {
-        match self {
-            Self::Remote(p) => p.gemini_generate_content_stream_raw(model, raw_body).await,
-        }
-    }
-
-    async fn chat_completion_raw(&self, model: &str, raw_body: Bytes) -> Result<Bytes, Error> {
-        match self {
-            Self::Remote(p) => p.chat_completion_raw(model, raw_body).await,
-        }
-    }
-
-    async fn anthropic_messages_raw(&self, raw_body: Bytes) -> Result<Bytes, Error> {
-        match self {
-            Self::Remote(p) => p.anthropic_messages_raw(raw_body).await,
-        }
-    }
-
-    async fn anthropic_messages_stream_raw(&self, raw_body: Bytes) -> Result<ByteStream, Error> {
-        match self {
-            Self::Remote(p) => p.anthropic_messages_stream_raw(raw_body).await,
-        }
-    }
-}
-
 async fn serve(config_path: PathBuf, bind: Option<String>) {
     // First-run bootstrap: if the config doesn't exist, generate one in
     // place with a fresh admin token and default API key. This keeps the
@@ -454,8 +297,8 @@ async fn run<S: Storage + 'static>(
     )
     .await;
 
-    let registry: ProviderRegistry<Dispatch> =
-        match ProviderRegistry::from_config(&config, Dispatch::Remote) {
+    let registry: ProviderRegistry<RemoteProvider> =
+        match ProviderRegistry::from_config(&config, identity) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("failed to build provider registry: {e}");
@@ -522,10 +365,8 @@ async fn run<S: Storage + 'static>(
             admin_token.clone(),
             config.keys.clone(),
         ));
-        let rebuilder: crabllm_proxy::admin_providers::Rebuilder<Dispatch> =
-            Arc::new(|config: &GatewayConfig| {
-                ProviderRegistry::from_config(config, Dispatch::Remote)
-            });
+        let rebuilder: crabllm_proxy::admin_providers::Rebuilder<RemoteProvider> =
+            Arc::new(|config: &GatewayConfig| ProviderRegistry::from_config(config, identity));
         admin_routes.push(crabllm_proxy::admin_providers::provider_admin_routes(
             registry.clone(),
             config_path,
@@ -538,7 +379,7 @@ async fn run<S: Storage + 'static>(
     #[cfg(feature = "openapi")]
     let enable_openapi = config.openapi;
 
-    let state: AppState<S, Dispatch> = AppState {
+    let state: AppState<S, RemoteProvider> = AppState {
         registry,
         config,
         extensions: Arc::new(extensions),

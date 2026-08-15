@@ -1,4 +1,4 @@
-use crate::HttpClient;
+use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
     AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
@@ -136,6 +136,38 @@ impl Provider for AzureProvider {
         )
         .await
     }
+
+    async fn chat_completion_stream_passthrough(
+        &self,
+        model: &str,
+        body_stream: ByteStream,
+    ) -> Result<ByteStream, Error> {
+        chat_completion_stream_passthrough(
+            &self.client,
+            &self.base_url,
+            &self.api_key,
+            &self.api_version,
+            model,
+            body_stream,
+        )
+        .await
+    }
+
+    async fn chat_completion_stream_raw(
+        &self,
+        model: &str,
+        raw_body: Bytes,
+    ) -> Result<ByteStream, Error> {
+        chat_completion_stream_raw(
+            &self.client,
+            &self.base_url,
+            &self.api_key,
+            &self.api_version,
+            model,
+            raw_body,
+        )
+        .await
+    }
 }
 
 /// Build an Azure OpenAI deployment URL.
@@ -187,6 +219,35 @@ pub async fn chat_completion_raw(
         .error_for_status()?;
 
     Ok(resp.body)
+}
+
+/// Stream a client body straight through to an Azure OpenAI deployment.
+/// The body is consumed as it arrives — no buffering, so no retries.
+pub async fn chat_completion_stream_passthrough(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+    api_version: &str,
+    model: &str,
+    body_stream: ByteStream,
+) -> Result<ByteStream, Error> {
+    let url = azure_url(base_url, model, "chat/completions", api_version);
+    let headers = [("content-type", "application/json"), ("api-key", api_key)];
+    client.post_stream_body(&url, &headers, body_stream).await
+}
+
+/// Stream raw SSE bytes from an Azure OpenAI chat completions deployment.
+pub async fn chat_completion_stream_raw(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+    api_version: &str,
+    model: &str,
+    raw_body: Bytes,
+) -> Result<ByteStream, Error> {
+    let url = azure_url(base_url, model, "chat/completions", api_version);
+    let headers = [("content-type", "application/json"), ("api-key", api_key)];
+    client.post_stream(&url, &headers, raw_body).await
 }
 
 /// Send an embedding request to an Azure OpenAI deployment.
