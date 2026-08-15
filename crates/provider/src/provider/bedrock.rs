@@ -1,10 +1,10 @@
 use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,
     ContentBlock as CoreContentBlock, Delta, Error, FinishReason, FunctionCallDelta, Message, Role,
-    ToolCallDelta, ToolType, Usage,
+    ToolCallDelta, ToolType, Usage, anthropic, anthropic::Request, anthropic::Response,
+    anthropic::StreamEvent, gemini,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -55,27 +55,30 @@ impl crabllm_core::Provider for BedrockProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let ir_resp = self
             .complete(&crabllm_core::ir::Request::from(request.clone()))
             .await?;
-        Ok(AnthropicResponse::from(&ir_resp))
+        Ok(anthropic::Response::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<crabllm_core::BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<crabllm_core::BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error>
+    {
         crate::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<crabllm_core::BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error>
-    {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<
+        crabllm_core::BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>,
+        Error,
+    > {
         crate::gemini_stream_via_chat(self, model, request).await
     }
 }

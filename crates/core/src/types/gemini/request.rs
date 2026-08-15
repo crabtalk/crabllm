@@ -1,26 +1,26 @@
-use crate::types::gemini::GeminiContent;
+use crate::types::gemini::Content;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GeminiRequest {
-    pub contents: Vec<GeminiContent>,
+pub struct Request {
+    pub contents: Vec<Content>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub system_instruction: Option<GeminiContent>,
+    pub system_instruction: Option<Content>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generation_config: Option<GenerationConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<GeminiToolDef>>,
+    pub tools: Option<Vec<ToolDef>>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GeminiToolDef {
-    pub function_declarations: Vec<GeminiFunctionDecl>,
+pub struct ToolDef {
+    pub function_declarations: Vec<FunctionDecl>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct GeminiFunctionDecl {
+pub struct FunctionDecl {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

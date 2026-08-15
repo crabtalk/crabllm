@@ -1,17 +1,6 @@
-pub use anthropic::{
-    ANTHROPIC_VERSION, AnthropicContent, AnthropicContentBlock, AnthropicMessage,
-    AnthropicMessages, AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AnthropicSystem,
-    AnthropicTool, AnthropicUsage, BlockDelta, DEFAULT_MAX_TOKENS, MessageDeltaPayload,
-    ThinkingConfig,
-};
 pub use audio::AudioSpeechRequest;
 pub use embedding::{
     Embedding, EmbeddingInput, EmbeddingRequest, EmbeddingResponse, EmbeddingUsage,
-};
-pub use gemini::{
-    GeminiCandidate, GeminiContent, GeminiFinishReason, GeminiFunctionCall, GeminiFunctionDecl,
-    GeminiFunctionResponse, GeminiPart, GeminiRequest, GeminiResponse, GeminiRole, GeminiToolDef,
-    GeminiUsage, GenerationConfig,
 };
 pub use image::ImageRequest;
 pub use model::{Dialect, Model, ModelList};
@@ -23,10 +12,10 @@ pub use openai::{
     ToolResultContent, ToolType,
 };
 
-mod anthropic;
+pub mod anthropic;
 mod audio;
 mod embedding;
-mod gemini;
+pub mod gemini;
 mod image;
 pub mod ir;
 mod model;

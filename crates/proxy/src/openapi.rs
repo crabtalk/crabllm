@@ -1,7 +1,6 @@
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse,
-    ImageRequest, ModelList,
+    AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, ImageRequest, ModelList, anthropic,
 };
 use utoipa::openapi::{
     ContentBuilder, HttpMethod, InfoBuilder, PathItem, Paths, PathsBuilder, Ref, RefOr, Required,
@@ -39,8 +38,8 @@ fn public_schemas() -> Vec<(String, RefOr<utoipa::openapi::schema::Schema>)> {
         ChatCompletionRequest,
         ChatCompletionResponse,
         ChatCompletionChunk,
-        AnthropicRequest,
-        AnthropicResponse,
+        anthropic::Request,
+        anthropic::Response,
         EmbeddingRequest,
         EmbeddingResponse,
         ImageRequest,
@@ -342,9 +341,9 @@ fn public_paths() -> Paths {
                         "Anthropic-style messages endpoint. Body and response follow \
                          the Anthropic Messages API; SSE is returned when stream=true.",
                     ))
-                    .request_body(Some(json_body("AnthropicRequest")))
+                    .request_body(Some(json_body("anthropic::Request")))
                     .responses(json_ok(
-                        "AnthropicResponse",
+                        "anthropic::Response",
                         "Message response (or SSE stream when stream=true)",
                     )),
             ),

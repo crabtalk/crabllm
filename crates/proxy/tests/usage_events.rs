@@ -66,23 +66,24 @@ impl Provider for FakeProvider {
 
     async fn anthropic_messages(
         &self,
-        _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<crabllm_core::AnthropicResponse, Error> {
+        _request: &crabllm_core::anthropic::Request,
+    ) -> Result<crabllm_core::anthropic::Response, Error> {
         Err(Error::not_implemented("anthropic_messages"))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::AnthropicStreamEvent, Error>>, Error> {
+        _request: &crabllm_core::anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::anthropic::StreamEvent, Error>>, Error>
+    {
         Err(Error::not_implemented("anthropic_messages_stream"))
     }
 
     async fn gemini_generate_content_stream(
         &self,
         _model: &str,
-        _request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        _request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         Err(Error::not_implemented("gemini streaming"))
     }
 }

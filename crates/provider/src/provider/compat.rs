@@ -2,9 +2,9 @@ use crate::provider::openai;
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    Provider, codec::anthropic::anthropic_event_stream,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, Error, ModelList, Provider, anthropic,
+    codec::anthropic::anthropic_event_stream,
 };
 use futures::stream::StreamExt;
 
@@ -93,10 +93,14 @@ impl Provider for CompatProvider {
         openai::embedding(&self.client, &self.openai_base_url, &self.api_key, request).await
     }
 
+    async fn models(&self) -> Result<ModelList, Error> {
+        openai::models(&self.client, &self.openai_base_url, &self.api_key).await
+    }
+
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let resp_bytes = anthropic_messages_raw(
             &self.client,
@@ -110,8 +114,8 @@ impl Provider for CompatProvider {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         let mut req = request.clone();
         req.stream = Some(true);
         let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Encode(e.to_string()))?;
@@ -128,8 +132,8 @@ impl Provider for CompatProvider {
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         crate::gemini_stream_via_chat(self, model, request).await
     }
 
@@ -210,7 +214,7 @@ pub async fn anthropic_messages_raw(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let bearer = format!("Bearer {api_key}");
     let headers = [
-        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+        ("anthropic-version", crabllm_core::anthropic::VERSION),
         ("content-type", "application/json"),
         ("authorization", bearer.as_str()),
     ];
@@ -232,7 +236,7 @@ pub async fn anthropic_messages_stream(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let bearer = format!("Bearer {api_key}");
     let headers = [
-        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+        ("anthropic-version", crabllm_core::anthropic::VERSION),
         ("content-type", "application/json"),
         ("authorization", bearer.as_str()),
     ];

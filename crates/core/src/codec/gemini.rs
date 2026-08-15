@@ -1,7 +1,6 @@
 use crate::{
     ByteStream, ChatCompletionChunk, ChunkChoice, ContentBlock, Delta, Error, FunctionCallDelta,
-    GeminiCandidate, GeminiContent, GeminiFunctionCall, GeminiPart, GeminiResponse, GeminiRole,
-    OpenAiUsage, Role, ToolCallDelta, Usage,
+    OpenAiUsage, Role, ToolCallDelta, Usage, gemini,
 };
 use futures::stream::{self, Stream, StreamExt};
 
@@ -32,7 +31,7 @@ pub fn extract_signature_from_id(tool_call_id: &str) -> Option<&str> {
         .map(|(_, sig)| sig)
 }
 
-pub fn candidate_to_blocks(candidate: &GeminiCandidate) -> Vec<ContentBlock> {
+pub fn candidate_to_blocks(candidate: &gemini::Candidate) -> Vec<ContentBlock> {
     let Some(content) = &candidate.content else {
         return Vec::new();
     };
@@ -57,19 +56,19 @@ pub fn candidate_to_blocks(candidate: &GeminiCandidate) -> Vec<ContentBlock> {
     blocks
 }
 
-/// Parse a Gemini SSE byte stream into native `GeminiResponse` items.
+/// Parse a Gemini SSE byte stream into native `gemini::Response` items.
 ///
-/// Each `data:` line carries a full `GeminiResponse` JSON object. Chunks
+/// Each `data:` line carries a full `gemini::Response` JSON object. Chunks
 /// with no candidates are skipped. The stream terminates when the
 /// upstream closes.
 pub fn gemini_event_stream(
     byte_stream: ByteStream,
-) -> impl Stream<Item = Result<GeminiResponse, Error>> {
+) -> impl Stream<Item = Result<gemini::Response, Error>> {
     crate::codec::sse::data_lines(byte_stream).filter_map(|line| async move {
         match line {
             Err(e) => Some(Err(e)),
             // Unparsable payloads and candidate-less chunks are skipped.
-            Ok(data) => match crate::json::from_str::<GeminiResponse>(&data) {
+            Ok(data) => match crate::json::from_str::<gemini::Response>(&data) {
                 Ok(resp) if !resp.candidates.is_empty() => Some(Ok(resp)),
                 _ => None,
             },
@@ -77,10 +76,10 @@ pub fn gemini_event_stream(
     })
 }
 
-/// Convert a stream of native `GeminiResponse` items into OpenAI-shaped
+/// Convert a stream of native `gemini::Response` items into OpenAI-shaped
 /// `ChatCompletionChunk` items. Inverse of [`chunks_to_gemini_responses`].
 pub fn gemini_responses_to_chunks(
-    responses: impl Stream<Item = Result<GeminiResponse, Error>> + Send + 'static,
+    responses: impl Stream<Item = Result<gemini::Response, Error>> + Send + 'static,
     model: String,
 ) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> + Send + 'static {
     stream::unfold(
@@ -172,21 +171,19 @@ pub fn gemini_responses_to_chunks(
 }
 
 /// Convert an OpenAI-shaped `ChatCompletionChunk` stream into native
-/// `GeminiResponse` items. Each chunk maps 1:1 to one response.
+/// `gemini::Response` items. Each chunk maps 1:1 to one response.
 pub fn chunks_to_gemini_responses(
     chunks: impl Stream<Item = Result<ChatCompletionChunk, Error>> + Send + 'static,
-) -> impl Stream<Item = Result<GeminiResponse, Error>> + Send + 'static {
-    use crate::{GeminiFinishReason, GeminiUsage};
-
+) -> impl Stream<Item = Result<gemini::Response, Error>> + Send + 'static {
     chunks.map(|result| {
         result.map(|chunk| {
             let choice = chunk.choices.into_iter().next();
             let (finish_reason, parts) = match choice {
                 Some(c) => {
-                    let fr = c.finish_reason.as_ref().map(GeminiFinishReason::from);
+                    let fr = c.finish_reason.as_ref().map(gemini::FinishReason::from);
                     let mut parts = Vec::new();
                     if let Some(text) = c.delta.content {
-                        parts.push(GeminiPart {
+                        parts.push(gemini::Part {
                             text: Some(text),
                             function_call: None,
                             function_response: None,
@@ -207,9 +204,9 @@ pub fn chunks_to_gemini_responses(
                                 .unwrap_or_default();
                             let args: serde_json::Value =
                                 crate::json::from_str(&args_str).unwrap_or(serde_json::json!({}));
-                            parts.push(GeminiPart {
+                            parts.push(gemini::Part {
                                 text: None,
-                                function_call: Some(GeminiFunctionCall { name, args }),
+                                function_call: Some(gemini::FunctionCall { name, args }),
                                 function_response: None,
                                 thought_signature: None,
                             });
@@ -222,22 +219,22 @@ pub fn chunks_to_gemini_responses(
 
             let usage_metadata = chunk.usage.as_ref().map(|u| {
                 let canonical = Usage::from(u);
-                GeminiUsage::from(&canonical)
+                gemini::Usage::from(&canonical)
             });
 
-            let candidate = GeminiCandidate {
+            let candidate = gemini::Candidate {
                 content: if parts.is_empty() {
                     None
                 } else {
-                    Some(GeminiContent {
-                        role: Some(GeminiRole::Model),
+                    Some(gemini::Content {
+                        role: Some(gemini::Role::Model),
                         parts,
                     })
                 },
                 finish_reason,
             };
 
-            GeminiResponse {
+            gemini::Response {
                 candidates: vec![candidate],
                 usage_metadata,
             }

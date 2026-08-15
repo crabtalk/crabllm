@@ -1,15 +1,17 @@
 use crate::{
-    AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicResponse, AnthropicStreamEvent,
-    AnthropicSystem, AnthropicTool, AnthropicUsage, BlockDelta, ContentBlock, ThinkingConfig,
     Usage,
     ir::{self, Content, Message, Role, StopReason, StreamEvent},
+    types::{
+        anthropic::{self, BlockDelta, Messages, ThinkingConfig},
+        openai::ContentBlock,
+    },
 };
 
-impl From<crate::AnthropicRequest> for ir::Request {
-    fn from(req: crate::AnthropicRequest) -> Self {
+impl From<crate::anthropic::Request> for ir::Request {
+    fn from(req: crate::anthropic::Request) -> Self {
         let system = req.system.map(|s| match s {
-            AnthropicSystem::Text(text) => vec![Content::Text(text)],
-            AnthropicSystem::Blocks(blocks) => blocks.into_iter().map(Content::from).collect(),
+            anthropic::System::Text(text) => vec![Content::Text(text)],
+            anthropic::System::Blocks(blocks) => blocks.into_iter().map(Content::from).collect(),
         });
 
         let messages = req
@@ -21,8 +23,8 @@ impl From<crate::AnthropicRequest> for ir::Request {
                     _ => Role::User,
                 };
                 let blocks = match msg.content {
-                    AnthropicContent::Text(s) => vec![Content::Text(s)],
-                    AnthropicContent::Blocks(b) => b.into_iter().map(Content::from).collect(),
+                    anthropic::Content::Text(s) => vec![Content::Text(s)],
+                    anthropic::Content::Blocks(b) => b.into_iter().map(Content::from).collect(),
                 };
                 Message {
                     role,
@@ -73,14 +75,13 @@ impl From<crate::AnthropicRequest> for ir::Request {
     }
 }
 
-impl From<&ir::Request> for crate::AnthropicRequest {
+impl From<&ir::Request> for crate::anthropic::Request {
     fn from(req: &ir::Request) -> Self {
-        let system = req
-            .system
-            .as_ref()
-            .map(|blocks| AnthropicSystem::Blocks(blocks.iter().map(ContentBlock::from).collect()));
+        let system = req.system.as_ref().map(|blocks| {
+            anthropic::System::Blocks(blocks.iter().map(ContentBlock::from).collect())
+        });
 
-        let mut messages: Vec<AnthropicMessage> = req
+        let mut messages: Vec<anthropic::Message> = req
             .messages
             .iter()
             .map(|msg| {
@@ -88,9 +89,9 @@ impl From<&ir::Request> for crate::AnthropicRequest {
                     Role::Assistant => "assistant".to_string(),
                     Role::User | Role::System => "user".to_string(),
                 };
-                AnthropicMessage {
+                anthropic::Message {
                     role,
-                    content: AnthropicContent::Blocks(
+                    content: anthropic::Content::Blocks(
                         msg.content.iter().map(ContentBlock::from).collect(),
                     ),
                 }
@@ -104,7 +105,7 @@ impl From<&ir::Request> for crate::AnthropicRequest {
         let tools = req.tools.as_ref().map(|tools| {
             tools
                 .iter()
-                .map(|t| AnthropicTool {
+                .map(|t| anthropic::Tool {
                     name: t.name.clone(),
                     description: t.description.clone(),
                     input_schema: t
@@ -128,7 +129,7 @@ impl From<&ir::Request> for crate::AnthropicRequest {
             budget_tokens: t.budget_tokens,
         });
 
-        crate::AnthropicRequest {
+        crate::anthropic::Request {
             model: req.model.clone(),
             messages,
             max_tokens: req.max_tokens,
@@ -144,8 +145,8 @@ impl From<&ir::Request> for crate::AnthropicRequest {
     }
 }
 
-impl From<AnthropicResponse> for ir::Response {
-    fn from(resp: AnthropicResponse) -> Self {
+impl From<anthropic::Response> for ir::Response {
+    fn from(resp: anthropic::Response) -> Self {
         let stop_reason = resp.stop_reason.as_deref().map(|r| match r {
             "end_turn" => StopReason::End,
             "max_tokens" => StopReason::MaxTokens,
@@ -163,7 +164,7 @@ impl From<AnthropicResponse> for ir::Response {
     }
 }
 
-impl From<&ir::Response> for AnthropicResponse {
+impl From<&ir::Response> for anthropic::Response {
     fn from(resp: &ir::Response) -> Self {
         let stop_reason = resp.stop_reason.as_ref().map(|r| match r {
             StopReason::End => "end_turn".to_string(),
@@ -171,7 +172,7 @@ impl From<&ir::Response> for AnthropicResponse {
             StopReason::ToolUse => "tool_use".to_string(),
         });
 
-        AnthropicResponse {
+        anthropic::Response {
             id: resp.id.clone(),
             r#type: "message".to_string(),
             role: "assistant".to_string(),
@@ -179,22 +180,22 @@ impl From<&ir::Response> for AnthropicResponse {
             content: resp.content.iter().map(ContentBlock::from).collect(),
             stop_reason,
             stop_sequence: None,
-            usage: AnthropicUsage::from(&resp.usage),
+            usage: anthropic::Usage::from(&resp.usage),
         }
     }
 }
 
-impl AnthropicStreamEvent {
+impl anthropic::StreamEvent {
     pub fn to_ir_events(&self) -> Vec<StreamEvent> {
         match self {
-            AnthropicStreamEvent::ContentBlockStart {
+            anthropic::StreamEvent::ContentBlockStart {
                 content_block: ContentBlock::ToolUse { id, name, .. },
                 ..
             } => vec![StreamEvent::ToolCallStart {
                 id: id.clone(),
                 name: name.clone(),
             }],
-            AnthropicStreamEvent::ContentBlockDelta { delta, .. } => match delta {
+            anthropic::StreamEvent::ContentBlockDelta { delta, .. } => match delta {
                 BlockDelta::Text { text } if !text.is_empty() => {
                     vec![StreamEvent::TextDelta(text.clone())]
                 }
@@ -206,7 +207,7 @@ impl AnthropicStreamEvent {
                 }
                 _ => vec![],
             },
-            AnthropicStreamEvent::MessageDelta { delta, usage } => {
+            anthropic::StreamEvent::MessageDelta { delta, usage } => {
                 let mut events = vec![StreamEvent::Usage(Usage::from(usage))];
                 if let Some(reason) = &delta.stop_reason {
                     let stop = match reason.as_str() {

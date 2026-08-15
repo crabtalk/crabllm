@@ -1,9 +1,9 @@
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, ImageRequest, MultipartField, Provider,
+    AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
+    MultipartField, Provider, anthropic,
 };
 use futures::stream::{Stream, StreamExt};
 
@@ -98,26 +98,26 @@ impl Provider for AzureProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let ir_resp = self
             .complete(&crabllm_core::ir::Request::from(request.clone()))
             .await?;
-        Ok(AnthropicResponse::from(&ir_resp))
+        Ok(anthropic::Response::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         crate::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         crate::gemini_stream_via_chat(self, model, request).await
     }
 

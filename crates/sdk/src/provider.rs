@@ -1,12 +1,12 @@
-use crate::client::{ANTHROPIC_VERSION, Client, RawClient, Route, route};
+use crate::client::{Client, RawClient, Route, route};
+use crabllm_core::anthropic;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
-    GeminiRequest, GeminiResponse, Provider, codec,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, Error, ModelList, Provider, codec, gemini,
 };
 use futures::StreamExt;
 
-const ANTHROPIC: &[(&str, &str)] = &[("anthropic-version", ANTHROPIC_VERSION)];
+const ANTHROPIC: &[(&str, &str)] = &[("anthropic-version", anthropic::VERSION)];
 
 /// The actual HTTP dispatch. Streaming responses are parsed by the shared
 /// `crabllm_core::codec`, so the client and gateway can never drift.
@@ -37,8 +37,8 @@ impl Provider for RawClient {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let bytes = self
             .post_checked("/v1/messages", ANTHROPIC, body.into())
@@ -48,8 +48,8 @@ impl Provider for RawClient {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         let mut req = request.clone();
         req.stream = Some(true);
         let model = req.model.clone();
@@ -68,11 +68,15 @@ impl Provider for RawClient {
         crabllm_core::json::from_slice(&bytes).map_err(|e| Error::Decode(e.to_string()))
     }
 
+    async fn models(&self) -> Result<ModelList, Error> {
+        self.get_models().await
+    }
+
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        request: &gemini::Request,
+    ) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
         let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let path = format!("/v1beta/models/{model}:streamGenerateContent?alt=sse");
         let byte_stream = self.post_sse(&path, &[], body.into()).await?;
@@ -99,8 +103,8 @@ impl Provider for Client {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         if !self.bridge {
             return self.inner.anthropic_messages(request).await;
         }
@@ -126,8 +130,8 @@ impl Provider for Client {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         if !self.bridge {
             return self.inner.anthropic_messages_stream(request).await;
         }
@@ -154,11 +158,15 @@ impl Provider for Client {
         self.inner.embedding(request).await
     }
 
+    async fn models(&self) -> Result<ModelList, Error> {
+        self.inner.models().await
+    }
+
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        request: &gemini::Request,
+    ) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
         self.inner
             .gemini_generate_content_stream(model, request)
             .await

@@ -1,8 +1,7 @@
 use crate::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, MultipartField,
-    Provider,
+    AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
+    MultipartField, Provider, anthropic, gemini,
 };
 use rand::Rng;
 use std::{future::Future, time::Duration};
@@ -135,8 +134,8 @@ impl<P: Provider> Provider for Retrying<P> {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let mut backoff = INITIAL_BACKOFF;
         let mut last_err = None;
         for _ in 0..=self.max_retries {
@@ -156,8 +155,8 @@ impl<P: Provider> Provider for Retrying<P> {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         let mut backoff = INITIAL_BACKOFF;
         let mut last_err = None;
         for _ in 0..=self.max_retries {
@@ -181,8 +180,8 @@ impl<P: Provider> Provider for Retrying<P> {
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        request: &gemini::Request,
+    ) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
         let mut backoff = INITIAL_BACKOFF;
         let mut last_err = None;
         for _ in 0..=self.max_retries {
@@ -205,6 +204,12 @@ impl<P: Provider> Provider for Retrying<P> {
 
     async fn embedding(&self, request: &EmbeddingRequest) -> Result<EmbeddingResponse, Error> {
         self.inner.embedding(request).await
+    }
+
+    /// Passed through unretried — an idempotent listing that callers make
+    /// once, and a failure here is the answer, not something to sit through.
+    async fn models(&self) -> Result<crate::ModelList, Error> {
+        self.inner.models().await
     }
 
     async fn image_generation(

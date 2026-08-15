@@ -1,7 +1,6 @@
 use crate::{
-    AnthropicContentBlock, AnthropicResponse, AnthropicStreamEvent, AnthropicUsage, BlockDelta,
     ByteStream, ChatCompletionChunk, ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta,
-    MessageDeltaPayload, OpenAiUsage, Role, ToolCallDelta, ToolType, Usage,
+    OpenAiUsage, Role, ToolCallDelta, ToolType, Usage, anthropic,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::Deserialize;
@@ -19,7 +18,7 @@ struct SseEvent {
     #[serde(default)]
     content_block: Option<SseContentBlock>,
     #[serde(default)]
-    usage: Option<AnthropicUsage>,
+    usage: Option<anthropic::Usage>,
     #[serde(default)]
     message: Option<SseMessage>,
     #[serde(default)]
@@ -29,7 +28,7 @@ struct SseEvent {
 #[derive(Deserialize)]
 struct SseMessage {
     #[serde(default)]
-    usage: Option<AnthropicUsage>,
+    usage: Option<anthropic::Usage>,
 }
 
 #[derive(Deserialize)]
@@ -81,14 +80,14 @@ fn anthropic_error_status(kind: &str) -> u16 {
     }
 }
 
-/// Parse an Anthropic SSE byte stream into native `AnthropicStreamEvent`s.
+/// Parse an Anthropic SSE byte stream into native `anthropic::StreamEvent`s.
 pub fn anthropic_event_stream(
     byte_stream: ByteStream,
     model: String,
-) -> impl Stream<Item = Result<AnthropicStreamEvent, Error>> {
+) -> impl Stream<Item = Result<anthropic::StreamEvent, Error>> {
     struct State {
         next_index: u32,
-        input_usage: AnthropicUsage,
+        input_usage: anthropic::Usage,
     }
 
     let lines = crate::codec::sse::data_lines(byte_stream).boxed();
@@ -98,7 +97,7 @@ pub fn anthropic_event_stream(
             model,
             State {
                 next_index: 0,
-                input_usage: AnthropicUsage {
+                input_usage: anthropic::Usage {
                     input_tokens: 0,
                     output_tokens: 0,
                     cache_read_input_tokens: None,
@@ -124,8 +123,8 @@ pub fn anthropic_event_stream(
                         {
                             state.input_usage = usage.clone();
                         }
-                        let out = AnthropicStreamEvent::MessageStart {
-                            message: AnthropicResponse {
+                        let out = anthropic::StreamEvent::MessageStart {
+                            message: anthropic::Response {
                                 id: String::new(),
                                 r#type: "message".to_string(),
                                 role: "assistant".to_string(),
@@ -159,12 +158,12 @@ pub fn anthropic_event_stream(
                         let index = state.next_index;
                         state.next_index += 1;
                         let content_block = match cb.kind.as_str() {
-                            "text" => AnthropicContentBlock::text(""),
-                            "thinking" => AnthropicContentBlock::Thinking {
+                            "text" => anthropic::ContentBlock::text(""),
+                            "thinking" => anthropic::ContentBlock::Thinking {
                                 thinking: String::new(),
                                 signature: None,
                             },
-                            "tool_use" => AnthropicContentBlock::ToolUse {
+                            "tool_use" => anthropic::ContentBlock::ToolUse {
                                 id: cb.id.clone().unwrap_or_default(),
                                 name: cb.name.clone().unwrap_or_default(),
                                 input: serde_json::json!({}),
@@ -172,7 +171,7 @@ pub fn anthropic_event_stream(
                             },
                             _ => continue,
                         };
-                        let out = AnthropicStreamEvent::ContentBlockStart {
+                        let out = anthropic::StreamEvent::ContentBlockStart {
                             index,
                             content_block,
                         };
@@ -180,7 +179,7 @@ pub fn anthropic_event_stream(
                     }
                     "content_block_stop" => {
                         let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
-                        let out = AnthropicStreamEvent::ContentBlockStop { index };
+                        let out = anthropic::StreamEvent::ContentBlockStop { index };
                         return Some((Ok(out), (lines, model, state)));
                     }
                     "content_block_delta" => {
@@ -189,10 +188,10 @@ pub fn anthropic_event_stream(
                         };
                         let index = event.index.unwrap_or(state.next_index.saturating_sub(1));
                         let block_delta = match delta.kind.as_str() {
-                            "text_delta" => BlockDelta::Text {
+                            "text_delta" => anthropic::BlockDelta::Text {
                                 text: delta.text.clone(),
                             },
-                            "thinking_delta" => BlockDelta::Thinking {
+                            "thinking_delta" => anthropic::BlockDelta::Thinking {
                                 thinking: delta
                                     .thinking
                                     .clone()
@@ -202,13 +201,13 @@ pub fn anthropic_event_stream(
                                 let Some(partial) = &delta.partial_json else {
                                     continue;
                                 };
-                                BlockDelta::InputJson {
+                                anthropic::BlockDelta::InputJson {
                                     partial_json: partial.clone(),
                                 }
                             }
                             _ => continue,
                         };
-                        let out = AnthropicStreamEvent::ContentBlockDelta {
+                        let out = anthropic::StreamEvent::ContentBlockDelta {
                             index,
                             delta: block_delta,
                         };
@@ -216,7 +215,7 @@ pub fn anthropic_event_stream(
                     }
                     "message_delta" => {
                         let stop_reason = event.delta.as_ref().and_then(|d| d.stop_reason.clone());
-                        let usage = AnthropicUsage {
+                        let usage = anthropic::Usage {
                             input_tokens: state.input_usage.input_tokens,
                             output_tokens: event
                                 .usage
@@ -228,8 +227,8 @@ pub fn anthropic_event_stream(
                                 .input_usage
                                 .cache_creation_input_tokens,
                         };
-                        let out = AnthropicStreamEvent::MessageDelta {
-                            delta: MessageDeltaPayload {
+                        let out = anthropic::StreamEvent::MessageDelta {
+                            delta: anthropic::MessageDeltaPayload {
                                 stop_reason,
                                 stop_sequence: None,
                             },
@@ -239,7 +238,7 @@ pub fn anthropic_event_stream(
                     }
                     "message_stop" => {
                         return Some((
-                            Ok(AnthropicStreamEvent::MessageStop),
+                            Ok(anthropic::StreamEvent::MessageStop),
                             (lines, model, state),
                         ));
                     }
@@ -252,13 +251,13 @@ pub fn anthropic_event_stream(
 
 /// Convert a stream of native Anthropic events to OpenAI-shaped chunks.
 pub fn anthropic_events_to_chunks(
-    events: impl Stream<Item = Result<AnthropicStreamEvent, Error>> + Send + 'static,
+    events: impl Stream<Item = Result<anthropic::StreamEvent, Error>> + Send + 'static,
 ) -> impl Stream<Item = Result<ChatCompletionChunk, Error>> + Send + 'static {
     struct ChunkState {
         model: String,
         chunk_idx: u64,
         tool_call_idx: u32,
-        input_usage: AnthropicUsage,
+        input_usage: anthropic::Usage,
     }
 
     stream::unfold(
@@ -268,7 +267,7 @@ pub fn anthropic_events_to_chunks(
                 model: String::new(),
                 chunk_idx: 0,
                 tool_call_idx: 0,
-                input_usage: AnthropicUsage {
+                input_usage: anthropic::Usage {
                     input_tokens: 0,
                     output_tokens: 0,
                     cache_read_input_tokens: None,
@@ -286,12 +285,12 @@ pub fn anthropic_events_to_chunks(
                 };
 
                 match event {
-                    AnthropicStreamEvent::MessageStart { message } => {
+                    anthropic::StreamEvent::MessageStart { message } => {
                         state.model = message.model;
                         state.input_usage = message.usage;
                     }
-                    AnthropicStreamEvent::ContentBlockStart { content_block, .. } => {
-                        if let AnthropicContentBlock::ToolUse { id, name, .. } = &content_block {
+                    anthropic::StreamEvent::ContentBlockStart { content_block, .. } => {
+                        if let anthropic::ContentBlock::ToolUse { id, name, .. } = &content_block {
                             state.chunk_idx += 1;
                             let tool_idx = state.tool_call_idx;
                             state.tool_call_idx += 1;
@@ -329,10 +328,10 @@ pub fn anthropic_events_to_chunks(
                             return Some((Ok(chunk), (events, state)));
                         }
                     }
-                    AnthropicStreamEvent::ContentBlockDelta { delta, .. } => {
+                    anthropic::StreamEvent::ContentBlockDelta { delta, .. } => {
                         state.chunk_idx += 1;
                         let oai_delta = match delta {
-                            BlockDelta::Text { text } => Delta {
+                            anthropic::BlockDelta::Text { text } => Delta {
                                 role: if state.chunk_idx == 1 {
                                     Some(Role::Assistant)
                                 } else {
@@ -342,7 +341,7 @@ pub fn anthropic_events_to_chunks(
                                 tool_calls: None,
                                 reasoning_content: None,
                             },
-                            BlockDelta::Thinking { thinking } => {
+                            anthropic::BlockDelta::Thinking { thinking } => {
                                 if thinking.is_empty() {
                                     continue;
                                 }
@@ -357,7 +356,7 @@ pub fn anthropic_events_to_chunks(
                                     reasoning_content: Some(thinking),
                                 }
                             }
-                            BlockDelta::InputJson { partial_json } => Delta {
+                            anthropic::BlockDelta::InputJson { partial_json } => Delta {
                                 role: None,
                                 content: None,
                                 tool_calls: Some(vec![ToolCallDelta {
@@ -388,7 +387,7 @@ pub fn anthropic_events_to_chunks(
                         };
                         return Some((Ok(chunk), (events, state)));
                     }
-                    AnthropicStreamEvent::MessageDelta { delta, usage } => {
+                    anthropic::StreamEvent::MessageDelta { delta, usage } => {
                         let finish_reason = delta.stop_reason.as_deref().map(|r| match r {
                             "end_turn" => FinishReason::Stop,
                             "max_tokens" => FinishReason::Length,
@@ -430,8 +429,8 @@ pub fn anthropic_events_to_chunks(
                         };
                         return Some((Ok(chunk), (events, state)));
                     }
-                    AnthropicStreamEvent::MessageStop => return None,
-                    AnthropicStreamEvent::ContentBlockStop { .. } => {}
+                    anthropic::StreamEvent::MessageStop => return None,
+                    anthropic::StreamEvent::ContentBlockStop { .. } => {}
                 }
             }
         },
@@ -442,7 +441,7 @@ pub fn anthropic_events_to_chunks(
 /// events. Reconstructs block boundaries from the flat delta stream.
 pub fn chunks_to_anthropic_events(
     chunks: impl Stream<Item = Result<ChatCompletionChunk, Error>> + Unpin + Send + 'static,
-) -> impl Stream<Item = Result<AnthropicStreamEvent, Error>> + Send + 'static {
+) -> impl Stream<Item = Result<anthropic::StreamEvent, Error>> + Send + 'static {
     use std::collections::VecDeque;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -457,7 +456,7 @@ pub fn chunks_to_anthropic_events(
         finished: bool,
         current: Option<CurrentBlock>,
         next_index: u32,
-        pending: VecDeque<AnthropicStreamEvent>,
+        pending: VecDeque<anthropic::StreamEvent>,
         deferred_error: Option<Error>,
         latest_usage: Option<OpenAiUsage>,
         stop_reason: Option<String>,
@@ -469,7 +468,7 @@ pub fn chunks_to_anthropic_events(
                 return;
             }
             self.started = true;
-            let msg = AnthropicResponse {
+            let msg = anthropic::Response {
                 id: chunk.id.clone(),
                 r#type: "message".to_string(),
                 role: "assistant".to_string(),
@@ -477,7 +476,7 @@ pub fn chunks_to_anthropic_events(
                 content: Vec::new(),
                 stop_reason: None,
                 stop_sequence: None,
-                usage: AnthropicUsage {
+                usage: anthropic::Usage {
                     input_tokens: 0,
                     output_tokens: 0,
                     cache_read_input_tokens: None,
@@ -485,7 +484,7 @@ pub fn chunks_to_anthropic_events(
                 },
             };
             self.pending
-                .push_back(AnthropicStreamEvent::MessageStart { message: msg });
+                .push_back(anthropic::StreamEvent::MessageStart { message: msg });
         }
 
         fn close_current(&mut self) {
@@ -496,7 +495,7 @@ pub fn chunks_to_anthropic_events(
                     | CurrentBlock::ToolUse { index, .. } => index,
                 };
                 self.pending
-                    .push_back(AnthropicStreamEvent::ContentBlockStop { index });
+                    .push_back(anthropic::StreamEvent::ContentBlockStop { index });
             }
         }
 
@@ -508,9 +507,9 @@ pub fn chunks_to_anthropic_events(
             let index = self.next_index;
             self.next_index += 1;
             self.pending
-                .push_back(AnthropicStreamEvent::ContentBlockStart {
+                .push_back(anthropic::StreamEvent::ContentBlockStart {
                     index,
-                    content_block: AnthropicContentBlock::text(""),
+                    content_block: anthropic::ContentBlock::text(""),
                 });
             self.current = Some(CurrentBlock::Text { index });
             index
@@ -524,9 +523,9 @@ pub fn chunks_to_anthropic_events(
             let index = self.next_index;
             self.next_index += 1;
             self.pending
-                .push_back(AnthropicStreamEvent::ContentBlockStart {
+                .push_back(anthropic::StreamEvent::ContentBlockStart {
                     index,
-                    content_block: AnthropicContentBlock::Thinking {
+                    content_block: anthropic::ContentBlock::Thinking {
                         thinking: String::new(),
                         signature: None,
                     },
@@ -540,9 +539,9 @@ pub fn chunks_to_anthropic_events(
             let index = self.next_index;
             self.next_index += 1;
             self.pending
-                .push_back(AnthropicStreamEvent::ContentBlockStart {
+                .push_back(anthropic::StreamEvent::ContentBlockStart {
                     index,
-                    content_block: AnthropicContentBlock::ToolUse {
+                    content_block: anthropic::ContentBlock::ToolUse {
                         id,
                         name,
                         input: serde_json::json!({}),
@@ -571,9 +570,9 @@ pub fn chunks_to_anthropic_events(
             {
                 let index = self.switch_to_thinking();
                 self.pending
-                    .push_back(AnthropicStreamEvent::ContentBlockDelta {
+                    .push_back(anthropic::StreamEvent::ContentBlockDelta {
                         index,
-                        delta: BlockDelta::Thinking {
+                        delta: anthropic::BlockDelta::Thinking {
                             thinking: reasoning,
                         },
                     });
@@ -584,9 +583,9 @@ pub fn chunks_to_anthropic_events(
             {
                 let index = self.switch_to_text();
                 self.pending
-                    .push_back(AnthropicStreamEvent::ContentBlockDelta {
+                    .push_back(anthropic::StreamEvent::ContentBlockDelta {
                         index,
-                        delta: BlockDelta::Text { text },
+                        delta: anthropic::BlockDelta::Text { text },
                     });
             }
 
@@ -613,9 +612,9 @@ pub fn chunks_to_anthropic_events(
                         && !args.is_empty()
                     {
                         self.pending
-                            .push_back(AnthropicStreamEvent::ContentBlockDelta {
+                            .push_back(anthropic::StreamEvent::ContentBlockDelta {
                                 index: current_index,
-                                delta: BlockDelta::InputJson { partial_json: args },
+                                delta: anthropic::BlockDelta::InputJson { partial_json: args },
                             });
                     }
                 }
@@ -638,21 +637,22 @@ pub fn chunks_to_anthropic_events(
             let usage = self
                 .latest_usage
                 .take()
-                .map(|u| AnthropicUsage::from(&Usage::from(&u)))
-                .unwrap_or(AnthropicUsage {
+                .map(|u| anthropic::Usage::from(&Usage::from(&u)))
+                .unwrap_or(anthropic::Usage {
                     input_tokens: 0,
                     output_tokens: 0,
                     cache_read_input_tokens: None,
                     cache_creation_input_tokens: None,
                 });
-            self.pending.push_back(AnthropicStreamEvent::MessageDelta {
-                delta: MessageDeltaPayload {
-                    stop_reason,
-                    stop_sequence: None,
-                },
-                usage,
-            });
-            self.pending.push_back(AnthropicStreamEvent::MessageStop);
+            self.pending
+                .push_back(anthropic::StreamEvent::MessageDelta {
+                    delta: anthropic::MessageDeltaPayload {
+                        stop_reason,
+                        stop_sequence: None,
+                    },
+                    usage,
+                });
+            self.pending.push_back(anthropic::StreamEvent::MessageStop);
             self.finished = true;
         }
     }
