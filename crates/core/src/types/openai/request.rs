@@ -129,6 +129,11 @@ pub struct Tool {
     pub function: FunctionDef,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strict: Option<bool>,
+    /// Not an OpenAI field. It's the extension LiteLLM established for
+    /// pointing prompt caching at an Anthropic backend through an
+    /// OpenAI-shaped request, so it is read but never sent onward.
+    #[serde(default, skip_serializing)]
+    pub cache_control: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

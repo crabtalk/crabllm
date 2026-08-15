@@ -75,6 +75,7 @@ impl From<&crate::gemini::Request> for ir::Request {
                     name: f.name.clone(),
                     description: f.description.clone(),
                     parameters: f.parameters.clone(),
+                    cache_control: None,
                 })
                 .collect()
         });

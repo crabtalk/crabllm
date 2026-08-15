@@ -21,6 +21,10 @@ pub struct Tool {
     pub name: String,
     pub description: Option<String>,
     pub parameters: Option<Value>,
+    /// Marks this tool as the end of the cacheable tool prefix. Only the last
+    /// entry needs it — there are four breakpoints and the whole declaration
+    /// is stable across a conversation.
+    pub cache_control: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

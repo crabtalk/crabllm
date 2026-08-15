@@ -119,6 +119,30 @@ impl ContentBlock {
             cache_control: None,
         }
     }
+
+    /// Whether this block ends a cacheable prefix. `thinking` blocks have no
+    /// slot for it — Anthropic never caches to one.
+    pub fn is_cache_breakpoint(&self) -> bool {
+        match self {
+            Self::Text { cache_control, .. }
+            | Self::ToolUse { cache_control, .. }
+            | Self::ToolResult { cache_control, .. }
+            | Self::Image { cache_control, .. } => cache_control.is_some(),
+            Self::Thinking { .. } => false,
+        }
+    }
+
+    /// Mark this block as the end of a cacheable prefix.
+    pub fn mark_cache_breakpoint(&mut self) {
+        let marker = serde_json::json!({"type": "ephemeral"});
+        match self {
+            Self::Text { cache_control, .. }
+            | Self::ToolUse { cache_control, .. }
+            | Self::ToolResult { cache_control, .. }
+            | Self::Image { cache_control, .. } => *cache_control = Some(marker),
+            Self::Thinking { .. } => {}
+        }
+    }
 }
 
 /// Tool result content: either a plain string or nested content blocks.

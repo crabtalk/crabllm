@@ -54,6 +54,7 @@ impl From<crate::ChatCompletionRequest> for ir::Request {
                     name: t.function.name,
                     description: t.function.description,
                     parameters: t.function.parameters,
+                    cache_control: t.cache_control,
                 })
                 .collect()
         });
@@ -205,6 +206,7 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
                         parameters: t.parameters.clone(),
                     },
                     strict: None,
+                    cache_control: None,
                 })
                 .collect()
         });
@@ -349,6 +351,12 @@ fn message_to_ir(msg: &crate::Message) -> Vec<Content> {
             input: crate::json::from_str(&tc.function.arguments)
                 .unwrap_or(serde_json::Value::Object(Default::default())),
         });
+    }
+
+    // A cache mark on the message means "cache the prefix ending here", which
+    // the IR carries as a trailing breakpoint.
+    if msg.cache_control.is_some() {
+        out.push(Content::CacheBreakpoint);
     }
 
     out

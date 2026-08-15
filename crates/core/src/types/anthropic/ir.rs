@@ -10,7 +10,7 @@ impl From<crate::anthropic::Request> for ir::Request {
     fn from(req: crate::anthropic::Request) -> Self {
         let system = req.system.map(|s| match s {
             anthropic::System::Text(text) => vec![Content::Text(text)],
-            anthropic::System::Blocks(blocks) => blocks.into_iter().map(Content::from).collect(),
+            anthropic::System::Blocks(blocks) => blocks_to_ir(blocks),
         });
 
         let messages = req
@@ -23,7 +23,7 @@ impl From<crate::anthropic::Request> for ir::Request {
                 };
                 let blocks = match msg.content {
                     anthropic::Content::Text(s) => vec![Content::Text(s)],
-                    anthropic::Content::Blocks(b) => b.into_iter().map(Content::from).collect(),
+                    anthropic::Content::Blocks(b) => blocks_to_ir(b),
                 };
                 Message {
                     role,
@@ -39,6 +39,7 @@ impl From<crate::anthropic::Request> for ir::Request {
                     name: t.name,
                     description: t.description,
                     parameters: Some(t.input_schema),
+                    cache_control: t.cache_control,
                 })
                 .collect()
         });
@@ -84,9 +85,10 @@ impl From<crate::anthropic::Request> for ir::Request {
 
 impl From<&ir::Request> for crate::anthropic::Request {
     fn from(req: &ir::Request) -> Self {
-        let system = req.system.as_ref().map(|blocks| {
-            anthropic::System::Blocks(blocks.iter().map(ContentBlock::from).collect())
-        });
+        let system = req
+            .system
+            .as_ref()
+            .map(|blocks| anthropic::System::Blocks(ir_to_blocks(blocks)));
 
         let mut messages: Vec<anthropic::Message> = req
             .messages
@@ -98,9 +100,7 @@ impl From<&ir::Request> for crate::anthropic::Request {
                 };
                 anthropic::Message {
                     role,
-                    content: anthropic::Content::Blocks(
-                        msg.content.iter().map(ContentBlock::from).collect(),
-                    ),
+                    content: anthropic::Content::Blocks(ir_to_blocks(&msg.content)),
                 }
             })
             .collect();
@@ -119,7 +119,7 @@ impl From<&ir::Request> for crate::anthropic::Request {
                         .parameters
                         .clone()
                         .unwrap_or_else(|| serde_json::json!({})),
-                    cache_control: None,
+                    cache_control: t.cache_control.clone(),
                 })
                 .collect()
         });
@@ -308,6 +308,9 @@ impl From<&Content> for ContentBlock {
                 thinking: text.clone(),
                 signature: signature.clone(),
             },
+            // Handled by `ir_to_blocks`, which folds it onto the previous
+            // block. Reached only if a breakpoint is converted in isolation.
+            Content::CacheBreakpoint => ContentBlock::text(""),
             Content::Image { media_type, data } => ContentBlock::Image {
                 source: serde_json::json!({
                     "type": "base64",
@@ -318,4 +321,35 @@ impl From<&Content> for ContentBlock {
             },
         }
     }
+}
+
+/// Anthropic blocks to IR content: a block carrying `cache_control` is
+/// followed by a [`Content::CacheBreakpoint`], since the mark describes the
+/// prefix ending at that block rather than the block itself.
+fn blocks_to_ir(blocks: Vec<ContentBlock>) -> Vec<Content> {
+    let mut out = Vec::with_capacity(blocks.len());
+    for block in blocks {
+        let breakpoint = block.is_cache_breakpoint();
+        out.push(Content::from(block));
+        if breakpoint {
+            out.push(Content::CacheBreakpoint);
+        }
+    }
+    out
+}
+
+/// The inverse: a breakpoint folds onto the block it follows. A breakpoint
+/// with nothing before it has no block to mark and is dropped.
+fn ir_to_blocks(contents: &[Content]) -> Vec<ContentBlock> {
+    let mut out: Vec<ContentBlock> = Vec::with_capacity(contents.len());
+    for content in contents {
+        if matches!(content, Content::CacheBreakpoint) {
+            if let Some(last) = out.last_mut() {
+                last.mark_cache_breakpoint();
+            }
+            continue;
+        }
+        out.push(ContentBlock::from(content));
+    }
+    out
 }

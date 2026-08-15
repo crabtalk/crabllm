@@ -27,6 +27,14 @@ pub enum Content {
         text: String,
         signature: Option<String>,
     },
+    /// A prompt-cache boundary: everything before this point is stable and
+    /// worth caching.
+    ///
+    /// Anthropic spells this as `cache_control` on the block the prefix ends
+    /// at, which reads like a property of that block but is really a mark
+    /// between blocks — so the IR carries it as one. Formats without explicit
+    /// caching drop it.
+    CacheBreakpoint,
 }
 
 #[derive(Debug, Clone)]

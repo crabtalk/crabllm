@@ -139,6 +139,11 @@ pub struct Message {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    /// Not an OpenAI field — the LiteLLM extension for aiming prompt caching
+    /// at an Anthropic backend through an OpenAI-shaped request. Read on the
+    /// way in, never sent onward, since OpenAI rejects unknown message keys.
+    #[serde(default, skip_serializing)]
+    pub cache_control: Option<serde_json::Value>,
     #[serde(flatten, default)]
     #[serde(skip_serializing_if = "serde_json::Map::is_empty")]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -153,6 +158,7 @@ impl Default for Message {
             tool_call_id: None,
             name: None,
             reasoning_content: None,
+            cache_control: None,
             extra: serde_json::Map::new(),
         }
     }

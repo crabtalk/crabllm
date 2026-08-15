@@ -34,6 +34,7 @@ fn weather_tool() -> Tool {
             })),
         },
         strict: None,
+        cache_control: None,
     }
 }
 
