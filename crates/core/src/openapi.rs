@@ -62,5 +62,5 @@ any_schema!(
 any_schema!(EmbeddingInput, "A string or array of strings to embed");
 any_schema!(
     ProviderKind,
-    "One of: openai, anthropic, google, bedrock, ollama, azure; a built-in compat provider (e.g. deepseek, zai, qwen — OpenAI + native Anthropic, no base_url needed); or any self-defined name (requires base_url, dispatched as OpenAI-compatible). Omit to use the provider's config key as the kind."
+    "One of: openai, anthropic, google, ollama, azure; a built-in compat provider (e.g. deepseek, zai, qwen — OpenAI + native Anthropic, no base_url needed); or any self-defined name (requires base_url, dispatched as OpenAI-compatible). Omit to use the provider's config key as the kind."
 );

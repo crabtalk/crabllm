@@ -10,7 +10,6 @@ Routes requests to upstream LLM providers via the `Provider` enum:
 - **Anthropic** — full translation to/from the Messages API, including tool calling and streaming
 - **Google Gemini** — full translation to/from the Gemini API
 - **Azure OpenAI** — deployment-based URL rewrite with `api-key` header auth
-- **AWS Bedrock** — Converse API with SigV4 signing (`provider-bedrock` feature)
 
 Also provides `ProviderRegistry` for model-name lookup, weighted routing, and
 model aliasing.

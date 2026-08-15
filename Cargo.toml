@@ -51,7 +51,6 @@ rand = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 uuid = { version = "1", features = ["v4"] }
-hmac = "0.13"
 sha2 = "0.11"
 redis = { version = "1", features = ["aio", "tokio-comp"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }

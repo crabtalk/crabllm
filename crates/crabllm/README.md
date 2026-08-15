@@ -5,7 +5,7 @@
 High-performance LLM API gateway in Rust.
 
 Crabllm exposes an OpenAI-compatible API and routes requests to the configured
-provider — OpenAI, Anthropic, Google Gemini, Azure, AWS Bedrock, Ollama, and any
+provider — OpenAI, Anthropic, Google Gemini, Azure, Ollama, and any
 OpenAI-compatible service.
 
 ## Install

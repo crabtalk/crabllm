@@ -13,7 +13,6 @@
 - [Anthropic](providers/anthropic.md)
 - [Google Gemini](providers/google.md)
 - [Azure OpenAI](providers/azure.md)
-- [AWS Bedrock](providers/bedrock.md)
 - [Ollama](providers/ollama.md)
 - [DeepSeek](providers/deepseek.md)
 - [z.ai](providers/zai.md)

@@ -118,12 +118,6 @@ pub(crate) struct CreateProviderRequest {
     timeout: Option<u64>,
     #[serde(default)]
     retry_deadline: Option<u64>,
-    #[serde(default)]
-    region: Option<String>,
-    #[serde(default)]
-    access_key: Option<String>,
-    #[serde(default)]
-    secret_key: Option<String>,
 }
 
 impl CreateProviderRequest {
@@ -140,9 +134,6 @@ impl CreateProviderRequest {
                 api_version: self.api_version,
                 timeout: self.timeout,
                 retry_deadline: self.retry_deadline,
-                region: self.region,
-                access_key: self.access_key,
-                secret_key: self.secret_key,
             },
         )
     }
@@ -167,10 +158,6 @@ pub(crate) struct ProviderSummary {
     api_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     timeout: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    region: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    access_key_prefix: Option<String>,
     source: &'static str,
 }
 
@@ -185,8 +172,6 @@ fn summarize(name: &str, cfg: &ProviderConfig, source: &'static str) -> Provider
         max_retries: cfg.max_retries,
         api_version: cfg.api_version.clone(),
         timeout: cfg.timeout,
-        region: cfg.region.clone(),
-        access_key_prefix: cfg.access_key.as_deref().map(mask),
         source,
     }
 }
@@ -546,9 +531,6 @@ fn apply_patch(config: &mut ProviderConfig, body: &serde_json::Value) -> Result<
             "max_retries" => config.max_retries = from_value_opt(value, "max_retries")?,
             "api_version" => config.api_version = from_value_opt(value, "api_version")?,
             "timeout" => config.timeout = from_value_opt(value, "timeout")?,
-            "region" => config.region = from_value_opt(value, "region")?,
-            "access_key" => config.access_key = from_value_opt(value, "access_key")?,
-            "secret_key" => config.secret_key = from_value_opt(value, "secret_key")?,
             other => {
                 return Err(crate::admin::err_response(
                     StatusCode::BAD_REQUEST,
@@ -585,7 +567,7 @@ fn validate_single(name: &str, config: &ProviderConfig) -> Result<(), String> {
 }
 
 /// If `config.models` is empty, ask the provider what the credentials grant.
-/// Kinds with no list endpoint (bedrock, azure) answer `not_implemented`,
+/// Kinds with no list endpoint (azure) answer `not_implemented`,
 /// which surfaces as "pass --models explicitly".
 async fn autofill_models(name: &str, config: &mut ProviderConfig) -> Result<(), String> {
     if !config.models.is_empty() {

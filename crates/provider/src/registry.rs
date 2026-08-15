@@ -277,7 +277,7 @@ impl<P: Provider> ProviderRegistry<P> {
 
 /// Validate provider-specific required fields against the raw config.
 /// Validate a provider's config: it must serve at least one model, and its
-/// kind-specific fields (api_key / base_url / bedrock creds, compat-aware) must
+/// kind-specific fields (api_key / base_url, compat-aware) must
 /// be present. This is the **single** provider validator — the registry runs it
 /// at build time and the proxy's admin API runs it before accepting a new
 /// provider, so the two can't disagree.
@@ -322,30 +322,6 @@ pub fn validate_provider(name: &str, config: &ProviderConfig) -> Result<(), Erro
             } else if is_blank(&config.base_url) {
                 return Err(Error::Config(format!(
                     "provider '{name}' (custom kind '{kind_name}') requires a base_url"
-                )));
-            }
-            Ok(())
-        }
-        #[cfg(not(feature = "bedrock"))]
-        ProviderKind::Bedrock => Err(Error::Config(format!(
-            "provider '{name}' uses kind = 'bedrock', which requires the \
-             'bedrock' feature to be enabled in the crabllm binary"
-        ))),
-        #[cfg(feature = "bedrock")]
-        ProviderKind::Bedrock => {
-            if is_blank(&config.region) {
-                return Err(Error::Config(format!(
-                    "provider '{name}' (bedrock) requires a region"
-                )));
-            }
-            if is_blank(&config.access_key) {
-                return Err(Error::Config(format!(
-                    "provider '{name}' (bedrock) requires an access_key"
-                )));
-            }
-            if is_blank(&config.secret_key) {
-                return Err(Error::Config(format!(
-                    "provider '{name}' (bedrock) requires a secret_key"
                 )));
             }
             Ok(())
