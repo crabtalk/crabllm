@@ -73,25 +73,6 @@ impl FinishReason {
             Self::Custom(s) => s,
         }
     }
-
-    pub fn from_anthropic_stop(reason: &str) -> Self {
-        match reason {
-            "end_turn" => Self::Stop,
-            "max_tokens" => Self::Length,
-            "tool_use" => Self::ToolCalls,
-            other => Self::Custom(other.to_string()),
-        }
-    }
-
-    pub fn to_anthropic_stop(&self) -> String {
-        match self {
-            Self::Stop => "end_turn".to_string(),
-            Self::Length => "max_tokens".to_string(),
-            Self::ToolCalls => "tool_use".to_string(),
-            Self::ContentFilter => "content_filter".to_string(),
-            Self::Custom(s) => s.clone(),
-        }
-    }
 }
 
 impl Serialize for FinishReason {

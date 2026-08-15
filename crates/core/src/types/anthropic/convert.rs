@@ -20,26 +20,6 @@ impl From<&openai::Tool> for Tool {
     }
 }
 
-impl Tool {
-    /// Convert a tool list, marking the final entry as a cache breakpoint.
-    ///
-    /// Anthropic caches everything *up to and including* a marked block,
-    /// so one marker on the last tool covers the whole declaration — which
-    /// is stable across a conversation and worth reusing. Marking each
-    /// tool instead would spend breakpoints (there are four) for nothing.
-    pub fn cached(tools: &[openai::Tool]) -> Vec<Self> {
-        let last = tools.len().saturating_sub(1);
-        tools
-            .iter()
-            .enumerate()
-            .map(|(i, tool)| Self {
-                cache_control: (i == last).then(|| json!({"type": "ephemeral"})),
-                ..Self::from(tool)
-            })
-            .collect()
-    }
-}
-
 /// Encode a tool choice for the Messages API.
 ///
 /// Deliberately not `From<&openai::ToolChoice> for Value`: that conversion
