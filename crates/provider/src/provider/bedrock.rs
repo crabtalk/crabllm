@@ -1,10 +1,9 @@
 use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use crabllm_core::{
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,
-    ContentBlock as CoreContentBlock, Delta, Error, FinishReason, FunctionCallDelta, Message, Role,
-    ToolCallDelta, ToolType, Usage, anthropic, anthropic::Request, anthropic::Response,
-    anthropic::StreamEvent, gemini,
+    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice, Delta,
+    Error, FinishReason, FunctionCallDelta, Message, Role, ToolCallDelta, ToolType, Usage,
+    anthropic, anthropic::ContentBlock as CoreContentBlock, ir,
 };
 use futures::stream::{self, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -198,77 +197,65 @@ struct ConverseUsage {
 
 // ── Translation ──
 
-fn translate_request(request: &ChatCompletionRequest) -> ConverseRequest {
-    let mut system_blocks = Vec::new();
-    let mut messages = Vec::new();
+fn translate_request(request: &ir::Request) -> ConverseRequest {
+    let system_blocks: Vec<SystemBlock> = request
+        .system
+        .iter()
+        .flatten()
+        .filter_map(|content| match content {
+            ir::Content::Text(text) => Some(SystemBlock { text: text.clone() }),
+            _ => None,
+        })
+        .collect();
 
-    for msg in &request.messages {
-        if msg.role == Role::System {
-            for block in &msg.content {
-                if let CoreContentBlock::Text { text, .. } = block {
-                    system_blocks.push(SystemBlock { text: text.clone() });
-                }
-            }
-        } else {
+    let messages = request
+        .messages
+        .iter()
+        .map(|msg| {
             let blocks: Vec<ContentBlock> = msg
                 .content
                 .iter()
-                .filter_map(|b| match b {
-                    CoreContentBlock::Text { text, .. } => Some(ContentBlock::Text(text.clone())),
-                    CoreContentBlock::ToolUse {
-                        id, name, input, ..
-                    } => Some(ContentBlock::ToolUse {
+                .filter_map(|c| match c {
+                    ir::Content::Text(text) => Some(ContentBlock::Text(text.clone())),
+                    ir::Content::ToolCall { id, name, input } => Some(ContentBlock::ToolUse {
                         tool_use_id: id.clone(),
                         name: name.clone(),
                         input: input.clone(),
                     }),
-                    CoreContentBlock::ToolResult {
-                        tool_use_id,
-                        content,
-                        ..
-                    } => {
-                        let text = match content {
-                            crabllm_core::ToolResultContent::Text(s) => s.clone(),
-                            crabllm_core::ToolResultContent::Blocks(blocks) => blocks
-                                .iter()
-                                .filter_map(|b| match b {
-                                    CoreContentBlock::Text { text, .. } => Some(text.as_str()),
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n"),
-                        };
+                    ir::Content::ToolResult { call_id, content } => {
+                        let text = content
+                            .iter()
+                            .filter_map(|c| match c {
+                                ir::Content::Text(t) => Some(t.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
                         Some(ContentBlock::ToolResult {
-                            tool_use_id: tool_use_id.clone(),
+                            tool_use_id: call_id.clone(),
                             content: vec![ToolResultContent::Text(text)],
                         })
                     }
                     _ => None,
                 })
                 .collect();
-            messages.push(ConverseMessage {
-                role: msg.role.as_str().to_string(),
+            ConverseMessage {
+                role: match msg.role {
+                    ir::Role::Assistant => "assistant".to_string(),
+                    _ => "user".to_string(),
+                },
                 content: blocks,
-            });
-        }
-    }
+            }
+        })
+        .collect();
 
-    let system = if system_blocks.is_empty() {
-        None
-    } else {
-        Some(system_blocks)
-    };
-
-    let stop_sequences = request.stop.as_ref().map(|s| match s {
-        crabllm_core::Stop::Single(s) => vec![s.clone()],
-        crabllm_core::Stop::Multiple(v) => v.clone(),
-    });
+    let system = (!system_blocks.is_empty()).then_some(system_blocks);
 
     let inference_config = Some(InferenceConfig {
-        max_tokens: Some(request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS)),
+        max_tokens: Some(request.max_tokens),
         temperature: request.temperature,
         top_p: request.top_p,
-        stop_sequences,
+        stop_sequences: request.stop.clone(),
     });
 
     let tool_config = request.tools.as_ref().map(|tools| ToolConfig {
@@ -276,12 +263,11 @@ fn translate_request(request: &ChatCompletionRequest) -> ConverseRequest {
             .iter()
             .map(|t| ToolDef {
                 tool_spec: ToolSpec {
-                    name: t.function.name.clone(),
-                    description: t.function.description.clone(),
+                    name: t.name.clone(),
+                    description: t.description.clone(),
                     input_schema: InputSchema {
                         json: {
                             let mut s = t
-                                .function
                                 .parameters
                                 .clone()
                                 .unwrap_or(serde_json::json!({"type": "object"}));
@@ -370,7 +356,7 @@ pub async fn chat_completion(
     secret_key: &str,
     request: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse, Error> {
-    let bedrock_req = translate_request(request);
+    let bedrock_req = translate_request(&ir::Request::from(request.clone()));
     let body =
         crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Encode(e.to_string()))?;
     let url = format!(
@@ -498,7 +484,7 @@ pub async fn chat_completion_stream(
     request: &ChatCompletionRequest,
     model: &str,
 ) -> Result<impl Stream<Item = Result<ChatCompletionChunk, Error>> + use<>, Error> {
-    let bedrock_req = translate_request(request);
+    let bedrock_req = translate_request(&ir::Request::from(request.clone()));
     let body =
         crabllm_core::json::to_vec(&bedrock_req).map_err(|e| Error::Encode(e.to_string()))?;
     let url = format!(

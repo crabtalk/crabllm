@@ -1,36 +1,42 @@
 use crate::{
-    ChatCompletionChunk, ChatCompletionResponse, ContentBlock, FinishReason, FunctionDef,
-    OpenAiUsage, ToolResultContent, ToolType, Usage,
+    ChatCompletionChunk, ChatCompletionResponse, ContentPart, FinishReason, FunctionCall,
+    FunctionDef, ImageUrl, MessageContent, OpenAiUsage, ToolType, Usage,
     ir::{self, Content, Message, Role, StopReason, StreamEvent},
 };
 
 impl From<crate::ChatCompletionRequest> for ir::Request {
     fn from(req: crate::ChatCompletionRequest) -> Self {
-        let mut system = None;
+        let mut system: Option<Vec<Content>> = None;
         let mut messages = Vec::with_capacity(req.messages.len());
 
         for msg in req.messages {
             match msg.role {
                 crate::Role::System | crate::Role::Developer => {
-                    let blocks: Vec<Content> = msg.content.into_iter().map(Content::from).collect();
-                    match &mut system {
-                        Some(existing) => {
-                            let v: &mut Vec<Content> = existing;
-                            v.extend(blocks);
-                        }
-                        None => system = Some(blocks),
-                    }
+                    let blocks = message_to_ir(&msg);
+                    system.get_or_insert_default().extend(blocks);
+                }
+                // A `role: "tool"` message is a tool result keyed by
+                // `tool_call_id`; the IR carries it inside the following user
+                // turn instead of as a role of its own.
+                crate::Role::Tool => {
+                    messages.push(Message {
+                        role: Role::User,
+                        content: vec![Content::ToolResult {
+                            call_id: msg.tool_call_id.clone().unwrap_or_default(),
+                            content: message_to_ir(&msg),
+                        }],
+                    });
                 }
                 crate::Role::Assistant => {
                     messages.push(Message {
                         role: Role::Assistant,
-                        content: msg.content.into_iter().map(Content::from).collect(),
+                        content: message_to_ir(&msg),
                     });
                 }
                 _ => {
                     messages.push(Message {
                         role: Role::User,
-                        content: msg.content.into_iter().map(Content::from).collect(),
+                        content: message_to_ir(&msg),
                     });
                 }
             }
@@ -92,13 +98,7 @@ impl From<ChatCompletionResponse> for ir::Response {
                     FinishReason::ToolCalls => StopReason::ToolUse,
                     _ => StopReason::End,
                 });
-                let content = choice
-                    .message
-                    .content
-                    .into_iter()
-                    .map(Content::from)
-                    .collect();
-                (content, stop)
+                (message_to_ir(&choice.message), stop)
             })
             .unwrap_or_default();
 
@@ -118,14 +118,14 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
     fn from(req: &ir::Request) -> Self {
         let mut messages = Vec::new();
 
-        if let Some(system) = &req.system {
-            let content = openai_content_blocks(system);
-            if !content.is_empty() {
-                messages.push(crate::Message {
-                    role: crate::Role::System,
-                    content,
-                });
-            }
+        if let Some(system) = &req.system
+            && let Some(content) = openai_content(system)
+        {
+            messages.push(crate::Message {
+                role: crate::Role::System,
+                content: Some(content),
+                ..Default::default()
+            });
         }
 
         for msg in &req.messages {
@@ -134,13 +134,47 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
                 Role::User => crate::Role::User,
                 Role::Assistant => crate::Role::Assistant,
             };
-            // Reasoning blocks are the model's private scratchpad — OpenAI-style
-            // endpoints reject them in replayed history (no schema for them).
-            let content = openai_content_blocks(&msg.content);
-            if content.is_empty() {
-                continue;
+
+            // Reasoning is the model's private scratchpad and has no slot on
+            // this wire, so it is dropped. Tool calls lift onto `tool_calls`,
+            // and tool results leave as their own `role: "tool"` messages.
+            let tool_calls: Vec<crate::ToolCall> = msg
+                .content
+                .iter()
+                .filter_map(|c| match c {
+                    Content::ToolCall { id, name, input } => Some(crate::ToolCall {
+                        index: None,
+                        id: id.clone(),
+                        kind: ToolType::Function,
+                        function: FunctionCall {
+                            name: name.clone(),
+                            arguments: input.to_string(),
+                        },
+                    }),
+                    _ => None,
+                })
+                .collect();
+            let content = openai_content(&msg.content);
+
+            if content.is_some() || !tool_calls.is_empty() {
+                messages.push(crate::Message {
+                    role,
+                    content,
+                    tool_calls: (!tool_calls.is_empty()).then_some(tool_calls),
+                    ..Default::default()
+                });
             }
-            messages.push(crate::Message { role, content });
+
+            for c in &msg.content {
+                if let Content::ToolResult { call_id, content } = c {
+                    messages.push(crate::Message {
+                        role: crate::Role::Tool,
+                        content: Some(MessageContent::Text(ir_text(content))),
+                        tool_call_id: Some(call_id.clone()),
+                        ..Default::default()
+                    });
+                }
+            }
         }
 
         let stop = req.stop.as_ref().map(|seqs| {
@@ -203,116 +237,137 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
     }
 }
 
-/// Convert IR content to OpenAI request blocks without leaking Anthropic
-/// thinking blocks into the OpenAI wire format. Tool results may contain
-/// nested blocks, so sanitizing only the message's top level is insufficient.
-fn openai_content_blocks(contents: &[Content]) -> Vec<ContentBlock> {
+/// The text/image half of IR content as OpenAI message content. Tool calls,
+/// tool results and reasoning have no place here — the caller lifts those onto
+/// `tool_calls`, separate `role: "tool"` messages, and nothing respectively.
+/// `None` when there is nothing to send.
+fn openai_content(contents: &[Content]) -> Option<MessageContent> {
+    let parts: Vec<ContentPart> = contents
+        .iter()
+        .filter_map(|c| match c {
+            Content::Text(text) if !text.is_empty() => {
+                Some(ContentPart::Text { text: text.clone() })
+            }
+            Content::Image { media_type, data } => Some(ContentPart::ImageUrl {
+                image_url: ImageUrl {
+                    url: format!("data:{media_type};base64,{data}"),
+                    detail: None,
+                },
+            }),
+            _ => None,
+        })
+        .collect();
+
+    match parts.as_slice() {
+        [] => None,
+        // A lone text part goes as a bare string — the shape every
+        // OpenAI-compatible endpoint accepts, including the older ones.
+        [ContentPart::Text { text }] => Some(MessageContent::Text(text.clone())),
+        _ => Some(MessageContent::Parts(parts)),
+    }
+}
+
+/// Flatten IR content to plain text, for slots that take only a string.
+fn ir_text(contents: &[Content]) -> String {
     contents
         .iter()
-        .filter_map(|content| match content {
-            Content::Reasoning { .. } => None,
-            Content::ToolResult { call_id, content } => {
-                let nested = openai_content_blocks(content);
-                let content = if let [ContentBlock::Text { text, .. }] = nested.as_slice() {
-                    ToolResultContent::Text(text.clone())
-                } else {
-                    ToolResultContent::Blocks(nested)
-                };
-                Some(ContentBlock::ToolResult {
-                    tool_use_id: call_id.clone(),
-                    name: None,
-                    content,
-                    cache_control: None,
-                })
-            }
-            _ => Some(ContentBlock::from(content)),
+        .filter_map(|c| match c {
+            Content::Text(t) => Some(t.as_str()),
+            _ => None,
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-impl From<ContentBlock> for Content {
-    fn from(block: ContentBlock) -> Self {
-        match block {
-            ContentBlock::Text { text, .. } => Content::Text(text),
-            ContentBlock::ToolUse {
-                id, name, input, ..
-            } => Content::ToolCall { id, name, input },
-            ContentBlock::ToolResult {
-                tool_use_id,
-                content,
-                ..
-            } => Content::ToolResult {
-                call_id: tool_use_id,
-                content: match content {
-                    ToolResultContent::Text(s) => vec![Content::Text(s)],
-                    ToolResultContent::Blocks(b) => b.into_iter().map(Content::from).collect(),
-                },
-            },
-            ContentBlock::Thinking {
-                thinking,
-                signature,
-            } => Content::Reasoning {
-                text: thinking,
-                signature,
-            },
-            ContentBlock::Image { source, .. } => {
-                let media_type = source
-                    .get("media_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("application/octet-stream")
-                    .to_string();
-                let data = source
-                    .get("data")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                Content::Image { media_type, data }
+/// An OpenAI message as IR content: reasoning first, then text, then any tool
+/// calls — the order the IR consumers expect a turn to read in.
+fn message_to_ir(msg: &crate::Message) -> Vec<Content> {
+    let mut out = Vec::new();
+
+    if let Some(reasoning) = msg.thinking() {
+        out.push(Content::Reasoning {
+            text: reasoning.to_string(),
+            signature: None,
+        });
+    }
+
+    match &msg.content {
+        Some(MessageContent::Text(text)) if !text.is_empty() => {
+            out.push(Content::Text(text.clone()));
+        }
+        Some(MessageContent::Parts(parts)) => {
+            for part in parts {
+                match part {
+                    ContentPart::Text { text } if !text.is_empty() => {
+                        out.push(Content::Text(text.clone()));
+                    }
+                    ContentPart::ImageUrl { image_url } => {
+                        let (media_type, data) = split_data_url(&image_url.url);
+                        out.push(Content::Image { media_type, data });
+                    }
+                    // A refusal is the model declining; it reads as assistant
+                    // text downstream, which is what every consumer wants.
+                    ContentPart::Refusal { refusal } if !refusal.is_empty() => {
+                        out.push(Content::Text(refusal.clone()));
+                    }
+                    ContentPart::Text { .. } | ContentPart::Refusal { .. } => {}
+                }
             }
         }
+        _ => {}
+    }
+
+    for tc in msg.tool_calls.iter().flatten() {
+        out.push(Content::ToolCall {
+            id: tc.id.clone(),
+            name: tc.function.name.clone(),
+            input: crate::json::from_str(&tc.function.arguments)
+                .unwrap_or(serde_json::Value::Object(Default::default())),
+        });
+    }
+
+    out
+}
+
+/// IR content as an assistant message — the inverse of [`message_to_ir`].
+fn ir_to_message(contents: &[Content]) -> crate::Message {
+    let tool_calls: Vec<crate::ToolCall> = contents
+        .iter()
+        .filter_map(|c| match c {
+            Content::ToolCall { id, name, input } => Some(crate::ToolCall {
+                index: None,
+                id: id.clone(),
+                kind: ToolType::Function,
+                function: FunctionCall {
+                    name: name.clone(),
+                    arguments: input.to_string(),
+                },
+            }),
+            _ => None,
+        })
+        .collect();
+
+    let reasoning_content = contents.iter().find_map(|c| match c {
+        Content::Reasoning { text, .. } if !text.is_empty() => Some(text.clone()),
+        _ => None,
+    });
+
+    crate::Message {
+        role: crate::Role::Assistant,
+        content: openai_content(contents),
+        tool_calls: (!tool_calls.is_empty()).then_some(tool_calls),
+        reasoning_content,
+        ..Default::default()
     }
 }
 
-impl From<&Content> for ContentBlock {
-    fn from(content: &Content) -> Self {
-        match content {
-            Content::Text(text) => ContentBlock::Text {
-                text: text.clone(),
-                cache_control: None,
-            },
-            Content::ToolCall { id, name, input } => ContentBlock::ToolUse {
-                id: id.clone(),
-                name: name.clone(),
-                input: input.clone(),
-                cache_control: None,
-            },
-            Content::ToolResult { call_id, content } => ContentBlock::ToolResult {
-                tool_use_id: call_id.clone(),
-                name: None,
-                content: if content.len() == 1 {
-                    if let Some(Content::Text(s)) = content.first() {
-                        ToolResultContent::Text(s.clone())
-                    } else {
-                        ToolResultContent::Blocks(content.iter().map(ContentBlock::from).collect())
-                    }
-                } else {
-                    ToolResultContent::Blocks(content.iter().map(ContentBlock::from).collect())
-                },
-                cache_control: None,
-            },
-            Content::Reasoning { text, signature } => ContentBlock::Thinking {
-                thinking: text.clone(),
-                signature: signature.clone(),
-            },
-            Content::Image { media_type, data } => ContentBlock::Image {
-                source: serde_json::json!({
-                    "type": "base64",
-                    "media_type": media_type,
-                    "data": data,
-                }),
-                cache_control: None,
-            },
-        }
-    }
+/// Split `data:<media-type>;base64,<data>` into its parts. A URL that isn't a
+/// data URL is kept whole as the data, so a plain link survives the round trip.
+fn split_data_url(url: &str) -> (String, String) {
+    url.strip_prefix("data:")
+        .and_then(|rest| rest.split_once(";base64,"))
+        .map(|(media_type, data)| (media_type.to_string(), data.to_string()))
+        .unwrap_or_else(|| (String::new(), url.to_string()))
 }
 
 impl ChatCompletionChunk {
@@ -388,10 +443,7 @@ impl From<&ir::Response> for ChatCompletionResponse {
             model: resp.model.clone(),
             choices: vec![crate::Choice {
                 index: 0,
-                message: crate::Message {
-                    role: crate::Role::Assistant,
-                    content: resp.content.iter().map(ContentBlock::from).collect(),
-                },
+                message: ir_to_message(&resp.content),
                 finish_reason,
                 logprobs: None,
             }],

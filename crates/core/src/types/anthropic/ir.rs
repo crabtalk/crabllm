@@ -1,9 +1,8 @@
 use crate::{
     Usage,
     ir::{self, Content, Message, Role, StopReason, StreamEvent},
-    types::{
-        anthropic::{self, BlockDelta, Messages, ThinkingConfig},
-        openai::ContentBlock,
+    types::anthropic::{
+        self, BlockDelta, ContentBlock, Messages, ThinkingConfig, ToolResultContent,
     },
 };
 
@@ -221,6 +220,91 @@ impl anthropic::StreamEvent {
                 events
             }
             _ => vec![],
+        }
+    }
+}
+
+impl From<ContentBlock> for Content {
+    fn from(block: ContentBlock) -> Self {
+        match block {
+            ContentBlock::Text { text, .. } => Content::Text(text),
+            ContentBlock::ToolUse {
+                id, name, input, ..
+            } => Content::ToolCall { id, name, input },
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                ..
+            } => Content::ToolResult {
+                call_id: tool_use_id,
+                content: match content {
+                    ToolResultContent::Text(s) => vec![Content::Text(s)],
+                    ToolResultContent::Blocks(b) => b.into_iter().map(Content::from).collect(),
+                },
+            },
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+            } => Content::Reasoning {
+                text: thinking,
+                signature,
+            },
+            ContentBlock::Image { source, .. } => {
+                let media_type = source
+                    .get("media_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
+                let data = source
+                    .get("data")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                Content::Image { media_type, data }
+            }
+        }
+    }
+}
+
+impl From<&Content> for ContentBlock {
+    fn from(content: &Content) -> Self {
+        match content {
+            Content::Text(text) => ContentBlock::Text {
+                text: text.clone(),
+                cache_control: None,
+            },
+            Content::ToolCall { id, name, input } => ContentBlock::ToolUse {
+                id: id.clone(),
+                name: name.clone(),
+                input: input.clone(),
+                cache_control: None,
+            },
+            Content::ToolResult { call_id, content } => ContentBlock::ToolResult {
+                tool_use_id: call_id.clone(),
+                name: None,
+                content: if content.len() == 1 {
+                    if let Some(Content::Text(s)) = content.first() {
+                        ToolResultContent::Text(s.clone())
+                    } else {
+                        ToolResultContent::Blocks(content.iter().map(ContentBlock::from).collect())
+                    }
+                } else {
+                    ToolResultContent::Blocks(content.iter().map(ContentBlock::from).collect())
+                },
+                cache_control: None,
+            },
+            Content::Reasoning { text, signature } => ContentBlock::Thinking {
+                thinking: text.clone(),
+                signature: signature.clone(),
+            },
+            Content::Image { media_type, data } => ContentBlock::Image {
+                source: serde_json::json!({
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": data,
+                }),
+                cache_control: None,
+            },
         }
     }
 }

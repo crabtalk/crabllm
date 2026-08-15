@@ -1,4 +1,4 @@
-use crate::types::openai::ContentBlock;
+use crate::types::anthropic::ContentBlock;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

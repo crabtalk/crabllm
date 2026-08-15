@@ -10,9 +10,8 @@ use axum::{
     http::{Request, StatusCode},
 };
 use crabllm_core::{
-    BoxFuture, BoxStream, ChatCompletionRequest, ChatCompletionResponse, Choice, ContentBlock,
-    Error, FinishReason, GatewayConfig, KvPairs, Message, OpenAiUsage, Prefix, Provider, Role,
-    Storage,
+    BoxFuture, BoxStream, ChatCompletionRequest, ChatCompletionResponse, Choice, Error,
+    FinishReason, GatewayConfig, KvPairs, Message, OpenAiUsage, Prefix, Provider, Storage,
 };
 use crabllm_provider::{Deployment, ProviderRegistry};
 use crabllm_proxy::{AppState, UsageEvent, router};
@@ -38,10 +37,7 @@ impl Provider for FakeProvider {
             model: request.model.clone(),
             choices: vec![Choice {
                 index: 0,
-                message: Message {
-                    role: Role::Assistant,
-                    content: vec![ContentBlock::text("hi")],
-                },
+                message: Message::assistant("hi"),
                 finish_reason: Some(FinishReason::Stop),
                 logprobs: None,
             }],

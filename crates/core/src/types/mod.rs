@@ -5,12 +5,7 @@ pub use embedding::{
 pub use image::ImageRequest;
 pub use model::{Dialect, Model, ModelList};
 pub use multipart::MultipartField;
-pub use openai::{
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice, ChunkChoice,
-    CompletionTokensDetails, ContentBlock, Delta, FinishReason, FunctionCall, FunctionCallDelta,
-    FunctionDef, Message, OpenAiUsage, Role, Stop, Tool, ToolCall, ToolCallDelta, ToolChoice,
-    ToolResultContent, ToolType,
-};
+pub use openai::*;
 
 pub mod anthropic;
 mod audio;

@@ -120,156 +120,133 @@ pub enum ToolType {
     Function,
 }
 
-/// A content block within a message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(tag = "type")]
-pub enum ContentBlock {
-    #[serde(rename = "text")]
-    Text {
-        text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_control: Option<serde_json::Value>,
-    },
-    #[serde(rename = "tool_use")]
-    ToolUse {
-        id: String,
-        name: String,
-        input: serde_json::Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_control: Option<serde_json::Value>,
-    },
-    #[serde(rename = "tool_result")]
-    ToolResult {
-        tool_use_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
-        content: ToolResultContent,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_control: Option<serde_json::Value>,
-    },
-    #[serde(rename = "thinking")]
-    Thinking {
-        thinking: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        signature: Option<String>,
-    },
-    #[serde(rename = "image")]
-    Image {
-        source: serde_json::Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_control: Option<serde_json::Value>,
-    },
-}
-
-impl ContentBlock {
-    pub fn text(s: impl Into<String>) -> Self {
-        Self::Text {
-            text: s.into(),
-            cache_control: None,
-        }
-    }
-}
-
-/// Tool result content: either a plain string or nested content blocks.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[cfg_attr(feature = "openapi", schema(no_recursion))]
-#[serde(untagged)]
-pub enum ToolResultContent {
-    Text(String),
-    Blocks(Vec<ContentBlock>),
-}
-
+/// A chat message on the OpenAI wire. One struct covers both directions —
+/// requests set `tool_call_id`/`name`, responses set `tool_calls` — which is
+/// how OpenAI itself models it. `extra` preserves fields we don't model so a
+/// provider extension survives a round trip.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Message {
     pub role: Role,
-    pub content: Vec<ContentBlock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<MessageContent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
+    #[serde(flatten, default)]
+    #[serde(skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Default for Message {
+    fn default() -> Self {
+        Self {
+            role: Role::User,
+            content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            reasoning_content: None,
+            extra: serde_json::Map::new(),
+        }
+    }
 }
 
 impl Message {
-    pub fn user(content: impl Into<String>) -> Self {
+    fn with_role(role: Role, content: impl Into<String>) -> Self {
         Self {
-            role: Role::User,
-            content: vec![ContentBlock::text(content)],
+            role,
+            content: Some(MessageContent::Text(content.into())),
+            ..Default::default()
         }
+    }
+
+    pub fn user(content: impl Into<String>) -> Self {
+        Self::with_role(Role::User, content)
     }
 
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::Assistant,
-            content: vec![ContentBlock::text(content)],
-        }
+        Self::with_role(Role::Assistant, content)
     }
 
     pub fn system(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::System,
-            content: vec![ContentBlock::text(content)],
-        }
+        Self::with_role(Role::System, content)
     }
 
-    pub fn tool(
-        tool_use_id: impl Into<String>,
-        name: impl Into<String>,
-        content: impl Into<String>,
-    ) -> Self {
-        Self {
-            role: Role::User,
-            content: vec![ContentBlock::ToolResult {
-                tool_use_id: tool_use_id.into(),
-                name: Some(name.into()),
-                content: ToolResultContent::Text(content.into()),
-                cache_control: None,
-            }],
-        }
+    /// A tool result. OpenAI carries these as their own `role: "tool"`
+    /// message keyed by `tool_call_id`, not as a block inside a user message.
+    /// A tool message takes exactly `role`, `content` and `tool_call_id` — it
+    /// has no `name`, unlike the other roles.
+    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        let mut msg = Self::with_role(Role::Tool, content);
+        msg.tool_call_id = Some(tool_call_id.into());
+        msg
     }
 
-    /// First non-empty text found in content blocks.
-    ///
-    /// Checks `Text` blocks first, then falls back to
-    /// `ToolResult { content: Text(..) }` blocks.
+    /// Text content, or `None` when empty or absent. Multi-part content
+    /// yields the first non-empty text part.
     pub fn content_str(&self) -> Option<&str> {
-        for block in &self.content {
-            if let ContentBlock::Text { text, .. } = block
-                && !text.is_empty()
-            {
-                return Some(text.as_str());
-            }
+        match self.content.as_ref()? {
+            MessageContent::Text(s) => (!s.is_empty()).then_some(s.as_str()),
+            MessageContent::Parts(parts) => parts.iter().find_map(|p| match p {
+                ContentPart::Text { text } if !text.is_empty() => Some(text.as_str()),
+                _ => None,
+            }),
         }
-        for block in &self.content {
-            if let ContentBlock::ToolResult {
-                content: ToolResultContent::Text(s),
-                ..
-            } = block
-                && !s.is_empty()
-            {
-                return Some(s.as_str());
-            }
-        }
-        None
     }
 
-    /// Iterator over tool-use blocks.
-    pub fn tool_uses(&self) -> impl Iterator<Item = (&str, &str, &serde_json::Value)> {
-        self.content.iter().filter_map(|b| match b {
-            ContentBlock::ToolUse {
-                id, name, input, ..
-            } => Some((id.as_str(), name.as_str(), input)),
-            _ => None,
+    /// Iterator over `(id, name, arguments)` of this message's tool calls.
+    /// `arguments` is the raw JSON string OpenAI sends, not a parsed value.
+    pub fn tool_uses(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+        self.tool_calls.iter().flatten().map(|tc| {
+            (
+                tc.id.as_str(),
+                tc.function.name.as_str(),
+                tc.function.arguments.as_str(),
+            )
         })
     }
 
-    /// The thinking content, if any.
+    /// The reasoning content, if any. Named `reasoning_content` on the wire
+    /// by DeepSeek and the providers that follow it.
     pub fn thinking(&self) -> Option<&str> {
-        for block in &self.content {
-            if let ContentBlock::Thinking { thinking, .. } = block
-                && !thinking.is_empty()
-            {
-                return Some(thinking.as_str());
-            }
-        }
-        None
+        self.reasoning_content.as_deref().filter(|s| !s.is_empty())
     }
+}
+
+/// Message content: a plain string, or an array of typed parts for
+/// multimodal input.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+/// A content part. `text` and `image_url` are what a user message may carry;
+/// `refusal` only ever arrives on an assistant message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(tag = "type")]
+pub enum ContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrl },
+    #[serde(rename = "refusal")]
+    Refusal { refusal: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ImageUrl {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }

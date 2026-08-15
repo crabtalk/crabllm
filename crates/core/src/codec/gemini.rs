@@ -1,6 +1,6 @@
 use crate::{
-    ByteStream, ChatCompletionChunk, ChunkChoice, ContentBlock, Delta, Error, FunctionCallDelta,
-    OpenAiUsage, Role, ToolCallDelta, Usage, gemini,
+    ByteStream, ChatCompletionChunk, ChunkChoice, Delta, Error, FunctionCallDelta, OpenAiUsage,
+    Role, ToolCallDelta, Usage, anthropic::ContentBlock, gemini,
 };
 use futures::stream::{self, Stream, StreamExt};
 

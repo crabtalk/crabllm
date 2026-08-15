@@ -17,8 +17,8 @@ use crate::{
 };
 use crabllm_core::{
     BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
-    ChunkChoice, ContentBlock, Delta, Error, FinishReason, FunctionCall, FunctionCallDelta,
-    Message, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta, ToolType, anthropic,
+    ChunkChoice, Delta, Error, FinishReason, FunctionCall, FunctionCallDelta, Message,
+    MessageContent, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta, ToolType, anthropic,
 };
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
@@ -166,21 +166,6 @@ impl Provider for MlxProvider {
             FinishReason::ToolCalls
         };
 
-        let mut blocks = Vec::new();
-        if !text.is_empty() {
-            blocks.push(ContentBlock::text(text));
-        }
-        for tc in tool_calls {
-            let input = crabllm_core::json::from_str(&tc.function.arguments)
-                .unwrap_or(serde_json::Value::Object(Default::default()));
-            blocks.push(ContentBlock::ToolUse {
-                id: tc.id,
-                name: tc.function.name,
-                input,
-                cache_control: None,
-            });
-        }
-
         Ok(ChatCompletionResponse {
             id: new_completion_id(),
             object: "chat.completion".to_string(),
@@ -190,7 +175,9 @@ impl Provider for MlxProvider {
                 index: 0,
                 message: Message {
                     role: Role::Assistant,
-                    content: blocks,
+                    content: (!text.is_empty()).then_some(MessageContent::Text(text)),
+                    tool_calls: (!tool_calls.is_empty()).then_some(tool_calls),
+                    ..Default::default()
                 },
                 finish_reason: Some(finish_reason),
                 logprobs: None,

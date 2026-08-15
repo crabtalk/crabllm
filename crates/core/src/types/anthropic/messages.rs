@@ -1,5 +1,5 @@
 use crate::types::anthropic::{Content, Message};
-use crate::types::openai::{ContentBlock, ToolResultContent};
+use crate::types::anthropic::{ContentBlock, ToolResultContent};
 
 /// Operations on a wire-level message list. Lives as a trait so call sites
 /// read as `messages.coalesce_tool_results()` rather than as free functions
