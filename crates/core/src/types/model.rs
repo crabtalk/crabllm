@@ -45,7 +45,7 @@ pub struct Model {
 
 /// A third party's `pricing` is its own schema — OpenRouter quotes per-token
 /// strings where this is per-million floats. Keep ours across a round trip,
-/// and drop theirs rather than mis-read it as a number it isn't.
+/// and drop theirs rather than misread it as a number it isn't.
 fn lenient_pricing<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<Option<PricingConfig>, D::Error> {
