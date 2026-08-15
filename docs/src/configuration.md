@@ -45,9 +45,6 @@ models = ["gpt-4o", "gpt-4o-mini"]
 | `max_retries` | integer | `2` | Max retries on transient errors |
 | `timeout` | integer | `30` | Per-request timeout in seconds |
 | `api_version` | string | — | API version (Azure only) |
-| `region` | string | — | AWS region (Bedrock only) |
-| `access_key` | string | — | AWS access key (Bedrock only) |
-| `secret_key` | string | — | AWS secret key (Bedrock only) |
 
 ## Virtual Keys
 

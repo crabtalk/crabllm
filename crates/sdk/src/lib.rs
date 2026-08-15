@@ -11,7 +11,7 @@
 //! ```no_run
 //! use crabllm_sdk::{Client, core::Provider};
 //!
-//! # async fn run(request: crabllm_sdk::core::AnthropicRequest) -> Result<(), crabllm_sdk::core::Error> {
+//! # async fn run(request: crabllm_sdk::core::anthropic::Request) -> Result<(), crabllm_sdk::core::Error> {
 //! let client = Client::new("https://gateway.example.com", "sk-...");
 //! let resp = client.anthropic_messages(&request).await?;
 //! # let _ = resp; Ok(())

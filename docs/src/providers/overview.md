@@ -12,7 +12,6 @@ OpenAI-compatible format your application uses and the provider's native format.
 | `anthropic` | Anthropic Messages API | Full translation |
 | `google` | Google Gemini | Full translation |
 | `azure` | Azure OpenAI | URL + auth rewrite |
-| `bedrock` | AWS Bedrock Converse API | Full translation + SigV4 signing |
 | `ollama` | Ollama (local models) | Pass-through (OpenAI-compatible) |
 | `deepseek` | DeepSeek models | Pass-through (OpenAI + native Anthropic) |
 | `zai` | z.ai GLM models | Pass-through (OpenAI + native Anthropic) |
@@ -77,13 +76,13 @@ The `Compat` column covers every compat-table provider (`deepseek`, `zai`,
 support is identical. Whether a given provider actually serves embeddings
 varies; see its page.
 
-| Endpoint | OpenAI | Anthropic | Google | Azure | Bedrock | Ollama | Compat |
-|----------|:------:|:---------:|:------:|:-----:|:-------:|:------:|:------:|
-| Chat completions | yes | yes | yes | yes | yes | yes | yes |
-| Streaming | yes | yes | yes | yes | yes | yes | yes |
-| Embeddings | yes | — | — | yes | — | yes | yes |
-| Image generation | yes | — | — | yes | — | — | — |
-| Audio speech | yes | — | — | yes | — | — | — |
-| Audio transcription | yes | — | — | yes | — | — | — |
-| Anthropic Messages | — | yes | — | — | — | — | yes |
-| Tool/function calling | yes | yes | yes | yes | yes | yes | yes |
+| Endpoint | OpenAI | Anthropic | Google | Azure | Ollama | Compat |
+|----------|:------:|:---------:|:------:|:-----:|:------:|:------:|
+| Chat completions | yes | yes | yes | yes | yes | yes |
+| Streaming | yes | yes | yes | yes | yes | yes |
+| Embeddings | yes | — | — | yes | yes | yes |
+| Image generation | yes | — | — | yes | — | — |
+| Audio speech | yes | — | — | yes | — | — |
+| Audio transcription | yes | — | — | yes | — | — |
+| Anthropic Messages | — | yes | — | — | — | yes |
+| Tool/function calling | yes | yes | yes | yes | yes | yes |

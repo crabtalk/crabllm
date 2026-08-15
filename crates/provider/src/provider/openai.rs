@@ -1,9 +1,9 @@
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, ImageRequest, MultipartField, Provider,
+    AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest, ModelList,
+    MultipartField, Provider, anthropic,
 };
 use futures::stream::{Stream, StreamExt};
 
@@ -35,6 +35,10 @@ impl Provider for OpenaiProvider {
         embedding(&self.client, &self.base_url, &self.api_key, request).await
     }
 
+    async fn models(&self) -> Result<ModelList, Error> {
+        models(&self.client, &self.base_url, &self.api_key).await
+    }
+
     async fn image_generation(&self, request: &ImageRequest) -> Result<(Bytes, String), Error> {
         image_generation(&self.client, &self.base_url, &self.api_key, request).await
     }
@@ -54,26 +58,26 @@ impl Provider for OpenaiProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let ir_resp = self
             .complete(&crabllm_core::ir::Request::from(request.clone()))
             .await?;
-        Ok(AnthropicResponse::from(&ir_resp))
+        Ok(anthropic::Response::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         crate::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         crate::gemini_stream_via_chat(self, model, request).await
     }
 
@@ -100,13 +104,7 @@ impl Provider for OpenaiProvider {
         _model: &str,
         body_stream: crabllm_core::ByteStream,
     ) -> Result<crabllm_core::ByteStream, Error> {
-        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        let headers = [
-            ("content-type", "application/json"),
-            ("authorization", &format!("Bearer {}", self.api_key)),
-        ];
-        self.client
-            .post_stream_body(&url, &headers, body_stream)
+        chat_completion_stream_passthrough(&self.client, &self.base_url, &self.api_key, body_stream)
             .await
     }
 
@@ -140,6 +138,23 @@ pub async fn chat_completion(
         .post(&url, &headers, body.into())
         .await?
         .error_for_status()?;
+
+    crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
+}
+
+/// List the models an OpenAI-compatible endpoint exposes. Third parties send
+/// leaner rows than the gateway does — `id` is the only field guaranteed.
+pub async fn models(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+) -> Result<ModelList, Error> {
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let headers = [
+        ("content-type", "application/json"),
+        ("authorization", &format!("Bearer {api_key}")),
+    ];
+    let resp = client.get(&url, &headers).await?.error_for_status()?;
 
     crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))
 }
@@ -184,6 +199,23 @@ pub async fn chat_completion_raw(
         .error_for_status()?;
 
     Ok(resp.body)
+}
+
+/// Stream a client body straight through to an OpenAI-compatible chat
+/// completions endpoint. The body is consumed as it arrives — no buffering,
+/// so no retries.
+pub async fn chat_completion_stream_passthrough(
+    client: &HttpClient,
+    base_url: &str,
+    api_key: &str,
+    body_stream: ByteStream,
+) -> Result<ByteStream, Error> {
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let headers = [
+        ("content-type", "application/json"),
+        ("authorization", &format!("Bearer {api_key}")),
+    ];
+    client.post_stream_body(&url, &headers, body_stream).await
 }
 
 /// Stream raw SSE bytes from an OpenAI-compatible chat completions endpoint.

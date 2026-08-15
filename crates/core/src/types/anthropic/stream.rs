@@ -4,18 +4,18 @@
 //! `stream: true`. They are the native streaming currency for
 //! [`Provider::anthropic_messages_stream`](crate::Provider::anthropic_messages_stream).
 
-use crate::{AnthropicContentBlock, AnthropicResponse, AnthropicUsage};
+use crate::types::anthropic::{ContentBlock, Response, Usage};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
-pub enum AnthropicStreamEvent {
+pub enum StreamEvent {
     #[serde(rename = "message_start")]
-    MessageStart { message: AnthropicResponse },
+    MessageStart { message: Response },
     #[serde(rename = "content_block_start")]
     ContentBlockStart {
         index: u32,
-        content_block: AnthropicContentBlock,
+        content_block: ContentBlock,
     },
     #[serde(rename = "content_block_delta")]
     ContentBlockDelta { index: u32, delta: BlockDelta },
@@ -24,13 +24,13 @@ pub enum AnthropicStreamEvent {
     #[serde(rename = "message_delta")]
     MessageDelta {
         delta: MessageDeltaPayload,
-        usage: AnthropicUsage,
+        usage: Usage,
     },
     #[serde(rename = "message_stop")]
     MessageStop,
 }
 
-impl AnthropicStreamEvent {
+impl StreamEvent {
     pub fn event_name(&self) -> &'static str {
         match self {
             Self::MessageStart { .. } => "message_start",

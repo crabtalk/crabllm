@@ -34,6 +34,7 @@ fn weather_tool() -> Tool {
             })),
         },
         strict: None,
+        cache_control: None,
     }
 }
 
@@ -47,15 +48,7 @@ fn tool_request(model: &str) -> ChatCompletionRequest {
         stream: None,
         stop: None,
         tools: Some(vec![weather_tool()]),
-        tool_choice: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        seed: None,
-        user: None,
-        reasoning_effort: None,
-        thinking: None,
-        anthropic_max_tokens: None,
-        extra: serde_json::Map::new(),
+        ..Default::default()
     }
 }
 

@@ -190,9 +190,7 @@ fn canned_chat_response() -> ChatCompletionResponse {
             prompt_tokens: 10,
             completion_tokens: 20,
             total_tokens: 30,
-            completion_tokens_details: None,
-            prompt_cache_hit_tokens: None,
-            prompt_cache_miss_tokens: None,
+            ..Default::default()
         }),
         system_fingerprint: None,
     }

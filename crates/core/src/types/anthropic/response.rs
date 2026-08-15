@@ -1,10 +1,9 @@
-use crate::Usage;
-use crate::types::openai::ContentBlock;
+use crate::types::anthropic::ContentBlock;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AnthropicResponse {
+pub struct Response {
     pub id: String,
     #[serde(default = "default_message_type")]
     pub r#type: String,
@@ -16,7 +15,7 @@ pub struct AnthropicResponse {
     pub stop_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_sequence: Option<String>,
-    pub usage: AnthropicUsage,
+    pub usage: Usage,
 }
 
 fn default_message_type() -> String {
@@ -33,7 +32,7 @@ fn default_assistant_role() -> String {
 /// for any internal billing or metering use.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AnthropicUsage {
+pub struct Usage {
     #[serde(default)]
     pub input_tokens: u32,
     #[serde(default)]
@@ -44,8 +43,8 @@ pub struct AnthropicUsage {
     pub cache_creation_input_tokens: Option<u32>,
 }
 
-impl From<&AnthropicUsage> for Usage {
-    fn from(u: &AnthropicUsage) -> Self {
+impl From<&Usage> for crate::Usage {
+    fn from(u: &Usage) -> Self {
         Self {
             input_tokens: u.input_tokens,
             cache_read_tokens: u.cache_read_input_tokens.unwrap_or(0),
@@ -59,8 +58,8 @@ impl From<&AnthropicUsage> for Usage {
     }
 }
 
-impl From<&Usage> for AnthropicUsage {
-    fn from(u: &Usage) -> Self {
+impl From<&crate::Usage> for Usage {
+    fn from(u: &crate::Usage) -> Self {
         Self {
             input_tokens: u.input_tokens,
             // Anthropic's output_tokens includes thinking, so fold reasoning

@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 description = "Provider dispatch for the crabllm LLM API gateway"
-keywords = ["llm", "openai", "anthropic", "gemini", "bedrock"]
+keywords = ["llm", "openai", "anthropic", "gemini", "gateway"]
 categories = ["web-programming::http-client", "network-programming"]
 
 [features]
@@ -17,7 +17,6 @@ http2 = ["crabllm-http/http2"]
 native-tls = ["crabllm-http/native-tls"]
 rustls = ["crabllm-http/rustls"]
 sonic = ["crabllm-core/sonic"]
-bedrock = ["hmac", "sha2", "dep:http"]
 
 [dependencies]
 crabllm-core.workspace = true
@@ -30,10 +29,7 @@ rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-# optional (bedrock SigV4 URL parsing)
 http = { workspace = true, optional = true }
-hmac = { workspace = true, optional = true }
-sha2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 crabllm-core.workspace = true

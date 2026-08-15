@@ -59,11 +59,13 @@ pub struct OpenAiUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_tokens_details: Option<CompletionTokensDetails>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_cache_hit_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_cache_miss_tokens: Option<u32>,
 }
 
@@ -80,11 +82,12 @@ impl From<&Usage> for OpenAiUsage {
             } else {
                 None
             },
-            prompt_cache_hit_tokens: if u.cache_read_tokens > 0 {
-                Some(u.cache_read_tokens)
-            } else {
-                None
-            },
+            // Emitted in both shapes: OpenAI's own clients read
+            // `prompt_tokens_details`, DeepSeek-shaped ones read the flat field.
+            prompt_tokens_details: (u.cache_read_tokens > 0).then_some(PromptTokensDetails {
+                cached_tokens: Some(u.cache_read_tokens),
+            }),
+            prompt_cache_hit_tokens: (u.cache_read_tokens > 0).then_some(u.cache_read_tokens),
             // `prompt_cache_miss_tokens` is semantically ambiguous on the
             // OpenAI wire (some providers mean "uncached input," some mean
             // "cache writes"). We never emit it — canonical [`Usage`] carries
@@ -96,11 +99,18 @@ impl From<&Usage> for OpenAiUsage {
 
 impl From<&OpenAiUsage> for Usage {
     fn from(u: &OpenAiUsage) -> Self {
-        // OpenAI's `prompt_tokens` is the total prompt (cached + uncached).
-        // `prompt_cache_hit_tokens` is the cached subset. `cache_write` is not
-        // expressible on this wire — OpenAI doesn't separately price cache
-        // writes — so we leave it zero. Reasoning lives in completion details.
-        let cache_read = u.prompt_cache_hit_tokens.unwrap_or(0);
+        // `prompt_tokens` is the total prompt (cached + uncached); the cached
+        // subset arrives either as OpenAI's `prompt_tokens_details.cached_tokens`
+        // or DeepSeek's flat `prompt_cache_hit_tokens`. Cache *writes* are left
+        // at zero: `prompt_tokens_details.cache_write_tokens` exists but its
+        // relationship to `prompt_tokens` isn't documented clearly enough to
+        // bill on. Reasoning lives in completion details.
+        let cache_read = u
+            .prompt_tokens_details
+            .as_ref()
+            .and_then(|d| d.cached_tokens)
+            .or(u.prompt_cache_hit_tokens)
+            .unwrap_or(0);
         let input = u.prompt_tokens.saturating_sub(cache_read);
         let reasoning = u
             .completion_tokens_details
@@ -122,8 +132,18 @@ impl From<&OpenAiUsage> for Usage {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CompletionTokensDetails {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
+}
+
+/// Where OpenAI itself reports prompt cache hits. DeepSeek and the providers
+/// that copied it use the flat `prompt_cache_hit_tokens` instead, so both have
+/// to be read — missing this one meters every cache hit as full-price input.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PromptTokensDetails {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<u32>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

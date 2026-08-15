@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
 """Fetch model pricing from LiteLLM's community dataset and generate cloud.toml."""
 
 import json
@@ -19,6 +23,11 @@ PROVIDERS = {
     "groq": "Groq",
     "together_ai": "Together",
 }
+
+# Providers the gateway can't serve, so their pricing rows are dead weight.
+# Bare LiteLLM keys carry their provider in `litellm_provider`, which is how
+# these get in — they have no `provider/` prefix to filter on.
+SKIP_PROVIDERS = {"bedrock", "bedrock_converse"}
 
 # Models we skip (fine-tuned, deprecated, duplicates).
 SKIP_PATTERNS = [
@@ -124,6 +133,8 @@ def main():
         # Resolve provider label from litellm_provider for bare keys.
         if not provider_label:
             provider = info.get("litellm_provider", "")
+            if provider in SKIP_PROVIDERS:
+                continue
             provider_label = PROVIDERS.get(provider.split("/")[0], provider)
 
         pricing = {

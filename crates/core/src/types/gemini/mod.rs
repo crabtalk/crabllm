@@ -1,11 +1,11 @@
 //! Google Gemini wire types (Generative Language API).
 //!
 //! Each SSE chunk from `:streamGenerateContent?alt=sse` is a full
-//! [`GeminiResponse`] with a single candidate, so there are no separate
+//! [`Response`] with a single candidate, so there are no separate
 //! streaming wire types — the same response shape carries one chunk at a time.
 
-pub use request::{GeminiFunctionDecl, GeminiRequest, GeminiToolDef, GenerationConfig};
-pub use response::{GeminiCandidate, GeminiFinishReason, GeminiResponse, GeminiUsage};
+pub use request::{FunctionDecl, GenerationConfig, Request, ThinkingConfig, ToolDef};
+pub use response::{Candidate, FinishReason, Response, Usage};
 use serde::{Deserialize, Serialize};
 
 mod ir;
@@ -14,27 +14,27 @@ mod response;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum GeminiRole {
+pub enum Role {
     User,
     Model,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GeminiContent {
+pub struct Content {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub role: Option<GeminiRole>,
-    pub parts: Vec<GeminiPart>,
+    pub role: Option<Role>,
+    pub parts: Vec<Part>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GeminiPart {
+pub struct Part {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub function_call: Option<GeminiFunctionCall>,
+    pub function_call: Option<FunctionCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub function_response: Option<GeminiFunctionResponse>,
+    pub function_response: Option<FunctionResponse>,
     /// Gemini 2.5+ thinking-model marker for `functionCall` parts —
     /// must be echoed back unchanged on follow-up turns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -42,14 +42,14 @@ pub struct GeminiPart {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GeminiFunctionCall {
+pub struct FunctionCall {
     pub name: String,
     #[serde(default)]
     pub args: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GeminiFunctionResponse {
+pub struct FunctionResponse {
     pub name: String,
     pub response: serde_json::Value,
 }

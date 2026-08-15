@@ -1,26 +1,16 @@
 //! Anthropic Messages API wire types.
-//!
-//! The canonical content-block types (`ContentBlock`, `ToolResultContent`)
-//! live in `crate::types::openai`. This module re-exports `ContentBlock` as
-//! `AnthropicContentBlock` for backward compatibility and defines the
-//! Anthropic-specific request/response envelope types.
 
-pub use message::{AnthropicContent, AnthropicMessage};
-pub use messages::AnthropicMessages;
-pub use request::{
-    ANTHROPIC_VERSION, AnthropicRequest, AnthropicSystem, AnthropicTool, DEFAULT_MAX_TOKENS,
-    ThinkingConfig,
-};
-pub use response::{AnthropicResponse, AnthropicUsage};
-pub use stream::{AnthropicStreamEvent, BlockDelta, MessageDeltaPayload};
+pub use convert::tool_choice;
+pub use message::{Content, ContentBlock, Message, ToolResultContent};
+pub use messages::Messages;
+pub use request::{DEFAULT_MAX_TOKENS, Request, System, ThinkingConfig, Tool, VERSION};
+pub use response::{Response, Usage};
+pub use stream::{BlockDelta, MessageDeltaPayload, StreamEvent};
 
-use crate::types::openai::ContentBlock;
-
+mod convert;
 mod ir;
 mod message;
 mod messages;
 mod request;
 mod response;
 mod stream;
-
-pub type AnthropicContentBlock = ContentBlock;

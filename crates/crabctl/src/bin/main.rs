@@ -135,7 +135,7 @@ enum ProviderCommands {
         /// Provider name
         name: String,
         /// Provider implementation kind. Use `openai`, `anthropic`,
-        /// `google`, `bedrock`, `ollama`, `azure` — or any self-defined
+        /// `google`, `ollama`, `azure` — or any self-defined
         /// name (requires --base-url, dispatched as OpenAI-compatible).
         #[arg(long)]
         kind: ProviderKind,
@@ -162,15 +162,6 @@ enum ProviderCommands {
         /// Per-request timeout in seconds
         #[arg(long)]
         timeout: Option<u64>,
-        /// AWS region (Bedrock)
-        #[arg(long)]
-        region: Option<String>,
-        /// AWS access key (Bedrock)
-        #[arg(long)]
-        access_key: Option<String>,
-        /// AWS secret key (Bedrock)
-        #[arg(long)]
-        secret_key: Option<String>,
     },
     /// Update a dynamic provider (JSON Merge Patch)
     Update {
@@ -201,15 +192,6 @@ enum ProviderCommands {
         /// Timeout in seconds
         #[arg(long)]
         timeout: Option<u64>,
-        /// AWS region
-        #[arg(long)]
-        region: Option<String>,
-        /// AWS access key
-        #[arg(long)]
-        access_key: Option<String>,
-        /// AWS secret key
-        #[arg(long)]
-        secret_key: Option<String>,
     },
     /// Delete a dynamic provider
     Delete {
@@ -431,9 +413,6 @@ async fn run_providers(
             max_retries,
             api_version,
             timeout,
-            region,
-            access_key,
-            secret_key,
         } => {
             let req = CreateProviderRequest {
                 name,
@@ -445,9 +424,6 @@ async fn run_providers(
                 max_retries,
                 api_version,
                 timeout,
-                region,
-                access_key,
-                secret_key,
             };
             let p = client.create_provider(&req).await?;
             if json {
@@ -466,9 +442,6 @@ async fn run_providers(
             max_retries,
             api_version,
             timeout,
-            region,
-            access_key,
-            secret_key,
         } => {
             let mut patch = serde_json::Map::new();
             if let Some(v) = kind {
@@ -494,15 +467,6 @@ async fn run_providers(
             }
             if let Some(v) = timeout {
                 patch.insert("timeout".into(), serde_json::json!(v));
-            }
-            if let Some(v) = region {
-                patch.insert("region".into(), serde_json::json!(v));
-            }
-            if let Some(v) = access_key {
-                patch.insert("access_key".into(), serde_json::json!(v));
-            }
-            if let Some(v) = secret_key {
-                patch.insert("secret_key".into(), serde_json::json!(v));
             }
             if patch.is_empty() {
                 eprintln!("error: nothing to update (pass at least one field)");
@@ -534,8 +498,6 @@ fn print_provider_detail(p: &ProviderSummary) {
     let max_retries = p.max_retries.map_or("-".into(), |v| v.to_string());
     let api_version = p.api_version.clone().unwrap_or_else(|| "-".into());
     let timeout = p.timeout.map_or("-".into(), |v| v.to_string());
-    let region = p.region.clone().unwrap_or_else(|| "-".into());
-    let access_key = p.access_key_prefix.clone().unwrap_or_else(|| "-".into());
     print_kv(&[
         ("Name", &p.name),
         ("Kind", &kind),
@@ -546,8 +508,6 @@ fn print_provider_detail(p: &ProviderSummary) {
         ("Max Retries", &max_retries),
         ("API Version", &api_version),
         ("Timeout", &timeout),
-        ("Region", &region),
-        ("Access Key", &access_key),
         ("Source", &p.source),
     ]);
 }

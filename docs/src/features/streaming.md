@@ -37,7 +37,6 @@ format to OpenAI-compatible SSE chunks:
   `chat.completion.chunk` format.
 - **Google Gemini** — `streamGenerateContent` response parts translated to
   OpenAI chunks.
-- **Bedrock** — AWS event-stream binary frames decoded and translated.
 - **Azure** — same SSE format as OpenAI, no translation needed.
 
 ## Extension Hooks

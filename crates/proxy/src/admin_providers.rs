@@ -11,7 +11,7 @@ use axum::{
 use crabllm_core::{
     Error, GatewayConfig, Provider, ProviderConfig, ProviderKind, Storage, storage_key,
 };
-use crabllm_provider::{HttpClient, ProviderRegistry};
+use crabllm_provider::{ProviderRegistry, RemoteProvider, make_client};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
@@ -118,12 +118,6 @@ pub(crate) struct CreateProviderRequest {
     timeout: Option<u64>,
     #[serde(default)]
     retry_deadline: Option<u64>,
-    #[serde(default)]
-    region: Option<String>,
-    #[serde(default)]
-    access_key: Option<String>,
-    #[serde(default)]
-    secret_key: Option<String>,
 }
 
 impl CreateProviderRequest {
@@ -140,9 +134,6 @@ impl CreateProviderRequest {
                 api_version: self.api_version,
                 timeout: self.timeout,
                 retry_deadline: self.retry_deadline,
-                region: self.region,
-                access_key: self.access_key,
-                secret_key: self.secret_key,
             },
         )
     }
@@ -167,10 +158,6 @@ pub(crate) struct ProviderSummary {
     api_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     timeout: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    region: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    access_key_prefix: Option<String>,
     source: &'static str,
 }
 
@@ -185,8 +172,6 @@ fn summarize(name: &str, cfg: &ProviderConfig, source: &'static str) -> Provider
         max_retries: cfg.max_retries,
         api_version: cfg.api_version.clone(),
         timeout: cfg.timeout,
-        region: cfg.region.clone(),
-        access_key_prefix: cfg.access_key.as_deref().map(mask),
         source,
     }
 }
@@ -546,9 +531,6 @@ fn apply_patch(config: &mut ProviderConfig, body: &serde_json::Value) -> Result<
             "max_retries" => config.max_retries = from_value_opt(value, "max_retries")?,
             "api_version" => config.api_version = from_value_opt(value, "api_version")?,
             "timeout" => config.timeout = from_value_opt(value, "timeout")?,
-            "region" => config.region = from_value_opt(value, "region")?,
-            "access_key" => config.access_key = from_value_opt(value, "access_key")?,
-            "secret_key" => config.secret_key = from_value_opt(value, "secret_key")?,
             other => {
                 return Err(crate::admin::err_response(
                     StatusCode::BAD_REQUEST,
@@ -584,83 +566,30 @@ fn validate_single(name: &str, config: &ProviderConfig) -> Result<(), String> {
     crabllm_provider::validate_provider(name, config).map_err(|e| e.to_string())
 }
 
-/// If `config.models` is empty, query the provider's `GET {base_url}/models`
-/// and populate from the response. Only OpenAI-compatible kinds expose a
-/// standard models endpoint — other kinds error out asking for an explicit
-/// `--models`.
+/// If `config.models` is empty, ask the provider what the credentials grant.
+/// Kinds with no list endpoint (azure) answer `not_implemented`,
+/// which surfaces as "pass --models explicitly".
 async fn autofill_models(name: &str, config: &mut ProviderConfig) -> Result<(), String> {
     if !config.models.is_empty() {
         return Ok(());
     }
 
     let kind = config.effective_kind(name);
-    let base_url: String = match kind {
-        crabllm_core::ProviderKind::Openai => config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
-        crabllm_core::ProviderKind::Ollama => config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "http://localhost:11434/v1".to_string()),
-        crabllm_core::ProviderKind::Custom(ref s) => match crabllm_provider::compat::lookup(s) {
-            Some(spec) => config
-                .base_url
-                .clone()
-                .unwrap_or_else(|| spec.openai_base_url.to_string()),
-            None => config.base_url.clone().ok_or_else(|| {
-                "models is empty and base_url is not set; cannot auto-fetch".to_string()
-            })?,
-        },
-        other => {
-            return Err(format!(
-                "models is required for kind '{other}' — auto-fetch only supported for \
-                 openai, ollama, and compat/custom kinds"
-            ));
-        }
-    };
-
-    let url = format!("{}/models", base_url.trim_end_matches('/'));
-    let auth = config.api_key.as_ref().map(|k| format!("Bearer {k}"));
-    let mut headers: Vec<(&str, &str)> = Vec::new();
-    if let Some(h) = auth.as_deref() {
-        headers.push(("authorization", h));
-    }
-
-    let client = HttpClient::new();
-    let resp = client
-        .get(&url, &headers)
+    let provider = RemoteProvider::new(name, config, make_client());
+    let list = provider
+        .models()
         .await
-        .map_err(|e| format!("failed to auto-fetch models from {url}: {e}"))?;
+        .map_err(|e| format!("failed to auto-fetch models for '{name}': {e}"))?;
 
-    if !(200..300).contains(&resp.status) {
-        return Err(format!(
-            "{url} returned {}; pass --models explicitly",
-            resp.status
-        ));
-    }
-
-    let body: serde_json::Value =
-        serde_json::from_slice(&resp.body).map_err(|e| format!("invalid JSON from {url}: {e}"))?;
-    let data = body
-        .get("data")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| format!("{url} missing 'data' array; pass --models explicitly"))?;
-
-    let models: Vec<String> = data
-        .iter()
-        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
-        .collect();
-
+    let models: Vec<String> = list.data.into_iter().map(|m| m.id).collect();
     if models.is_empty() {
         return Err(format!(
-            "{url} returned no models; pass --models explicitly"
+            "provider '{name}' returned no models; pass --models explicitly"
         ));
     }
 
     tracing::info!(
         kind = %kind,
-        base_url,
         count = models.len(),
         "auto-fetched models from provider",
     );

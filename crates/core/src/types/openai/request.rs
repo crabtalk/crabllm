@@ -1,7 +1,7 @@
 use crate::types::openai::{Message, ToolType};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChatCompletionRequest {
     pub model: String,
@@ -10,10 +10,17 @@ pub struct ChatCompletionRequest {
     pub temperature: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    /// What reasoning models take in place of `max_tokens`, which they reject.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_completion_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    /// Without `include_usage`, a streaming response carries no usage chunk at
+    /// all and the request meters as zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<StreamOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Stop>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -28,10 +35,8 @@ pub struct ChatCompletionRequest {
     pub seed: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    #[serde(skip)]
-    pub thinking: Option<crate::types::anthropic::ThinkingConfig>,
     #[serde(skip)]
     pub anthropic_max_tokens: Option<u32>,
     #[serde(flatten, default)]
@@ -44,6 +49,12 @@ pub struct ChatCompletionRequest {
 pub enum Stop {
     Single(String),
     Multiple(Vec<String>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct StreamOptions {
+    pub include_usage: bool,
 }
 
 /// Controls which tool the model should call.
@@ -118,6 +129,11 @@ pub struct Tool {
     pub function: FunctionDef,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strict: Option<bool>,
+    /// Not an OpenAI field. It's the extension LiteLLM established for
+    /// pointing prompt caching at an Anthropic backend through an
+    /// OpenAI-shaped request, so it is read but never sent onward.
+    #[serde(default, skip_serializing)]
+    pub cache_control: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

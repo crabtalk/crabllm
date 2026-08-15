@@ -10,9 +10,8 @@ use axum::{
     http::{Request, StatusCode},
 };
 use crabllm_core::{
-    BoxFuture, BoxStream, ChatCompletionRequest, ChatCompletionResponse, Choice, ContentBlock,
-    Error, FinishReason, GatewayConfig, KvPairs, Message, OpenAiUsage, Prefix, Provider, Role,
-    Storage,
+    BoxFuture, BoxStream, ChatCompletionRequest, ChatCompletionResponse, Choice, Error,
+    FinishReason, GatewayConfig, KvPairs, Message, OpenAiUsage, Prefix, Provider, Storage,
 };
 use crabllm_provider::{Deployment, ProviderRegistry};
 use crabllm_proxy::{AppState, UsageEvent, router};
@@ -38,10 +37,7 @@ impl Provider for FakeProvider {
             model: request.model.clone(),
             choices: vec![Choice {
                 index: 0,
-                message: Message {
-                    role: Role::Assistant,
-                    content: vec![ContentBlock::text("hi")],
-                },
+                message: Message::assistant("hi"),
                 finish_reason: Some(FinishReason::Stop),
                 logprobs: None,
             }],
@@ -49,9 +45,7 @@ impl Provider for FakeProvider {
                 prompt_tokens: 11,
                 completion_tokens: 22,
                 total_tokens: 33,
-                completion_tokens_details: None,
-                prompt_cache_hit_tokens: None,
-                prompt_cache_miss_tokens: None,
+                ..Default::default()
             }),
             system_fingerprint: None,
         })
@@ -66,23 +60,24 @@ impl Provider for FakeProvider {
 
     async fn anthropic_messages(
         &self,
-        _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<crabllm_core::AnthropicResponse, Error> {
+        _request: &crabllm_core::anthropic::Request,
+    ) -> Result<crabllm_core::anthropic::Response, Error> {
         Err(Error::not_implemented("anthropic_messages"))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::AnthropicStreamEvent, Error>>, Error> {
+        _request: &crabllm_core::anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::anthropic::StreamEvent, Error>>, Error>
+    {
         Err(Error::not_implemented("anthropic_messages_stream"))
     }
 
     async fn gemini_generate_content_stream(
         &self,
         _model: &str,
-        _request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        _request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         Err(Error::not_implemented("gemini streaming"))
     }
 }

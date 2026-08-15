@@ -16,10 +16,9 @@ use crate::{
     session::{GenerateOptions, GenerateRequest},
 };
 use crabllm_core::{
-    AnthropicStreamEvent, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, Choice, ChunkChoice, ContentBlock, Delta, Error, FinishReason,
-    FunctionCall, FunctionCallDelta, Message, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta,
-    ToolType,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
+    ChunkChoice, Delta, Error, FinishReason, FunctionCall, FunctionCallDelta, Message,
+    MessageContent, OpenAiUsage, Provider, Role, ToolCall, ToolCallDelta, ToolType, anthropic,
 };
 use futures::{channel::mpsc, stream::StreamExt};
 use std::{
@@ -167,21 +166,6 @@ impl Provider for MlxProvider {
             FinishReason::ToolCalls
         };
 
-        let mut blocks = Vec::new();
-        if !text.is_empty() {
-            blocks.push(ContentBlock::text(text));
-        }
-        for tc in tool_calls {
-            let input = crabllm_core::json::from_str(&tc.function.arguments)
-                .unwrap_or(serde_json::Value::Object(Default::default()));
-            blocks.push(ContentBlock::ToolUse {
-                id: tc.id,
-                name: tc.function.name,
-                input,
-                cache_control: None,
-            });
-        }
-
         Ok(ChatCompletionResponse {
             id: new_completion_id(),
             object: "chat.completion".to_string(),
@@ -191,7 +175,9 @@ impl Provider for MlxProvider {
                 index: 0,
                 message: Message {
                     role: Role::Assistant,
-                    content: blocks,
+                    content: (!text.is_empty()).then_some(MessageContent::Text(text)),
+                    tool_calls: (!tool_calls.is_empty()).then_some(tool_calls),
+                    ..Default::default()
                 },
                 finish_reason: Some(finish_reason),
                 logprobs: None,
@@ -200,9 +186,7 @@ impl Provider for MlxProvider {
                 prompt_tokens: output.prompt_tokens,
                 completion_tokens: output.completion_tokens,
                 total_tokens: output.prompt_tokens + output.completion_tokens,
-                completion_tokens_details: None,
-                prompt_cache_hit_tokens: None,
-                prompt_cache_miss_tokens: None,
+                ..Default::default()
             }),
             system_fingerprint: None,
         })
@@ -311,26 +295,26 @@ impl Provider for MlxProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &crabllm_core::AnthropicRequest,
-    ) -> Result<crabllm_core::AnthropicResponse, Error> {
+        request: &crabllm_core::anthropic::Request,
+    ) -> Result<crabllm_core::anthropic::Response, Error> {
         let ir_resp = self
             .complete(&crabllm_core::ir::Request::from(request.clone()))
             .await?;
-        Ok(crabllm_core::AnthropicResponse::from(&ir_resp))
+        Ok(crabllm_core::anthropic::Response::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &crabllm_core::anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         crabllm_provider::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         crabllm_provider::gemini_stream_via_chat(self, model, request).await
     }
 }
@@ -547,9 +531,7 @@ fn make_final_chunk(
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
-            completion_tokens_details: None,
-            prompt_cache_hit_tokens: None,
-            prompt_cache_miss_tokens: None,
+            ..Default::default()
         }),
         system_fingerprint: None,
     }

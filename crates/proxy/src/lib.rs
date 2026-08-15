@@ -1,11 +1,12 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Request},
+    http::{HeaderName, HeaderValue, StatusCode},
     middleware,
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
-use crabllm_core::{Prefix, Provider, Storage};
+use crabllm_core::{ExtensionError, Prefix, Provider, Storage};
 
 pub use auth::Principal;
 pub use state::{AppState, UsageEvent};
@@ -65,6 +66,24 @@ pub async fn log_request(request: Request, next: middleware::Next) -> Response {
         tracing::info!(%method, path, status = status.as_u16(), latency_ms, "request");
     }
 
+    response
+}
+
+/// Render an extension's short-circuit into a response, honouring any body or
+/// headers it overrode. Every `on_request` refusal goes through here, so an
+/// embedder's error contract is answered identically on every route.
+pub(crate) fn ext_response(err: ExtensionError) -> Response {
+    let (status, body, headers) = err.into_json();
+    let mut response = (
+        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        Json(body),
+    )
+        .into_response();
+    for (name, value) in headers {
+        if let (Ok(name), Ok(value)) = (HeaderName::try_from(name), HeaderValue::try_from(value)) {
+            response.headers_mut().insert(name, value);
+        }
+    }
     response
 }
 

@@ -128,15 +128,6 @@ pub struct ProviderConfig {
     /// first attempt, even if `max_retries` has not been exhausted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_deadline: Option<u64>,
-    /// AWS region for Bedrock provider.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub region: Option<String>,
-    /// AWS access key ID for Bedrock provider.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub access_key: Option<String>,
-    /// AWS secret access key for Bedrock provider.
-    #[serde(default, skip_serializing)]
-    pub secret_key: Option<String>,
 }
 
 fn default_shutdown_timeout() -> u64 {
@@ -162,7 +153,6 @@ pub enum ProviderKind {
     Openai,
     Anthropic,
     Google,
-    Bedrock,
     Ollama,
     Azure,
     /// Self-defined kind — any string that doesn't match a known variant.
@@ -178,7 +168,6 @@ impl ProviderKind {
             Self::Openai => "openai",
             Self::Anthropic => "anthropic",
             Self::Google => "google",
-            Self::Bedrock => "bedrock",
             Self::Ollama => "ollama",
             Self::Azure => "azure",
             Self::Custom(s) => s,
@@ -198,7 +187,6 @@ impl From<String> for ProviderKind {
             "openai" => Self::Openai,
             "anthropic" => Self::Anthropic,
             "google" => Self::Google,
-            "bedrock" => Self::Bedrock,
             "ollama" => Self::Ollama,
             "azure" => Self::Azure,
             _ => Self::Custom(s),

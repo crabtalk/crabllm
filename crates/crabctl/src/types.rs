@@ -70,7 +70,7 @@ pub struct BudgetEntry {
 }
 
 /// Provider implementation kind — mirrors server-side `ProviderKind`.
-/// Known kinds (openai, anthropic, google, bedrock, ollama, azure) pick named
+/// Known kinds (openai, anthropic, google, ollama, azure) pick named
 /// dispatch paths. Any other string is either a built-in compat provider
 /// (deepseek, zai, qwen, …) — endpoints from the server's compat table, needs
 /// `api_key`, no `base_url` — or a bare self-defined OpenAI-compatible kind,
@@ -96,12 +96,6 @@ pub struct CreateProviderRequest {
     pub api_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub region: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub access_key: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub secret_key: Option<String>,
 }
 
 /// GET /v1/admin/providers response (secrets masked).
@@ -116,8 +110,6 @@ pub struct ProviderSummary {
     pub max_retries: Option<u32>,
     pub api_version: Option<String>,
     pub timeout: Option<u64>,
-    pub region: Option<String>,
-    pub access_key_prefix: Option<String>,
     pub source: String,
 }
 

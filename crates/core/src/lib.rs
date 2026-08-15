@@ -8,8 +8,8 @@ pub use model_info::ModelInfo;
 pub use provider::{BoxStream, ByteStream, Provider};
 pub use retrying::Retrying;
 pub use storage::{BoxFuture, KvPairs, PREFIX_LEN, Prefix, Storage, storage_key};
-pub use types::ir;
 pub use types::*;
+pub use types::{anthropic, gemini, ir};
 pub use usage::Usage;
 
 pub mod codec;

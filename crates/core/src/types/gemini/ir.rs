@@ -1,19 +1,19 @@
 use crate::{
-    GeminiCandidate, GeminiContent, GeminiFinishReason, GeminiFunctionCall, GeminiPart,
-    GeminiResponse, GeminiRole, GeminiUsage, Usage,
+    Usage,
     ir::{self, Content, Message, Role, StopReason},
+    types::gemini,
 };
 use std::collections::{HashMap, VecDeque};
 
-impl From<&crate::GeminiRequest> for ir::Request {
-    fn from(req: &crate::GeminiRequest) -> Self {
+impl From<&crate::gemini::Request> for ir::Request {
+    fn from(req: &crate::gemini::Request) -> Self {
         let mut messages = Vec::with_capacity(req.contents.len());
         let mut pending_calls: HashMap<String, VecDeque<String>> = HashMap::new();
         let mut call_counter: u32 = 0;
 
         for content in &req.contents {
             let role = match content.role {
-                Some(GeminiRole::Model) => Role::Assistant,
+                Some(gemini::Role::Model) => Role::Assistant,
                 _ => Role::User,
             };
             let mut blocks = Vec::with_capacity(content.parts.len());
@@ -52,6 +52,22 @@ impl From<&crate::GeminiRequest> for ir::Request {
             })
             .unwrap_or_default();
 
+        // Gemini's `-1` means "let the model decide", which has no budget to
+        // read an effort from, so it lands on the default level.
+        let thinking = req
+            .generation_config
+            .as_ref()
+            .and_then(|cfg| cfg.thinking_config.as_ref())
+            .and_then(|t| t.thinking_budget)
+            .map(|budget| ir::Thinking {
+                effort: if budget < 0 {
+                    ir::Effort::default()
+                } else {
+                    ir::Effort::from_budget(budget as u32)
+                },
+                budget_tokens: (budget >= 0).then_some(budget as u32),
+            });
+
         let tools = req.tools.as_ref().map(|defs| {
             defs.iter()
                 .flat_map(|d| d.function_declarations.iter())
@@ -59,6 +75,7 @@ impl From<&crate::GeminiRequest> for ir::Request {
                     name: f.name.clone(),
                     description: f.description.clone(),
                     parameters: f.parameters.clone(),
+                    cache_control: None,
                 })
                 .collect()
         });
@@ -73,14 +90,14 @@ impl From<&crate::GeminiRequest> for ir::Request {
             stop,
             tools,
             tool_choice: None,
-            thinking: None,
+            thinking,
             stream: false,
         }
     }
 }
 
 fn gemini_part_to_content(
-    part: &GeminiPart,
+    part: &gemini::Part,
     pending_calls: &mut HashMap<String, VecDeque<String>>,
     call_counter: &mut u32,
 ) -> Vec<Content> {
@@ -120,16 +137,16 @@ fn gemini_part_to_content(
     out
 }
 
-impl From<GeminiResponse> for ir::Response {
-    fn from(resp: GeminiResponse) -> Self {
+impl From<gemini::Response> for ir::Response {
+    fn from(resp: gemini::Response) -> Self {
         let (content, stop_reason) = resp
             .candidates
             .into_iter()
             .next()
             .map(|c| {
                 let stop = c.finish_reason.as_ref().map(|r| match r {
-                    GeminiFinishReason::Stop => StopReason::End,
-                    GeminiFinishReason::MaxTokens => StopReason::MaxTokens,
+                    gemini::FinishReason::Stop => StopReason::End,
+                    gemini::FinishReason::MaxTokens => StopReason::MaxTokens,
                     _ => StopReason::End,
                 });
                 let blocks = c
@@ -162,7 +179,7 @@ impl From<GeminiResponse> for ir::Response {
     }
 }
 
-fn gemini_response_part_to_content(part: GeminiPart) -> Vec<Content> {
+fn gemini_response_part_to_content(part: gemini::Part) -> Vec<Content> {
     let mut out = Vec::new();
     if let Some(text) = part.text
         && !text.is_empty()
@@ -179,13 +196,13 @@ fn gemini_response_part_to_content(part: GeminiPart) -> Vec<Content> {
     out
 }
 
-impl From<&ir::Response> for GeminiResponse {
+impl From<&ir::Response> for gemini::Response {
     fn from(resp: &ir::Response) -> Self {
         let mut parts = Vec::with_capacity(resp.content.len());
         for block in &resp.content {
             match block {
                 Content::Text(text) if !text.is_empty() => {
-                    parts.push(GeminiPart {
+                    parts.push(gemini::Part {
                         text: Some(text.clone()),
                         function_call: None,
                         function_response: None,
@@ -194,9 +211,9 @@ impl From<&ir::Response> for GeminiResponse {
                 }
                 Content::Text(_) => {}
                 Content::ToolCall { name, input, .. } => {
-                    parts.push(GeminiPart {
+                    parts.push(gemini::Part {
                         text: None,
-                        function_call: Some(GeminiFunctionCall {
+                        function_call: Some(gemini::FunctionCall {
                             name: name.clone(),
                             args: input.clone(),
                         }),
@@ -209,19 +226,19 @@ impl From<&ir::Response> for GeminiResponse {
         }
 
         let finish_reason = resp.stop_reason.as_ref().map(|r| match r {
-            StopReason::End | StopReason::ToolUse => GeminiFinishReason::Stop,
-            StopReason::MaxTokens => GeminiFinishReason::MaxTokens,
+            StopReason::End | StopReason::ToolUse => gemini::FinishReason::Stop,
+            StopReason::MaxTokens => gemini::FinishReason::MaxTokens,
         });
 
-        GeminiResponse {
-            candidates: vec![GeminiCandidate {
-                content: Some(GeminiContent {
-                    role: Some(GeminiRole::Model),
+        gemini::Response {
+            candidates: vec![gemini::Candidate {
+                content: Some(gemini::Content {
+                    role: Some(gemini::Role::Model),
                     parts,
                 }),
                 finish_reason,
             }],
-            usage_metadata: Some(GeminiUsage::from(&resp.usage)),
+            usage_metadata: Some(gemini::Usage::from(&resp.usage)),
         }
     }
 }

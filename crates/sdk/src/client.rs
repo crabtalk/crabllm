@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ByteStream,
-    ChatCompletionRequest, Dialect, Error, ModelList, Provider, Retrying,
-    codec::anthropic::chunks_to_anthropic_events, ir,
+    BoxStream, ByteStream, ChatCompletionRequest, Dialect, Error, ModelList, Provider, Retrying,
+    anthropic, codec::anthropic::chunks_to_anthropic_events, ir,
 };
 use crabllm_http::HttpClient;
 use futures::StreamExt;
@@ -41,10 +40,6 @@ pub fn route(dialects: &[Dialect]) -> Route {
         Route::NativeElseTranslate
     }
 }
-
-/// Anthropic API version sent with `/v1/messages` requests. Re-exported from
-/// core so the gateway and this client can't drift.
-pub(crate) use crabllm_core::ANTHROPIC_VERSION;
 
 /// How the client authenticates to the gateway. The gateway accepts both, so
 /// pick whichever matches the calling convention you're emulating.
@@ -135,10 +130,10 @@ impl RawClient {
         self.http.post_stream(&self.url(path), &headers, body).await
     }
 
-    /// `GET /v1/models`. Returns the OpenAI-shaped [`ModelList`]; with
-    /// [`Auth::ApiKey`] the gateway answers in Anthropic shape instead, so this
-    /// is meaningful only for the default [`Auth::Bearer`].
-    pub(crate) async fn models(&self) -> Result<ModelList, Error> {
+    /// `GET /v1/models`, the request half of [`Provider::models`]. With
+    /// [`Auth::ApiKey`] the gateway answers in Anthropic shape instead, so
+    /// this is meaningful only for the default [`Auth::Bearer`].
+    pub(crate) async fn get_models(&self) -> Result<ModelList, Error> {
         let (name, value) = self.auth_header();
         let headers = [("content-type", JSON), (name, value.as_str())];
         let resp = self.http.get(&self.url("/v1/models"), &headers).await?;
@@ -214,24 +209,24 @@ impl Client {
     }
 
     /// Translate an Anthropic request through the OpenAI endpoint:
-    /// `AnthropicRequest → IR → chat completion → IR → AnthropicResponse`.
+    /// `anthropic::Request → IR → chat completion → IR → anthropic::Response`.
     /// Lossy (the IR normalizes), so it's the fallback for OpenAI-only models,
     /// never the path for Anthropic-native ones.
     pub(crate) async fn translate_anthropic(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let chat_req = ChatCompletionRequest::from(&ir::Request::from(request.clone()));
         let chat_resp = self.inner.chat_completion(&chat_req).await?;
-        Ok(AnthropicResponse::from(&ir::Response::from(chat_resp)))
+        Ok(anthropic::Response::from(&ir::Response::from(chat_resp)))
     }
 
     /// Streaming counterpart: chat-completion chunks re-encoded as Anthropic
     /// stream events.
     pub(crate) async fn translate_anthropic_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         let chat_req = ChatCompletionRequest::from(&ir::Request::from(request.clone()));
         let chunks = self.inner.chat_completion_stream(&chat_req).await?;
         Ok(chunks_to_anthropic_events(chunks).boxed())
@@ -252,7 +247,7 @@ impl Client {
     /// List the models the gateway exposes (`GET /v1/models`). Not retried —
     /// it's an idempotent listing, and not part of the `Provider` trait.
     pub async fn models(&self) -> Result<ModelList, Error> {
-        self.inner.get_ref().models().await
+        self.inner.get_ref().get_models().await
     }
 
     /// Start configuring a client — auth scheme, retries, timeout.

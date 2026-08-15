@@ -8,14 +8,14 @@ One API format. Many providers. Low overhead.
 ## What It Does
 
 You send requests in OpenAI format to crabllm. It routes them to the configured
-provider — OpenAI, Anthropic, Google Gemini, Azure OpenAI, AWS Bedrock, or
+provider — OpenAI, Anthropic, Google Gemini, Azure OpenAI, or
 Ollama — translating the request and response as needed.
 
 The full HTTP API surface is documented interactively at [crabtalk.github.io/crabllm/api](https://crabtalk.github.io/crabllm/api).
 
 Your application talks to one endpoint. Crabllm handles the rest:
 
-- **Provider translation** — Anthropic, Google, and Bedrock have their own API
+- **Provider translation** — Anthropic and Google have their own API
   formats. Crabllm translates automatically.
 - **Routing** — Weighted random selection across multiple providers for the same
   model. Automatic fallback when a provider fails.
@@ -43,7 +43,6 @@ Your application talks to one endpoint. Crabllm handles the rest:
 | Anthropic provider | yes | yes |
 | Google Gemini provider | yes | yes |
 | Azure OpenAI provider | yes | yes |
-| AWS Bedrock provider | yes | yes |
 | Tool/function calling | yes | yes |
 | SSE streaming | yes | yes |
 | Virtual keys + auth | yes | yes |
