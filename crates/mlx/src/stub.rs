@@ -2,7 +2,7 @@
 
 use crabllm_core::{
     BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error, Provider,
-    anthropic, anthropic::StreamEvent, gemini, gemini::Request, gemini::Response,
+    anthropic, gemini,
 };
 use std::sync::Arc;
 
