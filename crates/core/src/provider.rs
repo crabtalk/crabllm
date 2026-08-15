@@ -1,8 +1,7 @@
 use crate::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, ModelList,
-    MultipartField, ir,
+    AudioSpeechRequest, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    EmbeddingRequest, EmbeddingResponse, Error, ImageRequest, ModelList, MultipartField, anthropic,
+    gemini, ir,
 };
 use bytes::Bytes;
 use futures_core::Stream;
@@ -50,43 +49,44 @@ pub trait Provider: Send + Sync {
 
     fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> impl Future<Output = Result<AnthropicResponse, Error>> + Send;
+        request: &anthropic::Request,
+    ) -> impl Future<Output = Result<anthropic::Response, Error>> + Send;
 
     fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error>>
-    + Send;
+        request: &anthropic::Request,
+    ) -> impl Future<
+        Output = Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error>,
+    > + Send;
 
     /// Gemini Generative Language API: `:generateContent`.
     ///
-    /// Default impl converts `GeminiRequest` to canonical Anthropic IR
+    /// Default impl converts `gemini::Request` to canonical Anthropic IR
     /// (filling `model` from the path), dispatches to `anthropic_messages`,
     /// and converts the response back. Providers that natively speak Gemini
     /// (e.g. `GoogleProvider`) override for direct dispatch.
     fn gemini_generate_content(
         &self,
         model: &str,
-        request: &GeminiRequest,
-    ) -> impl Future<Output = Result<GeminiResponse, Error>> + Send {
+        request: &gemini::Request,
+    ) -> impl Future<Output = Result<gemini::Response, Error>> + Send {
         async move {
             let mut ir_req = ir::Request::from(request);
             ir_req.model = model.to_string();
             let ir_resp = self.complete(&ir_req).await?;
-            Ok(GeminiResponse::from(&ir_resp))
+            Ok(gemini::Response::from(&ir_resp))
         }
     }
 
     /// Gemini Generative Language API: `:streamGenerateContent`.
     ///
-    /// Returns native `GeminiResponse` items — each SSE chunk from Google
+    /// Returns native `gemini::Response` items — each SSE chunk from Google
     /// is a full response object with a single candidate.
     fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &GeminiRequest,
-    ) -> impl Future<Output = Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error>> + Send;
+        request: &gemini::Request,
+    ) -> impl Future<Output = Result<BoxStream<'static, Result<gemini::Response, Error>>, Error>> + Send;
 
     fn complete(
         &self,
@@ -223,7 +223,7 @@ pub trait Provider: Send + Sync {
         raw_body: Bytes,
     ) -> impl Future<Output = Result<Bytes, Error>> + Send {
         async move {
-            let request: GeminiRequest =
+            let request: gemini::Request =
                 crate::json::from_slice(&raw_body).map_err(|e| Error::Invalid(e.to_string()))?;
             let resp = self.gemini_generate_content(model, &request).await?;
             Ok(Bytes::from(

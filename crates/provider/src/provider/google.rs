@@ -4,11 +4,9 @@ use crabllm_core::codec::gemini::{
     candidate_to_blocks, extract_signature_from_id, gemini_event_stream, gemini_responses_to_chunks,
 };
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, Choice, ContentBlock, Error, GeminiContent,
-    GeminiFunctionCall, GeminiFunctionDecl, GeminiFunctionResponse, GeminiPart, GeminiRequest,
-    GeminiResponse, GeminiRole, GeminiToolDef, GenerationConfig, Message, Model, ModelList,
-    OpenAiUsage, Provider, Role, ToolResultContent, Usage,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
+    ContentBlock, Error, Message, Model, ModelList, OpenAiUsage, Provider, Role, ToolResultContent,
+    Usage, anthropic, gemini,
 };
 use futures::StreamExt;
 
@@ -36,7 +34,7 @@ impl Provider for GoogleProvider {
             .post(&url, &headers, body.into())
             .await?
             .error_for_status()?;
-        let gemini_resp: GeminiResponse =
+        let gemini_resp: gemini::Response =
             crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
         Ok(translate_response(gemini_resp, &request.model))
     }
@@ -63,26 +61,26 @@ impl Provider for GoogleProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let ir_resp = self
             .complete(&crabllm_core::ir::Request::from(request.clone()))
             .await?;
-        Ok(AnthropicResponse::from(&ir_resp))
+        Ok(anthropic::Response::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         crate::anthropic_stream_via_chat(self, request).await
     }
 
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        request: &gemini::Request,
+    ) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
         let url = format!("{BASE_URL}/models/{model}:streamGenerateContent?alt=sse");
         let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let headers = [
@@ -202,7 +200,7 @@ fn is_gemini_3_or_newer(model: &str) -> bool {
 
 // ── Translation ──
 
-fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
+fn translate_request(request: &ChatCompletionRequest) -> gemini::Request {
     // Build tool_use id → name index so ToolResult blocks can resolve the
     // function name for Gemini's functionResponse.
     let mut tc_names = std::collections::HashMap::<&str, &str>::new();
@@ -222,7 +220,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
         if msg.role == Role::System {
             for block in &msg.content {
                 if let ContentBlock::Text { text, .. } = block {
-                    system_parts.push(GeminiPart {
+                    system_parts.push(gemini::Part {
                         text: Some(text.clone()),
                         function_call: None,
                         function_response: None,
@@ -232,14 +230,14 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
             }
         } else {
             let role = match msg.role {
-                Role::Assistant => GeminiRole::Model,
-                _ => GeminiRole::User,
+                Role::Assistant => gemini::Role::Model,
+                _ => gemini::Role::User,
             };
             let mut parts = Vec::new();
             for block in &msg.content {
                 match block {
                     ContentBlock::Text { text, .. } if !text.is_empty() => {
-                        parts.push(GeminiPart {
+                        parts.push(gemini::Part {
                             text: Some(text.clone()),
                             function_call: None,
                             function_response: None,
@@ -254,9 +252,9 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                             .or_else(|| {
                                 needs_skip_sentinel.then(|| SKIP_VALIDATOR_SIGNATURE.to_string())
                             });
-                        parts.push(GeminiPart {
+                        parts.push(gemini::Part {
                             text: None,
-                            function_call: Some(GeminiFunctionCall {
+                            function_call: Some(gemini::FunctionCall {
                                 name: name.clone(),
                                 args: input.clone(),
                             }),
@@ -288,10 +286,10 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                         };
                         let response_val = crabllm_core::json::from_str(&text)
                             .unwrap_or(serde_json::json!({"result": text}));
-                        parts.push(GeminiPart {
+                        parts.push(gemini::Part {
                             text: None,
                             function_call: None,
-                            function_response: Some(GeminiFunctionResponse {
+                            function_response: Some(gemini::FunctionResponse {
                                 name: fn_name,
                                 response: response_val,
                             }),
@@ -302,7 +300,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
                 }
             }
             if !parts.is_empty() {
-                contents.push(GeminiContent {
+                contents.push(gemini::Content {
                     role: Some(role),
                     parts,
                 });
@@ -313,7 +311,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     let system_instruction = if system_parts.is_empty() {
         None
     } else {
-        Some(GeminiContent {
+        Some(gemini::Content {
             role: None,
             parts: system_parts,
         })
@@ -324,7 +322,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
         crabllm_core::Stop::Multiple(v) => v.clone(),
     });
 
-    let generation_config = Some(GenerationConfig {
+    let generation_config = Some(gemini::GenerationConfig {
         max_output_tokens: request.anthropic_max_tokens.or(request.max_tokens),
         temperature: request.temperature,
         top_p: request.top_p,
@@ -332,10 +330,10 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     });
 
     let tools = request.tools.as_ref().map(|tools| {
-        vec![GeminiToolDef {
+        vec![gemini::ToolDef {
             function_declarations: tools
                 .iter()
-                .map(|t| GeminiFunctionDecl {
+                .map(|t| gemini::FunctionDecl {
                     name: t.function.name.clone(),
                     description: t.function.description.clone(),
                     parameters: t.function.parameters.clone().map(|mut p| {
@@ -359,7 +357,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
         }]
     });
 
-    GeminiRequest {
+    gemini::Request {
         contents,
         system_instruction,
         generation_config,
@@ -367,7 +365,7 @@ fn translate_request(request: &ChatCompletionRequest) -> GeminiRequest {
     }
 }
 
-fn translate_response(resp: GeminiResponse, model: &str) -> ChatCompletionResponse {
+fn translate_response(resp: gemini::Response, model: &str) -> ChatCompletionResponse {
     let (blocks, finish_reason) = resp
         .candidates
         .first()

@@ -2,10 +2,9 @@ use arc_swap::ArcSwap;
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ByteStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    EmbeddingRequest, EmbeddingResponse, Error, Extension, GatewayConfig, ImageRequest,
-    MultipartField, Provider, Storage,
+    AudioSpeechRequest, BoxStream, ByteStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, Extension, GatewayConfig,
+    ImageRequest, MultipartField, Provider, Storage, anthropic,
 };
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use crabllm_proxy::{
@@ -240,8 +239,8 @@ impl Provider for Dispatch {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         match self {
             Self::Remote(p) => p.anthropic_messages(request).await,
         }
@@ -249,8 +248,8 @@ impl Provider for Dispatch {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         match self {
             Self::Remote(p) => p.anthropic_messages_stream(request).await,
         }
@@ -305,8 +304,8 @@ impl Provider for Dispatch {
     async fn gemini_generate_content(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<crabllm_core::gemini::Response, Error> {
         match self {
             Self::Remote(p) => p.gemini_generate_content(model, request).await,
         }
@@ -315,8 +314,8 @@ impl Provider for Dispatch {
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         match self {
             Self::Remote(p) => p.gemini_generate_content_stream(model, request).await,
         }

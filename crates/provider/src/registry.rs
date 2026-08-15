@@ -1,10 +1,9 @@
 use crate::{RemoteProvider, compat, make_client};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Dialect, EmbeddingRequest,
-    EmbeddingResponse, Error, GatewayConfig, ImageRequest, MultipartField, Provider,
-    ProviderConfig, ProviderKind,
+    AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, Dialect, EmbeddingRequest, EmbeddingResponse, Error, GatewayConfig,
+    ImageRequest, MultipartField, Provider, ProviderConfig, ProviderKind, anthropic,
 };
 use rand::Rng;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -413,8 +412,8 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let model = self.resolve(&request.model);
         let deployment = self
             .dispatch(model)
@@ -424,8 +423,8 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         let model = self.resolve(&request.model);
         let deployment = self
             .dispatch(model)
@@ -472,8 +471,8 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
     async fn gemini_generate_content(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<crabllm_core::gemini::Response, Error> {
         let resolved = self.resolve(model);
         let deployment = self
             .dispatch(resolved)
@@ -487,8 +486,8 @@ impl<P: Provider> Provider for ProviderRegistry<P> {
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         let resolved = self.resolve(model);
         let deployment = self
             .dispatch(resolved)

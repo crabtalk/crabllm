@@ -2,10 +2,9 @@ use crate::provider::schema;
 use crate::{ByteStream, HttpClient};
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicResponse,
-    AnthropicStreamEvent, AnthropicSystem, AnthropicTool, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, ContentBlock, DEFAULT_MAX_TOKENS, Error, Model,
-    ModelList, Provider, Role, Stop, ThinkingConfig, ToolChoice,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ContentBlock,
+    Error, Model, ModelList, Provider, Role, Stop, ToolChoice, anthropic,
+    anthropic::Messages,
     codec::anthropic::{anthropic_event_stream, anthropic_events_to_chunks},
 };
 use futures::stream::StreamExt;
@@ -38,7 +37,7 @@ impl Provider for AnthropicProvider {
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
-            ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+            ("anthropic-version", crabllm_core::anthropic::VERSION),
             ("content-type", "application/json"),
         ];
         for (k, v) in &auth {
@@ -54,13 +53,13 @@ impl Provider for AnthropicProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let body = crabllm_core::json::to_vec(request).map_err(|e| Error::Encode(e.to_string()))?;
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
-            ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+            ("anthropic-version", crabllm_core::anthropic::VERSION),
             ("content-type", "application/json"),
         ];
         for (k, v) in &auth {
@@ -79,15 +78,15 @@ impl Provider for AnthropicProvider {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         let mut req = request.clone();
         req.stream = Some(true);
         let body = crabllm_core::json::to_vec(&req).map_err(|e| Error::Encode(e.to_string()))?;
         let url = format!("{}/messages", self.base_url.trim_end_matches('/'));
         let auth = auth_headers(&self.api_key);
         let mut headers: Vec<(&str, &str)> = vec![
-            ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+            ("anthropic-version", crabllm_core::anthropic::VERSION),
             ("content-type", "application/json"),
         ];
         for (k, v) in &auth {
@@ -103,8 +102,8 @@ impl Provider for AnthropicProvider {
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         crate::gemini_stream_via_chat(self, model, request).await
     }
 
@@ -112,7 +111,7 @@ impl Provider for AnthropicProvider {
         &self,
         request: &crabllm_core::ir::Request,
     ) -> Result<crabllm_core::ir::Response, Error> {
-        let native = crabllm_core::AnthropicRequest::from(request);
+        let native = crabllm_core::anthropic::Request::from(request);
         let resp = self.anthropic_messages(&native).await?;
         Ok(crabllm_core::ir::Response::from(resp))
     }
@@ -121,7 +120,7 @@ impl Provider for AnthropicProvider {
         &self,
         request: &crabllm_core::ir::Request,
     ) -> Result<BoxStream<'static, Result<crabllm_core::ir::StreamEvent, Error>>, Error> {
-        let mut native = crabllm_core::AnthropicRequest::from(request);
+        let mut native = crabllm_core::anthropic::Request::from(request);
         native.stream = Some(true);
         let stream = self.anthropic_messages_stream(&native).await?;
         Ok(stream
@@ -161,7 +160,7 @@ const OAUTH_BETA: &str = "oauth-2025-04-20";
 
 // ── Translation ──
 
-fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
+fn translate_request(request: &ChatCompletionRequest) -> anthropic::Request {
     let mut system_blocks = Vec::new();
     let mut messages = Vec::new();
 
@@ -173,9 +172,9 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                 }
             }
         } else {
-            messages.push(AnthropicMessage {
+            messages.push(anthropic::Message {
                 role: msg.role.as_str().to_string(),
-                content: AnthropicContent::Blocks(msg.content.clone()),
+                content: anthropic::Content::Blocks(msg.content.clone()),
             });
         }
     }
@@ -195,7 +194,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
             }
         )
     }) {
-        Some(AnthropicSystem::Blocks(system_blocks))
+        Some(anthropic::System::Blocks(system_blocks))
     } else {
         let joined = system_blocks
             .iter()
@@ -205,7 +204,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        Some(AnthropicSystem::Text(joined))
+        Some(anthropic::System::Text(joined))
     };
 
     // Anthropic rejects `tool_choice: "none"` sent alongside a tools array, so
@@ -218,7 +217,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
         request.tools.as_ref().map(|tools| {
             tools
                 .iter()
-                .map(|t| AnthropicTool {
+                .map(|t| anthropic::Tool {
                     name: t.function.name.clone(),
                     description: t.function.description.clone(),
                     input_schema: {
@@ -255,12 +254,12 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
     let max_tokens = request
         .anthropic_max_tokens
         .or(request.max_tokens)
-        .unwrap_or(DEFAULT_MAX_TOKENS);
+        .unwrap_or(anthropic::DEFAULT_MAX_TOKENS);
 
     let thinking = request.thinking.clone().or_else(|| {
         request.extra.get("thinking").and_then(|v| {
             if v.as_bool() == Some(true) {
-                Some(ThinkingConfig {
+                Some(anthropic::ThinkingConfig {
                     kind: "enabled".to_string(),
                     budget_tokens: Some(max_tokens.saturating_sub(1)),
                 })
@@ -269,7 +268,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
                     .get("budget_tokens")
                     .and_then(|b| b.as_u64())
                     .map(|b| b as u32);
-                Some(ThinkingConfig {
+                Some(anthropic::ThinkingConfig {
                     kind: "enabled".to_string(),
                     budget_tokens: budget,
                 })
@@ -279,7 +278,7 @@ fn translate_request(request: &ChatCompletionRequest) -> AnthropicRequest {
         })
     });
 
-    AnthropicRequest {
+    anthropic::Request {
         model: request.model.clone(),
         messages,
         max_tokens,
@@ -336,7 +335,7 @@ pub async fn models(
     let url = format!("{}/models?limit=1000", base_url.trim_end_matches('/'));
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> =
-        vec![("anthropic-version", crabllm_core::ANTHROPIC_VERSION)];
+        vec![("anthropic-version", crabllm_core::anthropic::VERSION)];
     for (k, v) in &auth {
         headers.push((k, v.as_str()));
     }
@@ -368,7 +367,7 @@ pub async fn anthropic_messages_raw(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
-        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+        ("anthropic-version", crabllm_core::anthropic::VERSION),
         ("content-type", "application/json"),
     ];
     for (k, v) in &auth {
@@ -392,7 +391,7 @@ pub async fn anthropic_messages_stream(
     let url = format!("{}/messages", base_url.trim_end_matches('/'));
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
-        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+        ("anthropic-version", crabllm_core::anthropic::VERSION),
         ("content-type", "application/json"),
     ];
     for (k, v) in &auth {
@@ -420,7 +419,7 @@ pub async fn chat_completion(
         crabllm_core::json::to_vec(&anthropic_req).map_err(|e| Error::Encode(e.to_string()))?;
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> = vec![
-        ("anthropic-version", crabllm_core::ANTHROPIC_VERSION),
+        ("anthropic-version", crabllm_core::anthropic::VERSION),
         ("content-type", "application/json"),
     ];
     for (k, v) in &auth {
@@ -434,7 +433,7 @@ pub async fn chat_completion(
         .await?
         .error_for_status()?;
 
-    let anthropic_resp: AnthropicResponse =
+    let anthropic_resp: anthropic::Response =
         crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
     let ir_resp = crabllm_core::ir::Response::from(anthropic_resp);
     Ok(ChatCompletionResponse::from(&ir_resp))

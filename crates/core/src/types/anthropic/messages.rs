@@ -1,10 +1,10 @@
-use crate::types::anthropic::{AnthropicContent, AnthropicMessage};
+use crate::types::anthropic::{Content, Message};
 use crate::types::openai::{ContentBlock, ToolResultContent};
 
 /// Operations on a wire-level message list. Lives as a trait so call sites
 /// read as `messages.coalesce_tool_results()` rather than as free functions
-/// taking `&mut Vec<AnthropicMessage>`.
-pub trait AnthropicMessages {
+/// taking `&mut Vec<Message>`.
+pub trait Messages {
     /// Merge contiguous user messages whose blocks are entirely `tool_result`s
     /// into a single message. Parallel tool calls produce one user message per
     /// dispatch on the wire; Anthropic requires every `tool_use` block's
@@ -19,13 +19,13 @@ pub trait AnthropicMessages {
     /// Run AFTER [`coalesce_tool_results`] so the lookup sees every sibling
     /// `tool_result` in one place.
     ///
-    /// [`coalesce_tool_results`]: AnthropicMessages::coalesce_tool_results
+    /// [`coalesce_tool_results`]: Messages::coalesce_tool_results
     fn ensure_tool_pairing(&mut self);
 }
 
-impl AnthropicMessages for Vec<AnthropicMessage> {
+impl Messages for Vec<Message> {
     fn coalesce_tool_results(&mut self) {
-        let mut out: Vec<AnthropicMessage> = Vec::with_capacity(self.len());
+        let mut out: Vec<Message> = Vec::with_capacity(self.len());
         for msg in self.drain(..) {
             let mergeable = out.last().is_some_and(|prev| {
                 prev.is_tool_result_only_user() && msg.is_tool_result_only_user()
@@ -38,7 +38,7 @@ impl AnthropicMessages for Vec<AnthropicMessage> {
                 out.push(msg);
                 continue;
             };
-            if let AnthropicContent::Blocks(source) = msg.content {
+            if let Content::Blocks(source) = msg.content {
                 target.extend(source);
             }
         }
@@ -82,9 +82,9 @@ impl AnthropicMessages for Vec<AnthropicMessage> {
             if !next_is_user {
                 self.insert(
                     i + 1,
-                    AnthropicMessage {
+                    Message {
                         role: "user".to_string(),
-                        content: AnthropicContent::Blocks(synthetic),
+                        content: Content::Blocks(synthetic),
                     },
                 );
                 continue;

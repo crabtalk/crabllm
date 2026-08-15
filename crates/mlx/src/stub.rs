@@ -1,8 +1,8 @@
 //! Non-Apple stub. Every call returns `Error::not_implemented`.
 
 use crabllm_core::{
-    AnthropicStreamEvent, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, Error, GeminiRequest, GeminiResponse, Provider,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error, Provider,
+    anthropic, anthropic::StreamEvent, gemini, gemini::Request, gemini::Response,
 };
 use std::sync::Arc;
 
@@ -47,23 +47,23 @@ impl Provider for MlxProvider {
 
     async fn anthropic_messages(
         &self,
-        _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<crabllm_core::AnthropicResponse, Error> {
+        _request: &crabllm_core::anthropic::Request,
+    ) -> Result<crabllm_core::anthropic::Response, Error> {
         Err(Error::not_implemented(STUB_MSG))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        _request: &crabllm_core::AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        _request: &crabllm_core::anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         Err(Error::not_implemented(STUB_MSG))
     }
 
     async fn gemini_generate_content_stream(
         &self,
         _model: &str,
-        _request: &GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        _request: &gemini::Request,
+    ) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
         Err(Error::not_implemented(STUB_MSG))
     }
 }

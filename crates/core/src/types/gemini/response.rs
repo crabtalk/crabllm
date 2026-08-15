@@ -1,20 +1,19 @@
-use crate::Usage;
-use crate::types::gemini::GeminiContent;
-use crate::types::openai::FinishReason;
+use crate::types::gemini::Content;
+use crate::types::openai;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GeminiResponse {
+pub struct Response {
     #[serde(default)]
-    pub candidates: Vec<GeminiCandidate>,
+    pub candidates: Vec<Candidate>,
     #[serde(default)]
-    pub usage_metadata: Option<GeminiUsage>,
+    pub usage_metadata: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum GeminiFinishReason {
+pub enum FinishReason {
     Stop,
     MaxTokens,
     Safety,
@@ -29,11 +28,11 @@ pub enum GeminiFinishReason {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GeminiCandidate {
+pub struct Candidate {
     #[serde(default)]
-    pub content: Option<GeminiContent>,
+    pub content: Option<Content>,
     #[serde(default)]
-    pub finish_reason: Option<GeminiFinishReason>,
+    pub finish_reason: Option<FinishReason>,
 }
 
 /// Gemini wire-format usage. Field semantics follow Google's convention:
@@ -42,7 +41,7 @@ pub struct GeminiCandidate {
 /// [`Usage`] for any internal billing or metering use.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GeminiUsage {
+pub struct Usage {
     #[serde(default)]
     pub prompt_token_count: u32,
     #[serde(default)]
@@ -55,7 +54,7 @@ pub struct GeminiUsage {
     pub thoughts_token_count: Option<u32>,
 }
 
-impl From<&str> for GeminiFinishReason {
+impl From<&str> for FinishReason {
     fn from(reason: &str) -> Self {
         match reason {
             "end_turn" | "tool_use" | "stop_sequence" => Self::Stop,
@@ -66,37 +65,35 @@ impl From<&str> for GeminiFinishReason {
     }
 }
 
-impl From<&FinishReason> for GeminiFinishReason {
+impl From<&openai::FinishReason> for FinishReason {
+    fn from(r: &openai::FinishReason) -> Self {
+        match r {
+            openai::FinishReason::Stop | openai::FinishReason::ToolCalls => Self::Stop,
+            openai::FinishReason::Length => Self::MaxTokens,
+            openai::FinishReason::ContentFilter => Self::Safety,
+            openai::FinishReason::Custom(_) => Self::Other,
+        }
+    }
+}
+
+impl From<&FinishReason> for openai::FinishReason {
     fn from(r: &FinishReason) -> Self {
         match r {
-            FinishReason::Stop | FinishReason::ToolCalls => GeminiFinishReason::Stop,
-            FinishReason::Length => GeminiFinishReason::MaxTokens,
-            FinishReason::ContentFilter => GeminiFinishReason::Safety,
-            FinishReason::Custom(_) => GeminiFinishReason::Other,
+            FinishReason::Stop => Self::Stop,
+            FinishReason::MaxTokens => Self::Length,
+            FinishReason::Safety
+            | FinishReason::Blocklist
+            | FinishReason::ProhibitedContent
+            | FinishReason::Spii => Self::ContentFilter,
+            FinishReason::Recitation => Self::Custom("recitation".into()),
+            FinishReason::MalformedFunctionCall => Self::Custom("malformed_function_call".into()),
+            FinishReason::Other => Self::Custom("other".into()),
         }
     }
 }
 
-impl From<&GeminiFinishReason> for FinishReason {
-    fn from(r: &GeminiFinishReason) -> Self {
-        match r {
-            GeminiFinishReason::Stop => FinishReason::Stop,
-            GeminiFinishReason::MaxTokens => FinishReason::Length,
-            GeminiFinishReason::Safety
-            | GeminiFinishReason::Blocklist
-            | GeminiFinishReason::ProhibitedContent
-            | GeminiFinishReason::Spii => FinishReason::ContentFilter,
-            GeminiFinishReason::Recitation => FinishReason::Custom("recitation".into()),
-            GeminiFinishReason::MalformedFunctionCall => {
-                FinishReason::Custom("malformed_function_call".into())
-            }
-            GeminiFinishReason::Other => FinishReason::Custom("other".into()),
-        }
-    }
-}
-
-impl From<&GeminiUsage> for Usage {
-    fn from(u: &GeminiUsage) -> Self {
+impl From<&Usage> for crate::Usage {
+    fn from(u: &Usage) -> Self {
         // Gemini's `prompt_token_count` is the total prompt; the cached subset
         // is reported separately. Split into canonical input + cache_read.
         // Gemini does not expose cache-write counts.
@@ -116,8 +113,8 @@ impl From<&GeminiUsage> for Usage {
     }
 }
 
-impl From<&Usage> for GeminiUsage {
-    fn from(u: &Usage) -> Self {
+impl From<&crate::Usage> for Usage {
+    fn from(u: &crate::Usage) -> Self {
         Self {
             prompt_token_count: u.prompt_tokens(),
             candidates_token_count: u.output_tokens,

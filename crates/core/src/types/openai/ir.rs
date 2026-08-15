@@ -167,10 +167,13 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
             ir::ToolChoice::Named(name) => crate::ToolChoice::Function { name: name.clone() },
         });
 
-        let thinking = req.thinking.as_ref().map(|t| crate::ThinkingConfig {
-            kind: "enabled".to_string(),
-            budget_tokens: t.budget_tokens,
-        });
+        let thinking = req
+            .thinking
+            .as_ref()
+            .map(|t| crate::anthropic::ThinkingConfig {
+                kind: "enabled".to_string(),
+                budget_tokens: t.budget_tokens,
+            });
 
         crate::ChatCompletionRequest {
             model: req.model.clone(),

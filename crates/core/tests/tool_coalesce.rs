@@ -2,7 +2,7 @@
 //! per `tool_result`. Anthropic requires them merged into the single user
 //! message after the assistant, so the IR→Anthropic translation must coalesce
 //! them. Before this was wired in, the split reached Anthropic and was rejected.
-use crabllm_core::{AnthropicRequest, ir};
+use crabllm_core::{anthropic, ir};
 
 fn tool_result(id: &str) -> ir::Message {
     ir::Message {
@@ -35,7 +35,7 @@ fn parallel_tool_results_coalesce_into_one_user_message() {
         stream: false,
     };
 
-    let anthropic = AnthropicRequest::from(&req);
+    let anthropic = anthropic::Request::from(&req);
 
     // assistant + a single merged user message — not assistant + two users.
     assert_eq!(

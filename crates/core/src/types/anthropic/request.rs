@@ -1,4 +1,4 @@
-use crate::types::anthropic::AnthropicMessage;
+use crate::types::anthropic::Message;
 use crate::types::openai::ContentBlock;
 use serde::{Deserialize, Serialize};
 
@@ -6,7 +6,7 @@ pub const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 /// The `anthropic-version` header value the gateway and its clients send on
 /// Anthropic Messages requests. Single source so the two can't drift.
-pub const ANTHROPIC_VERSION: &str = "2023-06-01";
+pub const VERSION: &str = "2023-06-01";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -19,12 +19,12 @@ pub struct ThinkingConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AnthropicRequest {
+pub struct Request {
     pub model: String,
-    pub messages: Vec<AnthropicMessage>,
+    pub messages: Vec<Message>,
     pub max_tokens: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system: Option<AnthropicSystem>,
+    pub system: Option<System>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -32,7 +32,7 @@ pub struct AnthropicRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<AnthropicTool>>,
+    pub tools: Option<Vec<Tool>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub tool_choice: Option<serde_json::Value>,
@@ -46,14 +46,14 @@ pub struct AnthropicRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(untagged)]
-pub enum AnthropicSystem {
+pub enum System {
     Text(String),
     Blocks(Vec<ContentBlock>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AnthropicTool {
+pub struct Tool {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

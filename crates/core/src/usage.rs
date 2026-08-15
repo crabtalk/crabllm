@@ -52,7 +52,7 @@ impl Usage {
 }
 
 mod peek {
-    use crate::types::{AnthropicUsage, GeminiUsage, OpenAiUsage};
+    use crate::types::OpenAiUsage;
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -62,13 +62,13 @@ mod peek {
 
     #[derive(Deserialize)]
     pub struct Anthropic {
-        pub usage: Option<AnthropicUsage>,
+        pub usage: Option<crate::anthropic::Usage>,
     }
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Gemini {
-        pub usage_metadata: Option<GeminiUsage>,
+        pub usage_metadata: Option<crate::gemini::Usage>,
     }
 }
 

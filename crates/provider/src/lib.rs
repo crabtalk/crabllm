@@ -1,9 +1,8 @@
 use bytes::Bytes;
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, AudioSpeechRequest, BoxStream,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest,
-    EmbeddingResponse, Error, GeminiRequest, GeminiResponse, ImageRequest, ModelList,
-    MultipartField, Provider, ProviderConfig, ProviderKind, ir,
+    AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest, ModelList,
+    MultipartField, Provider, ProviderConfig, ProviderKind, anthropic, gemini, ir,
 };
 use futures::StreamExt;
 pub use registry::{Deployment, ProviderRegistry, validate_provider};
@@ -56,18 +55,18 @@ mod bedrock_stub {
 
         async fn anthropic_messages(
             &self,
-            _request: &crabllm_core::AnthropicRequest,
-        ) -> Result<crabllm_core::AnthropicResponse, crabllm_core::Error> {
+            _request: &crabllm_core::anthropic::Request,
+        ) -> Result<crabllm_core::anthropic::Response, crabllm_core::Error> {
             Err(crabllm_core::Error::not_implemented("bedrock anthropic"))
         }
 
         async fn anthropic_messages_stream(
             &self,
-            _request: &crabllm_core::AnthropicRequest,
+            _request: &crabllm_core::anthropic::Request,
         ) -> Result<
             crabllm_core::BoxStream<
                 'static,
-                Result<crabllm_core::AnthropicStreamEvent, crabllm_core::Error>,
+                Result<crabllm_core::anthropic::StreamEvent, crabllm_core::Error>,
             >,
             crabllm_core::Error,
         > {
@@ -79,11 +78,11 @@ mod bedrock_stub {
         async fn gemini_generate_content_stream(
             &self,
             _model: &str,
-            _request: &crabllm_core::GeminiRequest,
+            _request: &crabllm_core::gemini::Request,
         ) -> Result<
             crabllm_core::BoxStream<
                 'static,
-                Result<crabllm_core::GeminiResponse, crabllm_core::Error>,
+                Result<crabllm_core::gemini::Response, crabllm_core::Error>,
             >,
             crabllm_core::Error,
         > {
@@ -107,11 +106,11 @@ pub mod openai_client {
 
 /// Shared fallback for providers that don't natively speak Anthropic
 /// streaming: convert the request → `chat_completion_stream` → wrap
-/// each chunk as an `AnthropicStreamEvent`.
+/// each chunk as an `anthropic::StreamEvent`.
 pub async fn anthropic_stream_via_chat(
     provider: &(impl Provider + ?Sized),
-    request: &AnthropicRequest,
-) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+    request: &anthropic::Request,
+) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
     let mut ir_req = ir::Request::from(request.clone());
     ir_req.stream = true;
     let chat_req = ChatCompletionRequest::from(&ir_req);
@@ -121,12 +120,12 @@ pub async fn anthropic_stream_via_chat(
 
 /// Shared fallback for providers that don't natively speak Gemini
 /// streaming: convert the request → `chat_completion_stream` → wrap
-/// each chunk as a `GeminiResponse`.
+/// each chunk as a `gemini::Response`.
 pub async fn gemini_stream_via_chat(
     provider: &(impl Provider + ?Sized),
     model: &str,
-    request: &GeminiRequest,
-) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+    request: &gemini::Request,
+) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
     let mut ir_req = ir::Request::from(request);
     ir_req.model = model.to_string();
     ir_req.stream = true;
@@ -359,8 +358,8 @@ impl Provider for RemoteProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         match self {
             Self::Openai(p) => p.anthropic_messages(request).await,
             Self::Anthropic(p) => p.anthropic_messages(request).await,
@@ -373,8 +372,8 @@ impl Provider for RemoteProvider {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         match self {
             Self::Openai(p) => p.anthropic_messages_stream(request).await,
             Self::Anthropic(p) => p.anthropic_messages_stream(request).await,
@@ -589,8 +588,8 @@ impl Provider for RemoteProvider {
     async fn gemini_generate_content(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<crabllm_core::GeminiResponse, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<crabllm_core::gemini::Response, Error> {
         match self {
             Self::Openai(p) => p.gemini_generate_content(model, request).await,
             Self::Anthropic(p) => p.gemini_generate_content(model, request).await,
@@ -604,8 +603,8 @@ impl Provider for RemoteProvider {
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &crabllm_core::GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<crabllm_core::GeminiResponse, Error>>, Error> {
+        request: &crabllm_core::gemini::Request,
+    ) -> Result<BoxStream<'static, Result<crabllm_core::gemini::Response, Error>>, Error> {
         match self {
             Self::Openai(p) => p.gemini_generate_content_stream(model, request).await,
             Self::Anthropic(p) => p.gemini_generate_content_stream(model, request).await,

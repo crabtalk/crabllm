@@ -3,25 +3,25 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AnthropicMessage {
+pub struct Message {
     pub role: String,
-    pub content: AnthropicContent,
+    pub content: Content,
 }
 
-impl AnthropicMessage {
+impl Message {
     /// Borrow the block list, or an empty slice if content is plain text.
     pub(crate) fn blocks(&self) -> &[ContentBlock] {
         match &self.content {
-            AnthropicContent::Blocks(b) => b,
-            AnthropicContent::Text(_) => &[],
+            Content::Blocks(b) => b,
+            Content::Text(_) => &[],
         }
     }
 
     /// Mutably borrow the block list, or `None` if content is plain text.
     pub(crate) fn blocks_mut(&mut self) -> Option<&mut Vec<ContentBlock>> {
         match &mut self.content {
-            AnthropicContent::Blocks(b) => Some(b),
-            AnthropicContent::Text(_) => None,
+            Content::Blocks(b) => Some(b),
+            Content::Text(_) => None,
         }
     }
 
@@ -66,7 +66,7 @@ impl AnthropicMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(untagged)]
-pub enum AnthropicContent {
+pub enum Content {
     Text(String),
     Blocks(Vec<ContentBlock>),
 }
