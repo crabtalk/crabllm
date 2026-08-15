@@ -186,9 +186,7 @@ impl Provider for MlxProvider {
                 prompt_tokens: output.prompt_tokens,
                 completion_tokens: output.completion_tokens,
                 total_tokens: output.prompt_tokens + output.completion_tokens,
-                completion_tokens_details: None,
-                prompt_cache_hit_tokens: None,
-                prompt_cache_miss_tokens: None,
+                ..Default::default()
             }),
             system_fingerprint: None,
         })
@@ -533,9 +531,7 @@ fn make_final_chunk(
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
-            completion_tokens_details: None,
-            prompt_cache_hit_tokens: None,
-            prompt_cache_miss_tokens: None,
+            ..Default::default()
         }),
         system_fingerprint: None,
     }

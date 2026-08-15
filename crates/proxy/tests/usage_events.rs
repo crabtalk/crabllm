@@ -45,9 +45,7 @@ impl Provider for FakeProvider {
                 prompt_tokens: 11,
                 completion_tokens: 22,
                 total_tokens: 33,
-                completion_tokens_details: None,
-                prompt_cache_hit_tokens: None,
-                prompt_cache_miss_tokens: None,
+                ..Default::default()
             }),
             system_fingerprint: None,
         })

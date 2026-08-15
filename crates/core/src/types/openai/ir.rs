@@ -73,7 +73,11 @@ impl From<crate::ChatCompletionRequest> for ir::Request {
             model: req.model,
             system,
             messages,
-            max_tokens: req.max_tokens.or(req.anthropic_max_tokens).unwrap_or(4096),
+            max_tokens: req
+                .max_tokens
+                .or(req.max_completion_tokens)
+                .or(req.anthropic_max_tokens)
+                .unwrap_or(4096),
             temperature: req.temperature,
             top_p: req.top_p,
             stop,
@@ -215,13 +219,24 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
                 budget_tokens: t.budget_tokens,
             });
 
+        // Reasoning models take `max_completion_tokens` and reject sampling
+        // params outright, so sending the usual shape is a 400 rather than a
+        // degraded answer.
+        let reasoning = is_reasoning_model(&req.model);
+
         crate::ChatCompletionRequest {
             model: req.model.clone(),
             messages,
-            temperature: req.temperature,
-            top_p: req.top_p,
-            max_tokens: Some(req.max_tokens),
+            temperature: (!reasoning).then_some(req.temperature).flatten(),
+            top_p: (!reasoning).then_some(req.top_p).flatten(),
+            max_tokens: (!reasoning).then_some(req.max_tokens),
+            max_completion_tokens: reasoning.then_some(req.max_tokens),
             stream: if req.stream { Some(true) } else { None },
+            // Streaming without this yields no usage chunk, so the request
+            // would meter as zero tokens.
+            stream_options: req.stream.then_some(crate::StreamOptions {
+                include_usage: true,
+            }),
             stop,
             tools,
             tool_choice,
@@ -265,6 +280,20 @@ fn openai_content(contents: &[Content]) -> Option<MessageContent> {
         [ContentPart::Text { text }] => Some(MessageContent::Text(text.clone())),
         _ => Some(MessageContent::Parts(parts)),
     }
+}
+
+/// Whether a model is a reasoning model, which rejects `max_tokens` in favour
+/// of `max_completion_tokens` and rejects `temperature`/`top_p` outright.
+///
+/// Two families, matching how LiteLLM detects them: the o-series (`o` followed
+/// by a digit — o1, o3, o4-mini) and gpt-5, minus the `gpt-5-chat` line, which
+/// is an ordinary chat model. A provider prefix is stripped first, so both
+/// `o3-mini` and `openai/o3-mini` match.
+fn is_reasoning_model(model: &str) -> bool {
+    let name = model.rsplit('/').next().unwrap_or(model);
+    let mut chars = name.chars();
+    let o_series = chars.next() == Some('o') && chars.next().is_some_and(|c| c.is_ascii_digit());
+    o_series || (name.starts_with("gpt-5") && !name.starts_with("gpt-5-chat"))
 }
 
 /// Flatten IR content to plain text, for slots that take only a string.

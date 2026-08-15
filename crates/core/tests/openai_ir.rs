@@ -200,6 +200,90 @@ fn an_assistant_tool_call_omits_content_entirely() {
     assert!(msg.get("tool_calls").is_some());
 }
 
+// ── Request params ──
+
+/// Streaming without `stream_options.include_usage` yields no usage chunk at
+/// all, so the request would meter as zero tokens.
+#[test]
+fn streaming_asks_for_usage() {
+    let mut req = ir_request(None, vec![]);
+    req.stream = true;
+
+    assert_eq!(wire(&req)["stream_options"], json!({"include_usage": true}));
+}
+
+#[test]
+fn a_non_streaming_request_omits_stream_options() {
+    let json = wire(&ir_request(None, vec![]));
+
+    assert!(json.get("stream_options").is_none(), "got {json}");
+}
+
+/// Reasoning models reject `max_tokens`, `temperature` and `top_p`. Detection
+/// follows LiteLLM: `o` + digit for the o-series, and `gpt-5` except the
+/// `gpt-5-chat` line, which is an ordinary chat model.
+#[test]
+fn reasoning_models_get_max_completion_tokens() {
+    for model in [
+        "o1",
+        "o3-mini",
+        "o4-mini",
+        "openai/o3",
+        "gpt-5",
+        "gpt-5-mini",
+    ] {
+        let mut req = ir_request(None, vec![]);
+        req.model = model.into();
+        req.temperature = Some(0.7);
+        req.top_p = Some(0.9);
+        let json = wire(&req);
+
+        assert_eq!(json["max_completion_tokens"], 64, "{model}");
+        assert!(json.get("max_tokens").is_none(), "{model} kept max_tokens");
+        assert!(
+            json.get("temperature").is_none(),
+            "{model} kept temperature"
+        );
+        assert!(json.get("top_p").is_none(), "{model} kept top_p");
+    }
+}
+
+#[test]
+fn ordinary_models_keep_max_tokens_and_sampling() {
+    for model in [
+        "gpt-4o",
+        "gpt-5-chat-latest",
+        "deepseek-chat",
+        "o-not-a-digit",
+    ] {
+        let mut req = ir_request(None, vec![]);
+        req.model = model.into();
+        req.temperature = Some(0.7);
+        let json = wire(&req);
+
+        assert_eq!(json["max_tokens"], 64, "{model}");
+        assert!(
+            json.get("max_completion_tokens").is_none(),
+            "{model} used max_completion_tokens"
+        );
+        assert_eq!(json["temperature"], 0.7, "{model}");
+    }
+}
+
+/// A client may send `max_completion_tokens` itself, so reading a request back
+/// into the IR has to accept either spelling.
+#[test]
+fn max_completion_tokens_is_read_back() {
+    let body = json!({
+        "model": "o3-mini",
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_completion_tokens": 512
+    });
+    let req: ChatCompletionRequest = serde_json::from_value(body).expect("decode request");
+
+    assert_eq!(ir::Request::from(req).max_tokens, 512);
+}
+
 // ── Response direction: OpenAI → IR ──
 //
 // The payloads below are the response shapes OpenAI documents and DeepSeek
@@ -347,6 +431,62 @@ fn image_detail_survives_a_round_trip() {
         back["messages"][0]["content"][0]["image_url"],
         json!({"url": "https://example.com/a.png", "detail": "high"})
     );
+}
+
+/// OpenAI reports prompt cache hits under `prompt_tokens_details.cached_tokens`;
+/// DeepSeek uses a flat `prompt_cache_hit_tokens`. Both have to be read, or a
+/// cache hit meters as full-price input. This also covers the raw passthrough
+/// path, whose billing peek in `usage.rs` decodes through the same type.
+#[test]
+fn openai_cached_tokens_are_billed_as_cache_reads() {
+    let usage: crabllm_core::Usage = serde_json::from_value::<crabllm_core::OpenAiUsage>(json!({
+        "prompt_tokens": 1000,
+        "completion_tokens": 50,
+        "total_tokens": 1050,
+        "prompt_tokens_details": {"cached_tokens": 900}
+    }))
+    .map(|u| (&u).into())
+    .expect("decode usage");
+
+    assert_eq!(usage.cache_read_tokens, 900);
+    assert_eq!(
+        usage.input_tokens, 100,
+        "cached tokens must not double-count"
+    );
+}
+
+#[test]
+fn deepseek_cache_hits_still_work() {
+    let usage: crabllm_core::Usage = serde_json::from_value::<crabllm_core::OpenAiUsage>(json!({
+        "prompt_tokens": 1000,
+        "completion_tokens": 50,
+        "total_tokens": 1050,
+        "prompt_cache_hit_tokens": 900
+    }))
+    .map(|u| (&u).into())
+    .expect("decode usage");
+
+    assert_eq!(usage.cache_read_tokens, 900);
+    assert_eq!(usage.input_tokens, 100);
+}
+
+/// The same peek the proxy runs over raw SSE bytes for billing.
+#[test]
+fn the_billing_peek_sees_cached_tokens() {
+    let chunk = json!({
+        "id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1,
+        "model": "gpt-4o", "choices": [],
+        "usage": {
+            "prompt_tokens": 1000, "completion_tokens": 50, "total_tokens": 1050,
+            "prompt_tokens_details": {"cached_tokens": 900}
+        }
+    })
+    .to_string();
+
+    let usage = crabllm_core::Usage::from(chunk.as_bytes());
+
+    assert_eq!(usage.cache_read_tokens, 900);
+    assert_eq!(usage.input_tokens, 100);
 }
 
 #[test]

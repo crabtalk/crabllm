@@ -141,18 +141,7 @@ async fn main() {
         temperature: None,
         top_p: None,
         max_tokens: Some(1),
-        stream: None,
-        stop: None,
-        tools: None,
-        tool_choice: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        seed: None,
-        user: None,
-        reasoning_effort: None,
-        thinking: None,
-        anthropic_max_tokens: None,
-        extra: serde_json::Map::new(),
+        ..Default::default()
     };
     match provider.chat_completion(&warmup).await {
         Ok(_) => eprintln!("model loaded.\n"),
@@ -188,19 +177,8 @@ async fn main() {
             messages: history.clone(),
             temperature: Some(0.7),
             top_p: None,
-            max_tokens: None,
             stream: Some(true),
-            stop: None,
-            tools: None,
-            tool_choice: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            seed: None,
-            user: None,
-            reasoning_effort: None,
-            thinking: None,
-            anthropic_max_tokens: None,
-            extra: serde_json::Map::new(),
+            ..Default::default()
         };
 
         match provider.chat_completion_stream(&request).await {
