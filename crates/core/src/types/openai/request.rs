@@ -35,10 +35,8 @@ pub struct ChatCompletionRequest {
     pub seed: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    #[serde(skip)]
-    pub thinking: Option<crate::types::anthropic::ThinkingConfig>,
     #[serde(skip)]
     pub anthropic_max_tokens: Option<u32>,
     #[serde(flatten, default)]

@@ -55,6 +55,14 @@ impl From<crate::anthropic::Request> for ir::Request {
         });
 
         let thinking = req.thinking.map(|t| ir::Thinking {
+            effort: if t.kind == "disabled" {
+                ir::Effort::None
+            } else {
+                // An enabled config without a budget is Anthropic's floor.
+                t.budget_tokens
+                    .map(ir::Effort::from_budget)
+                    .unwrap_or(ir::Effort::Low)
+            },
             budget_tokens: t.budget_tokens,
         });
 
@@ -123,9 +131,12 @@ impl From<&ir::Request> for crate::anthropic::Request {
             ir::ToolChoice::Named(name) => serde_json::json!({"type": "tool", "name": name}),
         });
 
-        let thinking = req.thinking.as_ref().map(|t| ThinkingConfig {
-            kind: "enabled".to_string(),
-            budget_tokens: t.budget_tokens,
+        let thinking = req.thinking.as_ref().map(|t| {
+            let off = t.effort == ir::Effort::None;
+            ThinkingConfig {
+                kind: if off { "disabled" } else { "enabled" }.to_string(),
+                budget_tokens: (!off).then(|| t.budget(req.max_tokens)),
+            }
         });
 
         crate::anthropic::Request {

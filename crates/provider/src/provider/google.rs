@@ -333,6 +333,10 @@ fn translate_request(request: &ir::Request) -> gemini::Request {
         temperature: request.temperature,
         top_p: request.top_p,
         stop_sequences: request.stop.clone(),
+        thinking_config: request.thinking.as_ref().map(|t| gemini::ThinkingConfig {
+            thinking_budget: Some(t.budget(request.max_tokens) as i32),
+            include_thoughts: Some(t.effort != ir::Effort::None),
+        }),
     });
 
     let tools = request.tools.as_ref().map(|tools| {

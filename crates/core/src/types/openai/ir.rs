@@ -65,9 +65,14 @@ impl From<crate::ChatCompletionRequest> for ir::Request {
             crate::ToolChoice::Function { name } => ir::ToolChoice::Named(name),
         });
 
-        let thinking = req.thinking.map(|t| ir::Thinking {
-            budget_tokens: t.budget_tokens,
-        });
+        let thinking = req
+            .reasoning_effort
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+            .map(|effort| ir::Thinking {
+                effort,
+                budget_tokens: None,
+            });
 
         ir::Request {
             model: req.model,
@@ -211,14 +216,6 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
             ir::ToolChoice::Named(name) => crate::ToolChoice::Function { name: name.clone() },
         });
 
-        let thinking = req
-            .thinking
-            .as_ref()
-            .map(|t| crate::anthropic::ThinkingConfig {
-                kind: "enabled".to_string(),
-                budget_tokens: t.budget_tokens,
-            });
-
         // Reasoning models take `max_completion_tokens` and reject sampling
         // params outright, so sending the usual shape is a 400 rather than a
         // degraded answer.
@@ -244,8 +241,7 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
             presence_penalty: None,
             seed: None,
             user: None,
-            reasoning_effort: None,
-            thinking,
+            reasoning_effort: req.thinking.as_ref().map(|t| t.effort.to_string()),
             anthropic_max_tokens: Some(req.max_tokens),
             extra: serde_json::Map::new(),
         }

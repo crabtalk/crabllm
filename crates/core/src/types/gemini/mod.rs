@@ -4,7 +4,7 @@
 //! [`Response`] with a single candidate, so there are no separate
 //! streaming wire types — the same response shape carries one chunk at a time.
 
-pub use request::{FunctionDecl, GenerationConfig, Request, ToolDef};
+pub use request::{FunctionDecl, GenerationConfig, Request, ThinkingConfig, ToolDef};
 pub use response::{Candidate, FinishReason, Response, Usage};
 use serde::{Deserialize, Serialize};
 

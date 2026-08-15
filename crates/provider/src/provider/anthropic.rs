@@ -198,29 +198,26 @@ fn translate_request(request: &ChatCompletionRequest) -> anthropic::Request {
         .unwrap_or(anthropic::DEFAULT_MAX_TOKENS);
     out.max_tokens = max_tokens;
 
-    let thinking = request.thinking.clone().or_else(|| {
-        request.extra.get("thinking").and_then(|v| {
-            if v.as_bool() == Some(true) {
-                Some(anthropic::ThinkingConfig {
-                    kind: "enabled".to_string(),
-                    budget_tokens: Some(max_tokens.saturating_sub(1)),
-                })
-            } else if let Some(obj) = v.as_object() {
-                let budget = obj
+    // `reasoning_effort` already arrived through the IR. This is the other
+    // spelling: a raw Anthropic `thinking` object riding along in an
+    // OpenAI-shaped body, which `extra` captures verbatim.
+    if let Some(v) = request.extra.get("thinking") {
+        out.thinking = if v.as_bool() == Some(true) {
+            Some(anthropic::ThinkingConfig {
+                kind: "enabled".to_string(),
+                budget_tokens: Some(max_tokens.saturating_sub(1)),
+            })
+        } else {
+            v.as_object().map(|obj| anthropic::ThinkingConfig {
+                kind: "enabled".to_string(),
+                budget_tokens: obj
                     .get("budget_tokens")
                     .and_then(|b| b.as_u64())
-                    .map(|b| b as u32);
-                Some(anthropic::ThinkingConfig {
-                    kind: "enabled".to_string(),
-                    budget_tokens: budget,
-                })
-            } else {
-                None
-            }
-        })
-    });
+                    .map(|b| (b as u32).min(max_tokens.saturating_sub(1))),
+            })
+        };
+    }
 
-    out.thinking = thinking;
     out.stream = request.stream;
     out
 }
