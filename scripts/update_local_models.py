@@ -1,11 +1,13 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["huggingface_hub>=1.0"]
+# ///
 """Fetch mlx-community models from HuggingFace and generate local.toml.
 
 Only includes models whose architecture (model_type in config.json) is
 supported by mlx-swift-lm. The supported types are extracted from the
 Swift factory source files at build time.
-
-Requires: pip install huggingface_hub
 """
 
 import re
@@ -126,10 +128,10 @@ def main():
 
     print(f"Fetching models from {ORG} on HuggingFace ...")
     all_models = list(
+        # huggingface_hub 1.x dropped `direction`; `sort` is descending now.
         list_models(
             author=ORG,
             sort="downloads",
-            direction=-1,
             expand=["config", "safetensors"],
         )
     )
