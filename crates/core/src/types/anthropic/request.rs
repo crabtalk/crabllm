@@ -18,7 +18,7 @@ pub struct ThinkingConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicRequest))]
 pub struct Request {
     pub model: String,
     pub messages: Vec<Message>,
@@ -44,7 +44,7 @@ pub struct Request {
 
 /// System prompt: either a plain string or an array of content blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicSystem))]
 #[serde(untagged)]
 pub enum System {
     Text(String),
@@ -52,7 +52,7 @@ pub enum System {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicTool))]
 pub struct Tool {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

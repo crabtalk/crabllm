@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicMessage))]
 pub struct Message {
     pub role: String,
     pub content: Content,
@@ -63,7 +63,7 @@ impl Message {
 
 /// Message content: either a plain string or an array of content blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicContent))]
 #[serde(untagged)]
 pub enum Content {
     Text(String),

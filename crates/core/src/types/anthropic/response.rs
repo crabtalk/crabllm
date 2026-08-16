@@ -2,7 +2,7 @@ use crate::types::anthropic::ContentBlock;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicResponse))]
 pub struct Response {
     pub id: String,
     #[serde(default = "default_message_type")]
@@ -31,7 +31,7 @@ fn default_assistant_role() -> String {
 /// are additive components of the total prompt. Convert to canonical [`Usage`]
 /// for any internal billing or metering use.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicUsage))]
 pub struct Usage {
     #[serde(default)]
     pub input_tokens: u32,
