@@ -3,19 +3,23 @@ use crate::{
     ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
     MultipartField, Provider, anthropic, gemini,
 };
+use futures::StreamExt;
 use rand::Rng;
 use std::{future::Future, time::Duration};
 
 const DEFAULT_MAX_RETRIES: u32 = 2;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
+const DEFAULT_STREAM_IDLE: Duration = Duration::from_secs(90);
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
 
 /// A `Provider` wrapper that retries transient failures with exponential
 /// backoff and full jitter, and bounds each attempt with a per-call timeout.
 ///
 /// For streaming methods the per-attempt timeout covers only opening the
-/// stream; a mid-stream stall is bounded by the transport's read timeout.
+/// stream. A stall *within* an open stream is bounded separately by
+/// `stream_idle`, since a transport without its own read timeout will
+/// otherwise wait on a dead upstream forever.
 ///
 /// 429s whose `retry_after` exceeds `max_retry_after` are propagated
 /// immediately — the upstream is signalling a wait longer than this wrapper
@@ -26,17 +30,19 @@ pub struct Retrying<P: Provider> {
     max_retries: u32,
     timeout: Duration,
     max_retry_after: Duration,
+    stream_idle: Duration,
 }
 
 impl<P: Provider> Retrying<P> {
-    /// Wrap a provider with the default retry policy
-    /// (2 retries, 30s timeout, 60s max retry-after, 100ms initial backoff).
+    /// Wrap a provider with the default retry policy (2 retries, 30s timeout,
+    /// 60s max retry-after, 90s stream idle, 100ms initial backoff).
     pub fn new(inner: P) -> Self {
         Self {
             inner,
             max_retries: DEFAULT_MAX_RETRIES,
             timeout: DEFAULT_TIMEOUT,
             max_retry_after: DEFAULT_MAX_RETRY_AFTER,
+            stream_idle: DEFAULT_STREAM_IDLE,
         }
     }
 
@@ -63,6 +69,13 @@ impl<P: Provider> Retrying<P> {
     /// 429s above this threshold are propagated as non-retryable.
     pub fn max_retry_after(mut self, d: Duration) -> Self {
         self.max_retry_after = d;
+        self
+    }
+
+    /// Override how long an open stream may go without producing a chunk
+    /// before it fails with [`Error::Timeout`]. Zero disables the bound.
+    pub fn stream_idle(mut self, d: Duration) -> Self {
+        self.stream_idle = d;
         self
     }
 
@@ -119,7 +132,7 @@ impl<P: Provider> Provider for Retrying<P> {
         let mut last_err = None;
         for _ in 0..=self.max_retries {
             match self.timed(self.inner.chat_completion_stream(request)).await {
-                Ok(stream) => return Ok(stream),
+                Ok(stream) => return Ok(idle_bounded(stream, self.stream_idle)),
                 Err(e) if self.should_retry(&e) => {
                     let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
@@ -164,7 +177,7 @@ impl<P: Provider> Provider for Retrying<P> {
                 .timed(self.inner.anthropic_messages_stream(request))
                 .await
             {
-                Ok(stream) => return Ok(stream),
+                Ok(stream) => return Ok(idle_bounded(stream, self.stream_idle)),
                 Err(e) if self.should_retry(&e) => {
                     let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
@@ -189,7 +202,7 @@ impl<P: Provider> Provider for Retrying<P> {
                 .timed(self.inner.gemini_generate_content_stream(model, request))
                 .await
             {
-                Ok(stream) => return Ok(stream),
+                Ok(stream) => return Ok(idle_bounded(stream, self.stream_idle)),
                 Err(e) if self.should_retry(&e) => {
                     let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
@@ -233,6 +246,31 @@ impl<P: Provider> Provider for Retrying<P> {
     ) -> Result<(bytes::Bytes, String), Error> {
         self.inner.audio_transcription(model, fields).await
     }
+}
+
+/// Fail a stream that goes `idle` without producing a chunk.
+///
+/// The timeout is per-chunk, not per-stream: a long generation is fine, a
+/// silent one is not. Terminates the stream on expiry — a stalled upstream
+/// has no more to say, and the events already yielded stay valid.
+fn idle_bounded<T: Send + 'static>(
+    stream: BoxStream<'static, Result<T, Error>>,
+    idle: Duration,
+) -> BoxStream<'static, Result<T, Error>> {
+    if idle.is_zero() {
+        return stream;
+    }
+    Box::pin(futures::stream::unfold(
+        Some(stream),
+        move |state| async move {
+            let mut stream = state?;
+            match tokio::time::timeout(idle, stream.next()).await {
+                Ok(Some(item)) => Some((item, Some(stream))),
+                Ok(None) => None,
+                Err(_) => Some((Err(Error::Timeout), None)),
+            }
+        },
+    ))
 }
 
 /// Full jitter: random duration in [backoff/2, backoff].

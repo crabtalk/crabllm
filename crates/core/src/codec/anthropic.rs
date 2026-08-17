@@ -388,12 +388,8 @@ pub fn anthropic_events_to_chunks(
                         return Some((Ok(chunk), (events, state)));
                     }
                     anthropic::StreamEvent::MessageDelta { delta, usage } => {
-                        let finish_reason = delta.stop_reason.as_deref().map(|r| match r {
-                            "end_turn" => FinishReason::Stop,
-                            "max_tokens" => FinishReason::Length,
-                            "tool_use" => FinishReason::ToolCalls,
-                            other => FinishReason::Custom(other.to_string()),
-                        });
+                        let finish_reason =
+                            delta.stop_reason.as_deref().map(anthropic::finish_reason);
                         state.chunk_idx += 1;
                         let chunk = ChatCompletionChunk {
                             id: format!("chatcmpl-{}", state.chunk_idx),

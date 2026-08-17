@@ -157,12 +157,7 @@ impl From<&ir::Request> for crate::anthropic::Request {
 
 impl From<anthropic::Response> for ir::Response {
     fn from(resp: anthropic::Response) -> Self {
-        let stop_reason = resp.stop_reason.as_deref().map(|r| match r {
-            "end_turn" => StopReason::End,
-            "max_tokens" => StopReason::MaxTokens,
-            "tool_use" => StopReason::ToolUse,
-            _ => StopReason::End,
-        });
+        let stop_reason = resp.stop_reason.as_deref().map(anthropic::stop_reason);
 
         ir::Response {
             id: resp.id,
@@ -220,13 +215,7 @@ impl anthropic::StreamEvent {
             anthropic::StreamEvent::MessageDelta { delta, usage } => {
                 let mut events = vec![StreamEvent::Usage(Usage::from(usage))];
                 if let Some(reason) = &delta.stop_reason {
-                    let stop = match reason.as_str() {
-                        "end_turn" => StopReason::End,
-                        "max_tokens" => StopReason::MaxTokens,
-                        "tool_use" => StopReason::ToolUse,
-                        _ => StopReason::End,
-                    };
-                    events.push(StreamEvent::Stop(stop));
+                    events.push(StreamEvent::Stop(anthropic::stop_reason(reason)));
                 }
                 events
             }

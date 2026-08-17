@@ -111,6 +111,19 @@ impl Error {
         }
     }
 
+    /// The message to show a user, with the upstream's error envelope peeled
+    /// off. A `Provider` body is usually an [`ApiError`] JSON document, whose
+    /// own `message` is the only part worth reading; every other variant is
+    /// already a bare sentence.
+    pub fn message(&self) -> String {
+        match self {
+            Error::Provider { body, .. } => crate::json::from_str::<ApiError>(body)
+                .map(|e| e.error.message)
+                .unwrap_or_else(|_| body.clone()),
+            other => other.to_string(),
+        }
+    }
+
     /// Build an "operation not supported" error for a provider trait method
     /// that has no implementation. Used by `Provider` trait default impls.
     /// Distinct from per-provider rejection messages so log lines can be

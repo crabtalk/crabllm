@@ -8,8 +8,41 @@ pub struct Message {
 }
 
 impl Message {
+    fn with_role(role: &str, blocks: Vec<ContentBlock>) -> Self {
+        Self {
+            role: role.to_string(),
+            content: Content::Blocks(blocks),
+        }
+    }
+
+    pub fn user(text: impl Into<String>) -> Self {
+        Self::with_role("user", vec![ContentBlock::text(text)])
+    }
+
+    pub fn assistant(text: impl Into<String>) -> Self {
+        Self::with_role("assistant", vec![ContentBlock::text(text)])
+    }
+
+    /// A tool result. Anthropic carries these as a `tool_result` block inside
+    /// a *user* message, keyed by the `tool_use` id it answers.
+    pub fn tool(
+        tool_use_id: impl Into<String>,
+        name: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self::with_role(
+            "user",
+            vec![ContentBlock::ToolResult {
+                tool_use_id: tool_use_id.into(),
+                name: Some(name.into()),
+                content: ToolResultContent::Text(content.into()),
+                cache_control: None,
+            }],
+        )
+    }
+
     /// Borrow the block list, or an empty slice if content is plain text.
-    pub(crate) fn blocks(&self) -> &[ContentBlock] {
+    pub fn blocks(&self) -> &[ContentBlock] {
         match &self.content {
             Content::Blocks(b) => b,
             Content::Text(_) => &[],
@@ -17,11 +50,42 @@ impl Message {
     }
 
     /// Mutably borrow the block list, or `None` if content is plain text.
-    pub(crate) fn blocks_mut(&mut self) -> Option<&mut Vec<ContentBlock>> {
+    pub fn blocks_mut(&mut self) -> Option<&mut Vec<ContentBlock>> {
         match &mut self.content {
             Content::Blocks(b) => Some(b),
             Content::Text(_) => None,
         }
+    }
+
+    /// First non-empty text, from a `text` block or a text-valued
+    /// `tool_result`. Plain-text content is returned as-is.
+    pub fn text(&self) -> Option<&str> {
+        if let Content::Text(s) = &self.content {
+            return (!s.is_empty()).then_some(s.as_str());
+        }
+        let text = self.blocks().iter().find_map(|b| match b {
+            ContentBlock::Text { text, .. } if !text.is_empty() => Some(text.as_str()),
+            _ => None,
+        });
+        text.or_else(|| {
+            self.blocks().iter().find_map(|b| match b {
+                ContentBlock::ToolResult {
+                    content: ToolResultContent::Text(s),
+                    ..
+                } if !s.is_empty() => Some(s.as_str()),
+                _ => None,
+            })
+        })
+    }
+
+    /// The reasoning content, if any.
+    pub fn thinking(&self) -> Option<&str> {
+        self.blocks().iter().find_map(|b| match b {
+            ContentBlock::Thinking { thinking, .. } if !thinking.is_empty() => {
+                Some(thinking.as_str())
+            }
+            _ => None,
+        })
     }
 
     /// Iterator over `(id, name)` of `tool_use` blocks in this assistant
