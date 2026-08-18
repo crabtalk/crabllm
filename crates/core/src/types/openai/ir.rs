@@ -66,14 +66,7 @@ impl From<crate::ChatCompletionRequest> for ir::Request {
             crate::ToolChoice::Function { name } => ir::ToolChoice::Named(name),
         });
 
-        let thinking = req
-            .reasoning_effort
-            .as_deref()
-            .and_then(|s| s.parse().ok())
-            .map(|effort| ir::Thinking {
-                effort,
-                budget_tokens: None,
-            });
+        let thinking = req.reasoning_effort.as_deref().and_then(|s| s.parse().ok());
 
         ir::Request {
             model: req.model,
@@ -243,7 +236,7 @@ impl From<&ir::Request> for crate::ChatCompletionRequest {
             presence_penalty: None,
             seed: None,
             user: None,
-            reasoning_effort: req.thinking.as_ref().map(|t| t.effort.to_string()),
+            reasoning_effort: req.thinking.map(|effort| effort.to_string()),
             anthropic_max_tokens: Some(req.max_tokens),
             extra: serde_json::Map::new(),
         }

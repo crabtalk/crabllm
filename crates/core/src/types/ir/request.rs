@@ -12,7 +12,9 @@ pub struct Request {
     pub stop: Option<Vec<String>>,
     pub tools: Option<Vec<Tool>>,
     pub tool_choice: Option<ToolChoice>,
-    pub thinking: Option<Thinking>,
+    /// `None` means the client said nothing; `Some(Effort::None)` means it
+    /// explicitly asked for no thinking.
+    pub thinking: Option<Effort>,
     pub stream: bool,
 }
 
@@ -35,28 +37,12 @@ pub enum ToolChoice {
     Named(String),
 }
 
-#[derive(Debug, Clone)]
-pub struct Thinking {
-    pub effort: Effort,
-    /// An explicit budget when the client gave one, as Anthropic and Gemini
-    /// take. `None` means "whatever `effort` implies".
-    pub budget_tokens: Option<u32>,
-}
-
-impl Thinking {
-    /// The thinking budget to send, clamped below `max_tokens` — Anthropic
-    /// rejects a request whose budget meets or exceeds it.
-    pub fn budget(&self, max_tokens: u32) -> u32 {
-        self.budget_tokens
-            .unwrap_or_else(|| self.effort.budget_tokens())
-            .min(max_tokens.saturating_sub(1))
-    }
-}
-
-/// How hard to think. These are OpenAI's `reasoning_effort` levels, which
-/// double as the canonical scale: Anthropic and Gemini take an integer budget
-/// instead, and [`Effort::budget_tokens`] is the bridge between the two.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// How hard to think. The named levels are OpenAI's `reasoning_effort` scale,
+/// which Anthropic's `output_config.effort` also speaks; [`Effort::Budget`]
+/// carries the integer Gemini and Anthropic's pre-4.6 `thinking` dialect take.
+/// A request arrives in one form or the other, never both — [`Effort::level`]
+/// and [`Effort::budget_tokens`] convert to whichever the target wants.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Effort {
     None,
     Minimal,
@@ -66,26 +52,27 @@ pub enum Effort {
     High,
     XHigh,
     Max,
+    Budget(u32),
+}
+
+/// A budget of zero is how Gemini spells "no thinking".
+impl From<u32> for Effort {
+    fn from(tokens: u32) -> Self {
+        if tokens == 0 {
+            Self::None
+        } else {
+            Self::Budget(tokens)
+        }
+    }
 }
 
 impl Effort {
-    /// Budget for this level, following the table LiteLLM uses to bridge the
-    /// same two representations.
-    pub fn budget_tokens(self) -> u32 {
-        match self {
-            Self::None => 0,
-            Self::Minimal => 128,
-            Self::Low => 1024,
-            Self::Medium => 2048,
-            Self::High => 4096,
-            Self::XHigh => 8192,
-            Self::Max => 16384,
-        }
-    }
-
-    /// The strongest level a budget affords, rounding down — a budget of 8000
-    /// buys `High` (4096), not `XHigh` (8192).
-    pub fn from_budget(budget: u32) -> Self {
+    /// The named level, rounding a budget down to the strongest it affords —
+    /// 8000 buys `High` (4096), not `XHigh` (8192). Never returns `Budget`.
+    pub fn level(self) -> Self {
+        let Self::Budget(budget) = self else {
+            return self;
+        };
         [
             Self::Max,
             Self::XHigh,
@@ -98,18 +85,37 @@ impl Effort {
         .find(|level| budget >= level.budget_tokens())
         .unwrap_or(Self::None)
     }
+
+    /// The budget this effort implies, following the table LiteLLM uses to
+    /// bridge the same two representations. Callers clamp to what the target
+    /// accepts — Anthropic rejects a budget that meets `max_tokens`, Gemini
+    /// enforces a per-model range instead.
+    pub fn budget_tokens(self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::Minimal => 128,
+            Self::Low => 1024,
+            Self::Medium => 2048,
+            Self::High => 4096,
+            Self::XHigh => 8192,
+            Self::Max => 16384,
+            Self::Budget(tokens) => tokens,
+        }
+    }
 }
 
 impl std::fmt::Display for Effort {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::None => "none",
+        f.write_str(match self.level() {
             Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
             Self::XHigh => "xhigh",
             Self::Max => "max",
+            // `level` never yields `Budget`, but listing it keeps the match
+            // exhaustive so a new variant breaks the build instead of the wire.
+            Self::None | Self::Budget(_) => "none",
         })
     }
 }

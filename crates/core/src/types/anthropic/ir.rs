@@ -2,7 +2,7 @@ use crate::{
     Usage,
     ir::{self, Content, Message, Role, StopReason, StreamEvent},
     types::anthropic::{
-        self, BlockDelta, ContentBlock, Messages, ThinkingConfig, ToolResultContent,
+        self, BlockDelta, ContentBlock, Messages, OutputConfig, ThinkingConfig, ToolResultContent,
     },
 };
 
@@ -55,16 +55,18 @@ impl From<crate::anthropic::Request> for ir::Request {
             })
         });
 
-        let thinking = req.thinking.map(|t| ir::Thinking {
-            effort: if t.kind == "disabled" {
-                ir::Effort::None
-            } else {
-                // An enabled config without a budget is Anthropic's floor.
-                t.budget_tokens
-                    .map(ir::Effort::from_budget)
-                    .unwrap_or(ir::Effort::Low)
-            },
-            budget_tokens: t.budget_tokens,
+        let effort = req
+            .output_config
+            .as_ref()
+            .and_then(|c| c.effort.as_deref())
+            .and_then(|e| e.parse().ok());
+        let thinking = req.thinking.map(|t| match t.kind.as_str() {
+            "disabled" => ir::Effort::None,
+            // Adaptive carries its depth in `output_config`, which Anthropic
+            // reads as `high` when the client leaves it out.
+            "adaptive" => effort.unwrap_or(ir::Effort::High),
+            // An enabled config without a budget is Anthropic's floor.
+            _ => t.budget_tokens.map_or(ir::Effort::Low, ir::Effort::from),
         });
 
         ir::Request {
@@ -131,13 +133,29 @@ impl From<&ir::Request> for crate::anthropic::Request {
             ir::ToolChoice::Named(name) => serde_json::json!({"type": "tool", "name": name}),
         });
 
-        let thinking = req.thinking.as_ref().map(|t| {
-            let off = t.effort == ir::Effort::None;
-            ThinkingConfig {
-                kind: if off { "disabled" } else { "enabled" }.to_string(),
-                budget_tokens: (!off).then(|| t.budget(req.max_tokens)),
-            }
-        });
+        // Only the adaptive dialect goes out: 4.6 onward take it, and 4.7
+        // onward reject the `budget_tokens` integer it replaced. Anything
+        // older is Anthropic's to refuse — a list here would fail closed on
+        // every model released before we updated it.
+        let (thinking, output_config) = match req.thinking {
+            None => (None, None),
+            Some(ir::Effort::None) => (
+                Some(ThinkingConfig {
+                    kind: "disabled".to_string(),
+                    budget_tokens: None,
+                }),
+                None,
+            ),
+            Some(effort) => (
+                Some(ThinkingConfig {
+                    kind: "adaptive".to_string(),
+                    budget_tokens: None,
+                }),
+                Some(OutputConfig {
+                    effort: Some(effort.to_string()),
+                }),
+            ),
+        };
 
         crate::anthropic::Request {
             model: req.model.clone(),
@@ -151,6 +169,7 @@ impl From<&ir::Request> for crate::anthropic::Request {
             tool_choice,
             stop_sequences: req.stop.clone(),
             thinking,
+            output_config,
         }
     }
 }
