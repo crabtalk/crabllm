@@ -101,10 +101,10 @@ pub(crate) fn emit_usage<S: Storage, P: Provider>(
 /// GET /v1/usage — user-facing, auto-scoped to the caller's key.
 pub(crate) async fn usage<S: Storage + 'static, P: Provider + 'static>(
     State(state): State<AppState<S, P>>,
-    Extension(Principal(principal)): Extension<Principal>,
+    Extension(principal): Extension<Principal>,
     query: axum::extract::Query<crate::ext::usage::UserUsageQuery>,
 ) -> Json<Vec<crate::ext::usage::UsageEntry>> {
-    let name = principal.as_deref().unwrap_or("__global");
+    let name = principal.name.as_deref().unwrap_or("__global");
     crate::ext::usage::query_usage(
         state.storage.as_ref() as &dyn Storage,
         Some(name),
@@ -129,6 +129,28 @@ pub(crate) fn emit_usage_error<S: Storage, P: Provider>(
             error: Some(e.to_string()),
         },
     );
+}
+
+/// Refusal for a model outside the key's allowlist. Checked before the
+/// registry lookup, so a key learns nothing about models it can't address.
+pub(crate) fn model_forbidden(model: &str) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ApiError::new(
+            format!("key is not permitted to use model '{model}'"),
+            "permission_error",
+        )),
+    )
+        .into_response()
+}
+
+/// Who a request is attributed to before any deployment has run: the one
+/// weighted routing put first. Whichever deployment answers overwrites it.
+pub(crate) fn first_provider<P>(deployments: &[&Deployment<P>]) -> String {
+    deployments
+        .first()
+        .map(|d| d.name.clone())
+        .unwrap_or_default()
 }
 
 fn read_error_response(e: crate::body::ReadError) -> Response {
@@ -162,6 +184,9 @@ where
     };
     let registry = state.registry();
     let model = registry.resolve(&body.model).to_string();
+    if !principal.can_use(&model) {
+        return model_forbidden(&model);
+    }
     let Some(deployments) = registry.dispatch_list(&model) else {
         return (
             StatusCode::NOT_FOUND,
@@ -203,17 +228,11 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
     deployments: &[&Deployment<P>],
     raw_body: axum::body::Bytes,
 ) -> Response {
-    let registry = state.registry();
-    let provider_name = registry
-        .provider_name(model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
+    let mut ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.to_string(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(deployments),
+        principal: principal.name,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -236,6 +255,7 @@ async fn handle_raw_proxy<S: Storage, P: Provider>(
 
     let mut last_err = None;
     for deployment in deployments {
+        ctx.provider = deployment.name.clone();
         match with_timeout(
             deployment.timeout,
             deployment
@@ -341,17 +361,17 @@ async fn handle_raw_stream_passthrough<S: Storage + 'static, P: Provider + 'stat
     deployments: &[&Deployment<P>],
     body_stream: crabllm_core::ByteStream,
 ) -> Response {
-    let registry = state.registry();
-    let provider_name = registry
-        .provider_name(model)
-        .unwrap_or_default()
-        .to_string();
+    // Picked before the hooks run: the body stream is consumed on the first
+    // attempt, so this deployment is the only one that can answer.
+    let selected = deployments.iter().find(|d| d.provider.is_openai_compat());
 
     let ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.to_string(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: selected
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| first_provider(deployments)),
+        principal: principal.name,
         is_stream: true,
         started_at: Instant::now(),
     };
@@ -362,7 +382,7 @@ async fn handle_raw_stream_passthrough<S: Storage + 'static, P: Provider + 'stat
         }
     }
 
-    let deployment = match deployments.iter().find(|d| d.provider.is_openai_compat()) {
+    let deployment = match selected {
         Some(d) => d,
         None => {
             let e = crabllm_core::Error::Routing("no compatible providers available".to_string());
@@ -484,6 +504,9 @@ where
 {
     let registry = state.registry();
     let model = registry.resolve(&request.model).to_string();
+    if !principal.can_use(&model) {
+        return model_forbidden(&model);
+    }
     let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
@@ -498,16 +521,11 @@ where
         }
     };
 
-    let provider_name = registry
-        .provider_name(&model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
+    let mut ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(&deployments),
+        principal: principal.name,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -521,6 +539,7 @@ where
 
     let mut last_err = None;
     for deployment in &deployments {
+        ctx.provider = deployment.name.clone();
         match try_embedding_with_retries(deployment, &request).await {
             Ok(resp) => {
                 record_duration(&ctx, "2xx");
@@ -555,13 +574,25 @@ where
 /// Anthropic-flavored auth header (`x-api-key` without `Authorization: Bearer`)
 /// or the `anthropic-version` header, returns Anthropic's model-list shape
 /// instead, so the official Anthropic SDKs see the response format they expect.
-pub async fn models<S, P>(State(state): State<AppState<S, P>>, headers: HeaderMap) -> Response
+///
+/// Scoped to what the caller's key may address, and sorted — the registry is
+/// a HashMap, so its own order differs between two calls a second apart.
+pub async fn models<S, P>(
+    State(state): State<AppState<S, P>>,
+    Extension(principal): Extension<Principal>,
+    headers: HeaderMap,
+) -> Response
 where
     S: Storage + 'static,
     P: Provider + 'static,
 {
     let registry = state.registry();
-    let names: Vec<String> = registry.model_names().map(|n| n.to_string()).collect();
+    let mut names: Vec<String> = registry
+        .model_names()
+        .filter(|n| principal.can_use(n))
+        .map(|n| n.to_string())
+        .collect();
+    names.sort();
 
     if is_anthropic_client(&headers) {
         let data: Vec<serde_json::Value> = names
@@ -635,6 +666,9 @@ where
 {
     let registry = state.registry();
     let model = registry.resolve(&request.model).to_string();
+    if !principal.can_use(&model) {
+        return model_forbidden(&model);
+    }
     let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
@@ -649,16 +683,11 @@ where
         }
     };
 
-    let provider_name = registry
-        .provider_name(&model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
+    let mut ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(&deployments),
+        principal: principal.name,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -672,6 +701,7 @@ where
     // Fallback only — no retry (image generation is non-idempotent + billed).
     let mut last_err = None;
     for deployment in &deployments {
+        ctx.provider = deployment.name.clone();
         match with_timeout(
             deployment.timeout,
             deployment.provider.image_generation(&request),
@@ -714,6 +744,9 @@ where
 {
     let registry = state.registry();
     let model = registry.resolve(&request.model).to_string();
+    if !principal.can_use(&model) {
+        return model_forbidden(&model);
+    }
     let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
@@ -728,16 +761,11 @@ where
         }
     };
 
-    let provider_name = registry
-        .provider_name(&model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
+    let mut ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(&deployments),
+        principal: principal.name,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -751,6 +779,7 @@ where
     // Fallback only — no retry (TTS is non-idempotent).
     let mut last_err = None;
     for deployment in &deployments {
+        ctx.provider = deployment.name.clone();
         match with_timeout(
             deployment.timeout,
             deployment.provider.audio_speech(&request),
@@ -842,6 +871,10 @@ where
         }
     };
 
+    if !principal.can_use(&model) {
+        return model_forbidden(&model);
+    }
+
     let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
@@ -856,16 +889,11 @@ where
         }
     };
 
-    let provider_name = registry
-        .provider_name(&model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
+    let mut ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(&deployments),
+        principal: principal.name,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -880,6 +908,7 @@ where
     // multipart form per call from the buffered field slice.
     let mut last_err = None;
     for deployment in &deployments {
+        ctx.provider = deployment.name.clone();
         match with_timeout(
             deployment.timeout,
             deployment.provider.audio_transcription(&model, &fields),

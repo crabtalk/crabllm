@@ -17,7 +17,7 @@ use std::{
 #[derive(Clone)]
 pub struct KeyAdminState {
     storage: Arc<dyn Storage>,
-    key_map: Arc<RwLock<HashMap<String, String>>>,
+    key_map: Arc<RwLock<HashMap<String, KeyConfig>>>,
     admin_token: String,
     toml_key_names: HashSet<String>,
     toml_keys: Vec<KeyConfig>,
@@ -26,7 +26,7 @@ pub struct KeyAdminState {
 /// Build admin key management routes, protected by admin token auth.
 pub fn key_admin_routes(
     storage: Arc<dyn Storage>,
-    key_map: Arc<RwLock<HashMap<String, String>>>,
+    key_map: Arc<RwLock<HashMap<String, KeyConfig>>>,
     admin_token: String,
     toml_keys: Vec<KeyConfig>,
 ) -> Router {
@@ -219,7 +219,7 @@ async fn create_key(
         .key_map
         .write()
         .unwrap_or_else(|e| e.into_inner())
-        .insert(key.clone(), body.name.clone());
+        .insert(key.clone(), config);
 
     (
         StatusCode::CREATED,
@@ -424,6 +424,14 @@ async fn update_key(
         );
     }
 
+    // The map is what auth reads, so a patched allowlist has to land here
+    // too — storage alone would leave the running gateway on the old one.
+    state
+        .key_map
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(config.key.clone(), config.clone());
+
     Json(KeySummary {
         name: config.name,
         key_prefix: mask_key(&config.key),
@@ -498,7 +506,7 @@ async fn delete_key(State(state): State<KeyAdminState>, Path(name): Path<String>
 pub async fn load_stored_keys(
     storage: &dyn Storage,
     toml_keys: &[KeyConfig],
-    key_map: &RwLock<HashMap<String, String>>,
+    key_map: &RwLock<HashMap<String, KeyConfig>>,
 ) {
     let pairs = match storage.list(&PREFIX_KEYS).await {
         Ok(p) => p,
@@ -517,7 +525,7 @@ pub async fn load_stored_keys(
             if toml_names.contains(kc.name.as_str()) {
                 continue;
             }
-            map.insert(kc.key, kc.name);
+            map.insert(kc.key.clone(), kc);
         }
     }
 }

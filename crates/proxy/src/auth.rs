@@ -8,13 +8,30 @@ use axum::{
 };
 use crabllm_core::{ApiError, Provider, Storage};
 
-/// Opaque identity token attached by the authentication layer, inserted into
-/// request extensions. Standalone deployments populate this from the configured
-/// key name; embedders providing their own auth populate it with whatever
-/// caller identifier they need to attribute work against. Treat as opaque —
-/// do not parse, sanitize, or display without intentional formatting.
+/// The authenticated caller, inserted into request extensions.
 #[derive(Clone, Debug)]
-pub struct Principal(pub Option<String>);
+pub struct Principal {
+    /// Opaque identity token. Standalone deployments populate this from the
+    /// configured key name; embedders providing their own auth populate it
+    /// with whatever caller identifier they need to attribute work against.
+    /// Treat as opaque — do not parse, sanitize, or display without
+    /// intentional formatting.
+    pub name: Option<String>,
+    /// Models this caller may address. `None` means no allowlist applies —
+    /// auth is off, or an embedder gates access itself.
+    pub models: Option<Vec<String>>,
+}
+
+impl Principal {
+    /// Whether this caller may address `model`, matched against the canonical
+    /// name an alias resolves to — the same name `/v1/models` lists.
+    pub fn can_use(&self, model: &str) -> bool {
+        match &self.models {
+            None => true,
+            Some(allowed) => allowed.iter().any(|m| m == "*" || m == model),
+        }
+    }
+}
 
 /// Auth middleware: validates Bearer token against configured virtual keys.
 /// Skips auth only when no admin_token is configured AND key_map is empty.
@@ -32,7 +49,10 @@ pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
             .unwrap_or_else(|e| e.into_inner())
             .is_empty()
     {
-        request.extensions_mut().insert(Principal(None));
+        request.extensions_mut().insert(Principal {
+            name: None,
+            models: None,
+        });
         return next.run(request).await;
     }
 
@@ -64,7 +84,10 @@ pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
         .read()
         .unwrap_or_else(|e| e.into_inner())
         .get(token)
-        .cloned();
+        .map(|key| Principal {
+            name: Some(key.name.clone()),
+            models: Some(key.models.clone()),
+        });
 
     let Some(principal) = principal else {
         return (
@@ -74,7 +97,7 @@ pub async fn auth<S: Storage + 'static, P: Provider + 'static>(
             .into_response();
     };
 
-    request.extensions_mut().insert(Principal(Some(principal)));
+    request.extensions_mut().insert(principal);
 
     next.run(request).await
 }

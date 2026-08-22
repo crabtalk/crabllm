@@ -21,21 +21,29 @@ pub enum Dialect {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Model {
     pub id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub object: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub created: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub owned_by: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub context_length: Option<u32>,
     #[serde(
         default,
-        deserialize_with = "lenient_pricing",
+        deserialize_with = "lenient",
         skip_serializing_if = "Option::is_none"
     )]
     pub pricing: Option<PricingConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub vision: Option<bool>,
     /// Native dialects for this model — the endpoints that serve it without
     /// translation. Empty is omitted for backward compatibility.
@@ -43,16 +51,18 @@ pub struct Model {
     pub dialects: Vec<Dialect>,
 }
 
-/// A third party's `pricing` is its own schema — OpenRouter quotes per-token
-/// strings where this is per-million floats. Keep ours across a round trip,
-/// and drop theirs rather than misread it as a number it isn't.
-fn lenient_pricing<'de, D: serde::Deserializer<'de>>(
-    d: D,
-) -> Result<Option<PricingConfig>, D::Error> {
+/// Every field but `id` is best-effort: a third party's row is its own schema,
+/// so it may arrive as `null`, or as a type we never asked for — OpenRouter
+/// quotes `pricing` as per-token strings where this is per-million floats.
+/// Take what fits and default the rest; `#[serde(default)]` alone covers only
+/// an absent key, and one odd field must not fail the whole catalog.
+fn lenient<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
     let value = serde_json::Value::deserialize(d)?;
-    Ok(serde_json::from_value::<Option<PricingConfig>>(value)
-        .ok()
-        .flatten())
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 impl Model {

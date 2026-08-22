@@ -21,6 +21,10 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 /// (e.g. model mmaps, CUDA contexts, task handles).
 #[derive(Debug)]
 pub struct Deployment<P> {
+    /// The configured provider name. Carried here because a model may be
+    /// served by several providers — only the deployment that actually ran
+    /// knows which one to attribute the request to.
+    pub name: String,
     pub provider: P,
     pub weight: u16,
     pub max_retries: u32,
@@ -72,18 +76,18 @@ impl<P> ProviderRegistry<P> {
     /// Used by the binary to attach a locally-built provider (e.g. the
     /// llama.cpp backend) to a registry that was first populated from
     /// remote-provider configs via [`from_provider_configs`](Self::from_provider_configs).
-    pub fn insert_deployment(
-        &mut self,
-        model: String,
-        provider_name: String,
-        deployment: Deployment<P>,
-    ) {
-        let arc = Arc::new(deployment);
-        self.providers.entry(model.clone()).or_default().push(arc);
-        self.model_providers.insert(model, provider_name);
+    pub fn insert_deployment(&mut self, model: String, deployment: Deployment<P>) {
+        let name = deployment.name.clone();
+        self.providers
+            .entry(model.clone())
+            .or_default()
+            .push(Arc::new(deployment));
+        self.model_providers.entry(model).or_insert(name);
     }
 
-    /// Look up the provider name for a model. O(1) HashMap lookup.
+    /// Look up the provider name for a model. O(1) HashMap lookup. When
+    /// several providers serve the model this reports the first by name —
+    /// to attribute a request, read `name` off the deployment that ran.
     pub fn provider_name(&self, model: &str) -> Option<&str> {
         self.model_providers.get(model).map(|s| s.as_str())
     }
@@ -218,9 +222,16 @@ impl<P> ProviderRegistry<P> {
         // dispatches through the same connection pool.
         let client = make_client();
 
-        let mut providers: HashMap<String, Vec<Arc<Deployment<P>>>> = HashMap::new();
+        // Sorted: `providers_config` is a HashMap, and its iteration order
+        // would otherwise decide the fallback order and the reported name of
+        // any model served by more than one provider — differently per boot.
+        let mut configs: Vec<(&String, &ProviderConfig)> = providers_config.iter().collect();
+        configs.sort_by_key(|(name, _)| name.as_str());
 
-        for (provider_name, provider_config) in providers_config {
+        let mut providers: HashMap<String, Vec<Arc<Deployment<P>>>> = HashMap::new();
+        let mut model_providers = HashMap::new();
+
+        for (provider_name, provider_config) in configs {
             let provider = wrap(RemoteProvider::new(
                 provider_name,
                 provider_config,
@@ -228,6 +239,7 @@ impl<P> ProviderRegistry<P> {
             ));
 
             let deployment = Arc::new(Deployment {
+                name: provider_name.clone(),
                 provider,
                 weight: provider_config.weight.unwrap_or(1),
                 max_retries: provider_config.max_retries.unwrap_or(2),
@@ -239,13 +251,9 @@ impl<P> ProviderRegistry<P> {
                     .entry(model_name.clone())
                     .or_default()
                     .push(Arc::clone(&deployment));
-            }
-        }
-
-        let mut model_providers = HashMap::new();
-        for (provider_name, provider_config) in providers_config {
-            for model in &provider_config.models {
-                model_providers.insert(model.clone(), provider_name.clone());
+                model_providers
+                    .entry(model_name.clone())
+                    .or_insert_with(|| provider_name.clone());
             }
         }
 
