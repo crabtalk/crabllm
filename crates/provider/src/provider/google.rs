@@ -173,8 +173,12 @@ const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 /// Gemini's list rows carry the id as a resource name — `models/gemini-3-pro`
 /// — while every request path spells it bare.
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ModelsResponse {
+    #[serde(default)]
     models: Vec<ModelEntry>,
+    #[serde(default)]
+    next_page_token: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -182,24 +186,44 @@ struct ModelEntry {
     name: String,
 }
 
-/// List the models the key grants. Pages at 50 by default, 1000 max.
-pub async fn models(client: &HttpClient, api_key: &str) -> Result<ModelList, Error> {
-    let url = format!("{BASE_URL}/models?pageSize=1000");
-    let headers = [("x-goog-api-key", api_key)];
-    let resp = client.get(&url, &headers).await?.error_for_status()?;
+/// The documented per-page maximum; the endpoint itself defaults to 50.
+const PAGE_SIZE: u32 = 1000;
 
-    let list: ModelsResponse =
-        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+/// List the models the key grants, following `nextPageToken` to the end. One
+/// page holds every model Google ships today, so the loop usually runs once —
+/// but a truncated catalog is a routing table with models silently missing.
+pub async fn models(client: &HttpClient, api_key: &str) -> Result<ModelList, Error> {
+    let headers = [("x-goog-api-key", api_key)];
+
+    let mut data = Vec::new();
+    let mut token: Option<String> = None;
+    loop {
+        let url = match &token {
+            Some(t) => format!("{BASE_URL}/models?pageSize={PAGE_SIZE}&pageToken={t}"),
+            None => format!("{BASE_URL}/models?pageSize={PAGE_SIZE}"),
+        };
+        let resp = client.get(&url, &headers).await?.error_for_status()?;
+        let page: ModelsResponse =
+            crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+
+        let next = page.next_page_token.filter(|t| !t.is_empty());
+        let empty = page.models.is_empty();
+        data.extend(page.models.into_iter().map(|m| Model {
+            owned_by: "google".to_string(),
+            ..Model::new(m.name.trim_start_matches("models/"))
+        }));
+
+        // A token the server hands back unchanged, or one that came with no
+        // rows, would page forever.
+        if next.is_none() || next == token || empty {
+            break;
+        }
+        token = next;
+    }
+
     Ok(ModelList {
         object: "list".to_string(),
-        data: list
-            .models
-            .into_iter()
-            .map(|m| Model {
-                owned_by: "google".to_string(),
-                ..Model::new(m.name.trim_start_matches("models/"))
-            })
-            .collect(),
+        data,
     })
 }
 

@@ -5,8 +5,9 @@ use crabllm_core::{
 };
 use crabllm_http::HttpClient;
 use futures::StreamExt;
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// `content-type` sent on every request.
@@ -185,7 +186,7 @@ impl Client {
         // Read under an explicit scope so the guard can't be held across the
         // `.await` below, no matter how this is edited later.
         {
-            let cache = self.dialects.read().unwrap();
+            let cache = self.dialects.read();
             if let Some(map) = cache.as_ref() {
                 return map.get(model).cloned().unwrap_or_default();
             }
@@ -204,7 +205,7 @@ impl Client {
             }
         };
         let hit = map.get(model).cloned().unwrap_or_default();
-        *self.dialects.write().unwrap() = Some(map);
+        *self.dialects.write() = Some(map);
         hit
     }
 

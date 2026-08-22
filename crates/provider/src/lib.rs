@@ -119,10 +119,9 @@ pub fn make_client() -> HttpClient {
 /// (`https://api.openai.com/v1`) or a full endpoint URL
 /// (`https://api.openai.com/v1/chat/completions`) and get the same result.
 ///
-/// Only the OpenAI-shaped endpoints are stripped: `/chat/completions`,
-/// `/embeddings`, `/audio/transcriptions`, `/audio/speech`,
-/// `/images/generations`. Anthropic appends `/messages` itself, so
-/// stripping is not needed there.
+/// Strips the endpoint each provider appends for itself: the OpenAI-shaped
+/// paths and Anthropic's `/messages`. A base that keeps its endpoint sends
+/// every later request one path segment too deep — `/v1/messages/models`.
 fn normalize_base_url(url: &str) -> String {
     let url = url.trim_end_matches('/');
     for suffix in [
@@ -131,6 +130,7 @@ fn normalize_base_url(url: &str) -> String {
         "/audio/transcriptions",
         "/audio/speech",
         "/images/generations",
+        "/messages",
     ] {
         if let Some(stripped) = url.strip_suffix(suffix) {
             return stripped.to_string();
@@ -155,10 +155,12 @@ impl RemoteProvider {
             }),
             ProviderKind::Anthropic => RemoteProvider::Anthropic(AnthropicProvider {
                 client,
-                base_url: config
-                    .base_url
-                    .clone()
-                    .unwrap_or_else(|| provider::anthropic::DEFAULT_BASE_URL.to_string()),
+                base_url: normalize_base_url(
+                    &config
+                        .base_url
+                        .clone()
+                        .unwrap_or_else(|| provider::anthropic::DEFAULT_BASE_URL.to_string()),
+                ),
                 api_key,
             }),
             ProviderKind::Google => RemoteProvider::Google(GoogleProvider { client, api_key }),

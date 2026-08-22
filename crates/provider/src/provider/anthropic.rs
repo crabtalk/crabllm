@@ -247,6 +247,11 @@ fn auth_headers(api_key: &str) -> Vec<(&'static str, String)> {
 #[derive(serde::Deserialize)]
 struct ModelsResponse {
     data: Vec<ModelEntry>,
+    #[serde(default)]
+    has_more: bool,
+    /// Cursor for the next page, passed back as `after_id`.
+    #[serde(default)]
+    last_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -254,34 +259,53 @@ struct ModelEntry {
     id: String,
 }
 
-/// List the models the key grants. The endpoint pages at 20 by default, so
-/// ask for the documented maximum rather than silently truncating.
+/// The documented per-page maximum; the endpoint itself defaults to 20.
+const PAGE_LIMIT: u32 = 1000;
+
+/// List the models the key grants, following `has_more` to the end. One page
+/// holds every model Anthropic ships today, so the loop usually runs once —
+/// but a truncated catalog is a routing table with models silently missing.
 pub async fn models(
     client: &HttpClient,
     base_url: &str,
     api_key: &str,
 ) -> Result<ModelList, Error> {
-    let url = format!("{}/models?limit=1000", base_url.trim_end_matches('/'));
+    let base = base_url.trim_end_matches('/');
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> =
         vec![("anthropic-version", crabllm_core::anthropic::VERSION)];
     for (k, v) in &auth {
         headers.push((k, v.as_str()));
     }
-    let resp = client.get(&url, &headers).await?.error_for_status()?;
 
-    let list: ModelsResponse =
-        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+    let mut data = Vec::new();
+    let mut after: Option<String> = None;
+    loop {
+        let url = match &after {
+            Some(id) => format!("{base}/models?limit={PAGE_LIMIT}&after_id={id}"),
+            None => format!("{base}/models?limit={PAGE_LIMIT}"),
+        };
+        let resp = client.get(&url, &headers).await?.error_for_status()?;
+        let page: ModelsResponse =
+            crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+
+        let last_id = page.has_more.then_some(page.last_id).flatten();
+        let empty = page.data.is_empty();
+        data.extend(page.data.into_iter().map(|m| Model {
+            owned_by: "anthropic".to_string(),
+            ..Model::new(m.id)
+        }));
+
+        // No cursor is the end of the list, and an empty page can't advance one.
+        match last_id {
+            Some(id) if !empty => after = Some(id),
+            _ => break,
+        }
+    }
+
     Ok(ModelList {
         object: "list".to_string(),
-        data: list
-            .data
-            .into_iter()
-            .map(|m| Model {
-                owned_by: "anthropic".to_string(),
-                ..Model::new(m.id)
-            })
-            .collect(),
+        data,
     })
 }
 

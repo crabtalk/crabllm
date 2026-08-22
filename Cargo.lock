@@ -478,7 +478,7 @@ dependencies = [
 
 [[package]]
 name = "crabctl"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "clap",
  "dirs",
@@ -491,7 +491,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "arc-swap",
  "axum",
@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-bench"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "axum",
  "clap",
@@ -523,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "bytes",
  "futures",
@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-http"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -560,7 +560,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-llamacpp"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "axum",
  "clap",
@@ -584,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-mlx"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "base64",
  "clap",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-provider"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "crabllm-proxy"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "arc-swap",
  "axum",
@@ -644,12 +644,13 @@ dependencies = [
 
 [[package]]
 name = "crabllm-sdk"
-version = "0.0.24"
+version = "0.0.25"
 dependencies = [
  "bytes",
  "crabllm-core",
  "crabllm-http",
  "futures",
+ "parking_lot",
  "tracing",
 ]
 
