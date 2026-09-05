@@ -16,7 +16,7 @@ type Connector = hyper_rustls::HttpsConnector<hyper_util::client::legacy::connec
 #[cfg(feature = "native-tls")]
 type Connector = hyper_tls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>;
 
-type RequestBody = UnsyncBoxBody<Bytes, std::io::Error>;
+type RequestBody = UnsyncBoxBody<Bytes, Error>;
 type HyperClient = Client<Connector, RequestBody>;
 
 fn full_body(bytes: Bytes) -> RequestBody {
@@ -270,7 +270,7 @@ impl HttpClient {
         let frames = BodyStream::new(resp.into_body()).filter_map(|frame| {
             let result = match frame {
                 Ok(f) => f.into_data().ok().map(Ok),
-                Err(e) => Some(Err(std::io::Error::other(e))),
+                Err(e) => Some(Err(Error::Network(e.to_string()))),
             };
             std::future::ready(result)
         });
@@ -280,11 +280,7 @@ impl HttpClient {
             match tokio::time::timeout(READ_TIMEOUT, inner.next()).await {
                 Ok(Some(item)) => Some((item, Some(inner))),
                 Ok(None) => None,
-                Err(_) => {
-                    let err =
-                        std::io::Error::new(std::io::ErrorKind::TimedOut, "provider stream idle");
-                    Some((Err(err), None))
-                }
+                Err(_) => Some((Err(Error::Timeout), None)),
             }
         });
 

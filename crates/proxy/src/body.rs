@@ -1,5 +1,5 @@
 use bytes::{Bytes, BytesMut};
-use crabllm_core::ByteStream;
+use crabllm_core::{ByteStream, Error};
 use futures::StreamExt;
 use http_body_util::{BodyExt, BodyStream};
 
@@ -69,11 +69,11 @@ impl RequestBody {
 
     pub fn into_stream(self) -> ByteStream {
         let prefix = inject_stream_options(self.buf.freeze());
-        let prefix_once = futures::stream::once(async { Ok::<_, std::io::Error>(prefix) });
+        let prefix_once = futures::stream::once(async { Ok::<_, Error>(prefix) });
         let rest = BodyStream::new(self.rest).filter_map(|f| {
             std::future::ready(match f {
                 Ok(f) => f.into_data().ok().map(Ok),
-                Err(e) => Some(Err(std::io::Error::other(e))),
+                Err(e) => Some(Err(Error::Network(e.to_string()))),
             })
         });
         Box::pin(prefix_once.chain(rest))

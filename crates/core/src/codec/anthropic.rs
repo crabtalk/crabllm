@@ -2,7 +2,13 @@ use crate::{
     ByteStream, ChatCompletionChunk, ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta,
     OpenAiUsage, Role, ToolCallDelta, ToolType, Usage, anthropic,
 };
-use futures::stream::{self, Stream, StreamExt};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use futures_util::stream::{self, Stream, StreamExt};
 use serde::Deserialize;
 
 // ── Anthropic SSE event types (parse-only) ──
@@ -276,7 +282,7 @@ pub fn anthropic_events_to_chunks(
             },
         ),
         |(mut events, mut state)| async move {
-            use futures::StreamExt;
+            use futures_util::StreamExt;
 
             loop {
                 let event = match events.next().await? {
@@ -438,7 +444,7 @@ pub fn anthropic_events_to_chunks(
 pub fn chunks_to_anthropic_events(
     chunks: impl Stream<Item = Result<ChatCompletionChunk, Error>> + Unpin + Send + 'static,
 ) -> impl Stream<Item = Result<anthropic::StreamEvent, Error>> + Send + 'static {
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum CurrentBlock {

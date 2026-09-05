@@ -3,7 +3,7 @@ use crate::{
     ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
     MultipartField, Provider, anthropic, gemini,
 };
-use futures::StreamExt;
+use futures_util::StreamExt;
 use rand::Rng;
 use std::{future::Future, time::Duration};
 
@@ -260,7 +260,7 @@ fn idle_bounded<T: Send + 'static>(
     if idle.is_zero() {
         return stream;
     }
-    Box::pin(futures::stream::unfold(
+    Box::pin(futures_util::stream::unfold(
         Some(stream),
         move |state| async move {
             let mut stream = state?;

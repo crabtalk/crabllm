@@ -5,6 +5,7 @@ use crate::{
         self, BlockDelta, ContentBlock, Messages, OutputConfig, ThinkingConfig, ToolResultContent,
     },
 };
+use alloc::{string::ToString, vec, vec::Vec};
 
 impl From<crate::anthropic::Request> for ir::Request {
     fn from(req: crate::anthropic::Request) -> Self {

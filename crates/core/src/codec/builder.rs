@@ -2,7 +2,7 @@ use crate::{
     FunctionCall, ToolCall, ToolType,
     types::anthropic::{self, Message},
 };
-use std::collections::BTreeMap;
+use alloc::{collections::BTreeMap, string::String, vec::Vec};
 
 /// Accumulates a streamed Anthropic response back into a whole [`Message`].
 ///

@@ -4,6 +4,10 @@ use crate::types::{
     anthropic::{Content, ContentBlock, Message, Tool},
     ir, openai,
 };
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use serde_json::{Value, json};
 
 impl From<&openai::Tool> for Tool {

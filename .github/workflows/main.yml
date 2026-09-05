@@ -44,6 +44,19 @@ jobs:
       - name: Clippy
         run: cargo clippy --all -- -D warnings
 
+  no-std:
+    name: No-std
+    runs-on: Linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@sccache
+      - name: Install Guest Targets
+        run: rustup target add wasm32-unknown-unknown riscv64imac-unknown-none-elf
+      - name: Check wasm32
+        run: cargo check -p crabllm-core --no-default-features --target wasm32-unknown-unknown
+      - name: Check riscv64
+        run: cargo check -p crabllm-core --no-default-features --target riscv64imac-unknown-none-elf
+
   typos:
     name: Typos
     runs-on: Linux

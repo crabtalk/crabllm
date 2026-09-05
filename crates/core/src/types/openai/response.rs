@@ -1,5 +1,8 @@
-use crate::Usage;
-use crate::types::openai::{FinishReason, Message, ToolType};
+use crate::{
+    Usage,
+    types::openai::{FinishReason, Message, ToolType},
+};
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

@@ -1,3 +1,4 @@
+use alloc::{string::String, vec::Vec};
 pub use request::{ChatCompletionRequest, FunctionDef, Stop, StreamOptions, Tool, ToolChoice};
 pub use response::{
     ChatCompletionResponse, Choice, CompletionTokensDetails, FunctionCall, OpenAiUsage,

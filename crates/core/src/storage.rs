@@ -1,5 +1,6 @@
 use crate::Error;
-use std::{future::Future, pin::Pin};
+use alloc::{boxed::Box, vec::Vec};
+use core::{future::Future, pin::Pin};
 
 /// Fixed-length prefix size in bytes for storage keys.
 pub const PREFIX_LEN: usize = 4;

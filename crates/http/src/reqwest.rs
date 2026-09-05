@@ -191,7 +191,7 @@ impl HttpClient {
         );
         let stream = resp
             .bytes_stream()
-            .map(|r| r.map_err(std::io::Error::other));
+            .map(|r| r.map_err(|e| Error::Network(e.to_string())));
         Ok(Box::pin(stream))
     }
 }

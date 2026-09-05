@@ -1,4 +1,8 @@
 use crate::types::anthropic::ContentBlock;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

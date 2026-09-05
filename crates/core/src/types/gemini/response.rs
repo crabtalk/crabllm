@@ -1,5 +1,5 @@
-use crate::types::gemini::Content;
-use crate::types::openai;
+use crate::types::{gemini::Content, openai};
+use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

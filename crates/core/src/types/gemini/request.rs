@@ -1,4 +1,5 @@
 use crate::types::gemini::Content;
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

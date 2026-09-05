@@ -3,6 +3,12 @@ use crate::{
     FunctionDef, ImageUrl, MessageContent, OpenAiUsage, ToolType, Usage,
     ir::{self, Content, Message, Role, StopReason, StreamEvent},
 };
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 
 impl From<crate::ChatCompletionRequest> for ir::Request {
     fn from(req: crate::ChatCompletionRequest) -> Self {

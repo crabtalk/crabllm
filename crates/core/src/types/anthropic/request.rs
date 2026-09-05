@@ -1,5 +1,5 @@
-use crate::types::anthropic::ContentBlock;
-use crate::types::anthropic::Message;
+use crate::types::anthropic::{ContentBlock, Message};
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MAX_TOKENS: u32 = 4096;

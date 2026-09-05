@@ -3,9 +3,13 @@ use crate::{
     EmbeddingRequest, EmbeddingResponse, Error, ImageRequest, ModelList, MultipartField, anthropic,
     gemini, ir,
 };
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use bytes::Bytes;
+use core::{future::Future, pin::Pin};
 use futures_core::Stream;
-use std::{future::Future, pin::Pin};
 
 /// A boxed, `Send`, dynamically-typed stream — used by `Provider` so the
 /// trait can return a uniform stream type without each implementor leaking
@@ -13,7 +17,7 @@ use std::{future::Future, pin::Pin};
 pub type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
 
 /// Raw byte stream for SSE passthrough.
-pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>;
+pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
 
 /// The dispatch surface every provider implementation satisfies.
 ///
