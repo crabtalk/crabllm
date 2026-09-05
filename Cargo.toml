@@ -26,13 +26,15 @@ crabctl = { version = "0.0.25", path = "crates/crabctl" }
 # crates-io
 axum = { version = "0.8", features = ["multipart"] }
 base64 = "0.22"
-bytes = "1"
+bytes = { version = "1", default-features = false }
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
-futures-core = "0.3"
+futures-core = { version = "0.3", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+hashbrown = { version = "0.16", features = ["serde"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "stream"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
 sonic-rs = "0.5"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
@@ -42,10 +44,10 @@ native-tls = { version = "0.2", features = ["alpn"] }
 http-body = "1"
 http-body-util = "0.1"
 http = "1"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1" }
 dashmap = "6"
 toml = "0.8"
-thiserror = "2"
+thiserror = { version = "2", default-features = false }
 tower = "0.5"
 rand = "0.9"
 tracing = "0.1"

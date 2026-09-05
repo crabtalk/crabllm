@@ -41,6 +41,22 @@ Layer 3 ─ Binary
   The proxy is untyped: it passes raw bytes through whenever possible. Typed
   deserialization belongs in the provider crate, not the proxy.
 
+## no_std
+
+`crabllm-core` is the only `no_std`-capable crate — everything above Layer 0 is unconditionally std. CI checks it against `wasm32-unknown-unknown` and `riscv64imac-unknown-none-elf`; riscv64 is the real gate, since it has no std for a stray import to fall back on.
+
+```sh
+cargo check -p crabllm-core --no-default-features --target riscv64imac-unknown-none-elf
+```
+
+Rules for core:
+
+- `std` is a default feature, not the absence of one. A `no_std` build is `--no-default-features`.
+- Import from `alloc`, never `std`. Use `hashbrown::HashMap` in place of `std::collections::HashMap`.
+- New deps go in `[workspace.dependencies]` with `default-features = false`, and core's `std` feature forwards their `std` feature.
+- Anything needing time, tokio, or another std-only API is `#[cfg(feature = "std")]` on both the `mod` and the `pub use` — see `config`, `extension`, `retrying`.
+- JSON goes through the `crabllm_core::json` facade. `serde_json::Value`, `Map`, and `json!` are not part of it; depend on `serde_json` directly if you need them.
+
 ## Data Flow
 
 ```

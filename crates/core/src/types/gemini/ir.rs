@@ -3,7 +3,14 @@ use crate::{
     ir::{self, Content, Message, Role, StopReason},
     types::gemini,
 };
-use std::collections::{HashMap, VecDeque};
+use alloc::{
+    collections::VecDeque,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use hashbrown::HashMap;
 
 impl From<&crate::gemini::Request> for ir::Request {
     fn from(req: &crate::gemini::Request) -> Self {

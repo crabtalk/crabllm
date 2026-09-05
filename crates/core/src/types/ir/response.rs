@@ -1,5 +1,5 @@
-use crate::Usage;
-use crate::ir::Content;
+use crate::{Usage, ir::Content};
+use alloc::{string::String, vec::Vec};
 
 #[derive(Debug, Clone)]
 pub struct Response {

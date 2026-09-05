@@ -1,4 +1,5 @@
 use crate::ir::{Content, Message};
+use alloc::{string::String, vec::Vec};
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
@@ -104,8 +105,8 @@ impl Effort {
     }
 }
 
-impl std::fmt::Display for Effort {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Effort {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self.level() {
             Self::Minimal => "minimal",
             Self::Low => "low",
@@ -120,7 +121,7 @@ impl std::fmt::Display for Effort {
     }
 }
 
-impl std::str::FromStr for Effort {
+impl core::str::FromStr for Effort {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

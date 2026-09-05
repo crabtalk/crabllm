@@ -3,7 +3,7 @@ pub use embedding::{
     Embedding, EmbeddingInput, EmbeddingRequest, EmbeddingResponse, EmbeddingUsage,
 };
 pub use image::ImageRequest;
-pub use model::{Dialect, Model, ModelList};
+pub use model::{Dialect, Model, ModelList, PricingConfig};
 pub use multipart::MultipartField;
 pub use openai::*;
 

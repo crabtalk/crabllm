@@ -2,7 +2,13 @@ use crate::{
     ByteStream, ChatCompletionChunk, ChunkChoice, Delta, Error, FunctionCallDelta, OpenAiUsage,
     Role, ToolCallDelta, Usage, anthropic::ContentBlock, gemini,
 };
-use futures::stream::{self, Stream, StreamExt};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use futures_util::stream::{self, Stream, StreamExt};
 
 // Gemini 2.5+ thinking models attach a `thoughtSignature` (base64) to
 // each `functionCall` part. Subsequent turns must echo that signature
@@ -85,7 +91,7 @@ pub fn gemini_responses_to_chunks(
     stream::unfold(
         (responses.boxed(), model, 0u64),
         |(mut responses, model, mut chunk_idx)| async move {
-            use futures::StreamExt;
+            use futures_util::StreamExt;
 
             loop {
                 let gemini_resp = match responses.next().await? {

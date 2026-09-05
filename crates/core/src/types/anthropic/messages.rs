@@ -1,5 +1,8 @@
-use crate::types::anthropic::{Content, Message};
-use crate::types::anthropic::{ContentBlock, ToolResultContent};
+use crate::types::anthropic::{Content, ContentBlock, Message, ToolResultContent};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 /// Operations on a wire-level message list. Lives as a trait so call sites
 /// read as `messages.coalesce_tool_results()` rather than as free functions
@@ -51,7 +54,7 @@ impl Messages for Vec<Message> {
             .iter()
             .enumerate()
             .filter_map(|(i, msg)| {
-                let next_results: std::collections::BTreeSet<&str> = self
+                let next_results: alloc::collections::BTreeSet<&str> = self
                     .get(i + 1)
                     .map(|m| m.tool_result_ids().collect())
                     .unwrap_or_default();

@@ -1,5 +1,9 @@
+use alloc::{
+    format,
+    string::{String, ToString},
+};
+use core::time::Duration;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// Shared error type for the crabllm workspace.
 ///

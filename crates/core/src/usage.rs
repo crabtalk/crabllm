@@ -1,5 +1,5 @@
+use alloc::{collections::BTreeMap, string::String};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 /// Canonical token usage. Axes are disjoint — billing computes cost as a sum
 /// over (axis, rate) pairs without any subtraction or clamping.
