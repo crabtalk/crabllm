@@ -451,6 +451,7 @@ pub async fn merge_stored_providers(storage: &dyn Storage, config: &mut GatewayC
     }
 }
 
+#[allow(clippy::result_large_err)]
 async fn read_toml_config(path: &PathBuf) -> Result<GatewayConfig, Response> {
     let raw = tokio::fs::read_to_string(path).await.map_err(|e| {
         crate::admin::err_response(
@@ -468,6 +469,7 @@ async fn read_toml_config(path: &PathBuf) -> Result<GatewayConfig, Response> {
     })
 }
 
+#[allow(clippy::result_large_err)]
 async fn load_stored(
     storage: &dyn Storage,
     name: &str,
