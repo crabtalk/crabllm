@@ -1,5 +1,5 @@
+use alloc::{collections::BTreeMap, string::String};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 /// Canonical token usage. Axes are disjoint — billing computes cost as a sum
 /// over (axis, rate) pairs without any subtraction or clamping.
@@ -51,27 +51,6 @@ impl Usage {
     }
 }
 
-mod peek {
-    use crate::types::OpenAiUsage;
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    pub struct OpenAi {
-        pub usage: Option<OpenAiUsage>,
-    }
-
-    #[derive(Deserialize)]
-    pub struct Anthropic {
-        pub usage: Option<crate::anthropic::Usage>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct Gemini {
-        pub usage_metadata: Option<crate::gemini::Usage>,
-    }
-}
-
 impl From<&[u8]> for Usage {
     fn from(raw: &[u8]) -> Self {
         if let Ok(peek::OpenAi { usage: Some(u) }) = crate::json::from_slice(raw)
@@ -95,5 +74,26 @@ impl From<&[u8]> for Usage {
         }
 
         Usage::default()
+    }
+}
+
+mod peek {
+    use crate::types::OpenAiUsage;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    pub struct OpenAi {
+        pub usage: Option<OpenAiUsage>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct Anthropic {
+        pub usage: Option<crate::anthropic::Usage>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Gemini {
+        pub usage_metadata: Option<crate::gemini::Usage>,
     }
 }

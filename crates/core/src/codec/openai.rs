@@ -1,5 +1,6 @@
 use crate::{ByteStream, ChatCompletionChunk, Error};
-use futures::stream::{Stream, StreamExt};
+use alloc::format;
+use futures_util::stream::{Stream, StreamExt};
 
 /// Parse an SSE byte stream into `ChatCompletionChunk` items. Each `data:`
 /// payload is one chunk; the `[DONE]` sentinel ends the stream.

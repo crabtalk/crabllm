@@ -1,5 +1,5 @@
-use crate::types::anthropic::ContentBlock;
-use crate::types::anthropic::Message;
+use crate::types::anthropic::{ContentBlock, Message};
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MAX_TOKENS: u32 = 4096;
@@ -13,12 +13,23 @@ pub const VERSION: &str = "2023-06-01";
 pub struct ThinkingConfig {
     #[serde(rename = "type")]
     pub kind: String,
+    /// The pre-4.7 dialect's integer budget. Absent on `adaptive`, which
+    /// carries its depth in [`OutputConfig::effort`] instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OutputConfig {
+    /// `low` | `medium` | `high` | `xhigh` | `max`. Anthropic defaults to
+    /// `high` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicRequest))]
 pub struct Request {
     pub model: String,
     pub messages: Vec<Message>,
@@ -40,11 +51,13 @@ pub struct Request {
     pub stop_sequences: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_config: Option<OutputConfig>,
 }
 
 /// System prompt: either a plain string or an array of content blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicSystem))]
 #[serde(untagged)]
 pub enum System {
     Text(String),
@@ -52,7 +65,7 @@ pub enum System {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema), schema(as = AnthropicTool))]
 pub struct Tool {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

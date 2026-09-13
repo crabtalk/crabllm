@@ -1,5 +1,9 @@
+use alloc::{
+    format,
+    string::{String, ToString},
+};
+use core::time::Duration;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// Shared error type for the crabllm workspace.
 ///
@@ -108,6 +112,19 @@ impl Error {
             Error::Unsupported(_) => "unsupported_error",
             Error::Timeout => "timeout_error",
             Error::Config(_) | Error::Encode(_) | Error::Internal(_) => "server_error",
+        }
+    }
+
+    /// The message to show a user, with the upstream's error envelope peeled
+    /// off. A `Provider` body is usually an [`ApiError`] JSON document, whose
+    /// own `message` is the only part worth reading; every other variant is
+    /// already a bare sentence.
+    pub fn message(&self) -> String {
+        match self {
+            Error::Provider { body, .. } => crate::json::from_str::<ApiError>(body)
+                .map(|e| e.error.message)
+                .unwrap_or_else(|_| body.clone()),
+            other => other.to_string(),
         }
     }
 

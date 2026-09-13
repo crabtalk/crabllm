@@ -2,7 +2,13 @@ use crate::{
     ByteStream, ChatCompletionChunk, ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta,
     OpenAiUsage, Role, ToolCallDelta, ToolType, Usage, anthropic,
 };
-use futures::stream::{self, Stream, StreamExt};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use futures_util::stream::{self, Stream, StreamExt};
 use serde::Deserialize;
 
 // ── Anthropic SSE event types (parse-only) ──
@@ -276,7 +282,7 @@ pub fn anthropic_events_to_chunks(
             },
         ),
         |(mut events, mut state)| async move {
-            use futures::StreamExt;
+            use futures_util::StreamExt;
 
             loop {
                 let event = match events.next().await? {
@@ -388,12 +394,8 @@ pub fn anthropic_events_to_chunks(
                         return Some((Ok(chunk), (events, state)));
                     }
                     anthropic::StreamEvent::MessageDelta { delta, usage } => {
-                        let finish_reason = delta.stop_reason.as_deref().map(|r| match r {
-                            "end_turn" => FinishReason::Stop,
-                            "max_tokens" => FinishReason::Length,
-                            "tool_use" => FinishReason::ToolCalls,
-                            other => FinishReason::Custom(other.to_string()),
-                        });
+                        let finish_reason =
+                            delta.stop_reason.as_deref().map(anthropic::finish_reason);
                         state.chunk_idx += 1;
                         let chunk = ChatCompletionChunk {
                             id: format!("chatcmpl-{}", state.chunk_idx),
@@ -442,7 +444,7 @@ pub fn anthropic_events_to_chunks(
 pub fn chunks_to_anthropic_events(
     chunks: impl Stream<Item = Result<ChatCompletionChunk, Error>> + Unpin + Send + 'static,
 ) -> impl Stream<Item = Result<anthropic::StreamEvent, Error>> + Send + 'static {
-    use std::collections::VecDeque;
+    use alloc::collections::VecDeque;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum CurrentBlock {

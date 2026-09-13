@@ -8,7 +8,7 @@ use crate::{
     AppState,
     auth::Principal,
     handlers::{
-        RequestOutcome, emit_usage, emit_usage_error, error_response, error_status,
+        RequestOutcome, emit_usage, emit_usage_error, error_response, error_status, first_provider,
         record_duration, record_tokens, try_anthropic_stream_with_retries, with_timeout,
     },
 };
@@ -64,6 +64,9 @@ where
     let is_stream = peek.stream == Some(true);
     let registry = state.registry();
     let model = registry.resolve(&peek.model).to_string();
+    if !principal.can_use(&model) {
+        return crate::handlers::model_forbidden(&model);
+    }
     let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
@@ -96,17 +99,11 @@ where
     S: Storage + 'static,
     P: Provider + 'static,
 {
-    let registry = state.registry();
-    let provider_name = registry
-        .provider_name(model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
+    let mut ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.to_string(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(deployments),
+        principal: principal.name,
         is_stream: true,
         started_at: Instant::now(),
     };
@@ -122,6 +119,7 @@ where
         if !deployment.provider.is_anthropic_compat() {
             continue;
         }
+        ctx.provider = deployment.name.clone();
         match try_anthropic_stream_with_retries(deployment, raw_body.clone()).await {
             Ok(byte_stream) => {
                 return raw_anthropic_stream_response(byte_stream, state, ctx);
@@ -152,17 +150,11 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
     deployments: &[&crabllm_provider::Deployment<P>],
     raw_body: axum::body::Bytes,
 ) -> Response {
-    let registry = state.registry();
-    let provider_name = registry
-        .provider_name(model)
-        .unwrap_or_default()
-        .to_string();
-
-    let ctx = RequestContext {
+    let mut ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.to_string(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(deployments),
+        principal: principal.name,
         is_stream: false,
         started_at: Instant::now(),
     };
@@ -188,6 +180,7 @@ async fn handle_raw_anthropic<S: Storage, P: Provider>(
         if !deployment.provider.is_anthropic_compat() {
             continue;
         }
+        ctx.provider = deployment.name.clone();
         match with_timeout(
             deployment.timeout,
             deployment.provider.anthropic_messages_raw(raw_body.clone()),

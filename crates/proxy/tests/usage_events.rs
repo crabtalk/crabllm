@@ -123,6 +123,7 @@ fn build_state(tx: broadcast::Sender<UsageEvent>) -> AppState<FakeStorage, FakeP
     providers.insert(
         "fake-model".to_string(),
         vec![Arc::new(Deployment {
+            name: "fake".to_string(),
             provider: FakeProvider,
             weight: 1,
             max_retries: 0,
@@ -196,6 +197,7 @@ async fn none_usage_events_is_zero_cost() {
     providers.insert(
         "fake-model".to_string(),
         vec![Arc::new(Deployment {
+            name: "fake".to_string(),
             provider: FakeProvider,
             weight: 1,
             max_retries: 0,

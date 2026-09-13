@@ -24,4 +24,5 @@ crabllm-http.workspace = true
 # crates-io
 bytes.workspace = true
 futures.workspace = true
+parking_lot.workspace = true
 tracing.workspace = true

@@ -341,9 +341,9 @@ fn public_paths() -> Paths {
                         "Anthropic-style messages endpoint. Body and response follow \
                          the Anthropic Messages API; SSE is returned when stream=true.",
                     ))
-                    .request_body(Some(json_body("anthropic::Request")))
+                    .request_body(Some(json_body("AnthropicRequest")))
                     .responses(json_ok(
-                        "anthropic::Response",
+                        "AnthropicResponse",
                         "Message response (or SSE stream when stream=true)",
                     )),
             ),

@@ -1,5 +1,5 @@
-use crate::Usage;
-use crate::ir::StopReason;
+use crate::{Usage, ir::StopReason};
+use alloc::string::String;
 
 #[derive(Debug, Clone)]
 pub enum StreamEvent {

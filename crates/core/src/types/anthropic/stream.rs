@@ -5,6 +5,7 @@
 //! [`Provider::anthropic_messages_stream`](crate::Provider::anthropic_messages_stream).
 
 use crate::types::anthropic::{ContentBlock, Response, Usage};
+use alloc::string::String;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]

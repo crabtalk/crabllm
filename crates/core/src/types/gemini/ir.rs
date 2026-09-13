@@ -3,7 +3,14 @@ use crate::{
     ir::{self, Content, Message, Role, StopReason},
     types::gemini,
 };
-use std::collections::{HashMap, VecDeque};
+use alloc::{
+    collections::VecDeque,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use hashbrown::HashMap;
 
 impl From<&crate::gemini::Request> for ir::Request {
     fn from(req: &crate::gemini::Request) -> Self {
@@ -52,20 +59,16 @@ impl From<&crate::gemini::Request> for ir::Request {
             })
             .unwrap_or_default();
 
-        // Gemini's `-1` means "let the model decide", which has no budget to
-        // read an effort from, so it lands on the default level.
+        // Gemini's `-1` means "let the model decide", which carries no budget
+        // to preserve, so it lands on the default level.
         let thinking = req
             .generation_config
             .as_ref()
             .and_then(|cfg| cfg.thinking_config.as_ref())
             .and_then(|t| t.thinking_budget)
-            .map(|budget| ir::Thinking {
-                effort: if budget < 0 {
-                    ir::Effort::default()
-                } else {
-                    ir::Effort::from_budget(budget as u32)
-                },
-                budget_tokens: (budget >= 0).then_some(budget as u32),
+            .map(|budget| match u32::try_from(budget) {
+                Ok(budget) => ir::Effort::from(budget),
+                Err(_) => ir::Effort::default(),
             });
 
         let tools = req.tools.as_ref().map(|defs| {

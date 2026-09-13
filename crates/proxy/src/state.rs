@@ -1,5 +1,5 @@
 use arc_swap::ArcSwap;
-use crabllm_core::{Extension, GatewayConfig, Provider, Storage};
+use crabllm_core::{Extension, GatewayConfig, KeyConfig, Provider, Storage};
 use crabllm_provider::ProviderRegistry;
 use std::{
     collections::HashMap,
@@ -52,9 +52,10 @@ pub struct AppState<S: Storage, P: Provider> {
     pub config: GatewayConfig,
     pub extensions: Arc<Vec<Box<dyn Extension>>>,
     pub storage: Arc<S>,
-    /// Precomputed token → key name lookup for O(1) auth.
+    /// Precomputed token → key lookup for O(1) auth. Holds the whole
+    /// [`KeyConfig`] because auth also decides model access from it.
     /// Wrapped in RwLock to support runtime key management.
-    pub key_map: Arc<RwLock<HashMap<String, String>>>,
+    pub key_map: Arc<RwLock<HashMap<String, KeyConfig>>>,
     /// Optional broadcast sink for per-request [`UsageEvent`]s. `None`
     /// is a no-op — the standalone `crabllm serve` binary leaves it
     /// unset and behavior is unchanged. Embedders that want live

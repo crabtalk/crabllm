@@ -9,7 +9,7 @@ use crate::{
     AppState,
     auth::Principal,
     handlers::{
-        RequestOutcome, emit_usage, emit_usage_error, error_response, error_status,
+        RequestOutcome, emit_usage, emit_usage_error, error_response, error_status, first_provider,
         record_duration, record_tokens, with_timeout,
     },
 };
@@ -63,6 +63,9 @@ where
 
     let registry = state.registry();
     let model = registry.resolve(model_raw).to_string();
+    if !principal.can_use(&model) {
+        return crate::handlers::model_forbidden(&model);
+    }
     let deployments = match registry.dispatch_list(&model) {
         Some(list) => list,
         None => {
@@ -77,15 +80,11 @@ where
         }
     };
 
-    let provider_name = registry
-        .provider_name(&model)
-        .unwrap_or_default()
-        .to_string();
     let ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         model: model.clone(),
-        provider: provider_name,
-        principal: principal.0,
+        provider: first_provider(&deployments),
+        principal: principal.name,
         is_stream,
         started_at: Instant::now(),
     };
@@ -98,7 +97,7 @@ where
 
 async fn unary_path<S, P>(
     state: &AppState<S, P>,
-    ctx: RequestContext,
+    mut ctx: RequestContext,
     model: &str,
     deployments: &[&crabllm_provider::Deployment<P>],
     raw_body: Bytes,
@@ -112,6 +111,7 @@ where
         if !deployment.provider.is_gemini_compat() {
             continue;
         }
+        ctx.provider = deployment.name.clone();
         match with_timeout(
             deployment.timeout,
             deployment
@@ -154,7 +154,7 @@ where
 
 async fn stream_path<S, P>(
     state: &AppState<S, P>,
-    ctx: RequestContext,
+    mut ctx: RequestContext,
     model: &str,
     deployments: &[&crabllm_provider::Deployment<P>],
     raw_body: Bytes,
@@ -168,6 +168,7 @@ where
         if !deployment.provider.is_gemini_compat() {
             continue;
         }
+        ctx.provider = deployment.name.clone();
         match with_timeout(
             deployment.timeout,
             deployment

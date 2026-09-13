@@ -1,3 +1,4 @@
+use alloc::string::String;
 use bytes::Bytes;
 
 /// A buffered multipart form field. Carries name, filename, content type, and

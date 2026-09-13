@@ -10,6 +10,9 @@ use crabllm_core::{
 };
 use futures::stream::StreamExt;
 
+/// Interleaved thinking for the manual `budget_tokens` dialect. Adaptive
+/// thinking enables it on its own, so only the native passthrough — where
+/// the client owns the request shape — still needs the header.
 const THINKING_BETA: &str = "interleaved-thinking-2025-05-14";
 
 #[derive(Debug, Clone)]
@@ -43,9 +46,6 @@ impl Provider for AnthropicProvider {
         ];
         for (k, v) in &auth {
             headers.push((k, v.as_str()));
-        }
-        if anthropic_req.thinking.is_some() {
-            headers.push(("anthropic-beta", THINKING_BETA));
         }
         let byte_stream = self.client.post_stream(&url, &headers, body.into()).await?;
         let events = anthropic_event_stream(byte_stream, request.model.clone());
@@ -165,7 +165,27 @@ fn translate_request(request: &ChatCompletionRequest) -> anthropic::Request {
     // The IR already knows how to read an OpenAI request and write an
     // Anthropic one, including tool-result coalescing and pairing. Only the
     // rules below are Anthropic-API quirks the IR has no reason to carry.
-    let mut out = anthropic::Request::from(&ir::Request::from(request.clone()));
+    let mut ir_req = ir::Request::from(request.clone());
+
+    // `reasoning_effort` already arrived through the IR. This is the other
+    // spelling: a raw Anthropic `thinking` object riding along in an
+    // OpenAI-shaped body, which `extra` captures verbatim. Setting it on the
+    // IR keeps it behind the same lowering as every other spelling.
+    if let Some(v) = request.extra.get("thinking") {
+        ir_req.thinking = if v.as_bool() == Some(true) {
+            // A bare `true` used to mean "budget everything the response
+            // allows"; `Max` is that intent in the dialect we now emit.
+            Some(ir::Effort::Max)
+        } else {
+            v.as_object().and_then(|obj| {
+                obj.get("budget_tokens")
+                    .and_then(|b| b.as_u64())
+                    .map(|b| ir::Effort::from(b as u32))
+            })
+        };
+    }
+
+    let mut out = anthropic::Request::from(&ir_req);
 
     // Anthropic rejects `tool_choice: "none"` sent alongside a tools array, so
     // when the choice is "none" we omit both tools and tool_choice entirely.
@@ -198,26 +218,6 @@ fn translate_request(request: &ChatCompletionRequest) -> anthropic::Request {
         .unwrap_or(anthropic::DEFAULT_MAX_TOKENS);
     out.max_tokens = max_tokens;
 
-    // `reasoning_effort` already arrived through the IR. This is the other
-    // spelling: a raw Anthropic `thinking` object riding along in an
-    // OpenAI-shaped body, which `extra` captures verbatim.
-    if let Some(v) = request.extra.get("thinking") {
-        out.thinking = if v.as_bool() == Some(true) {
-            Some(anthropic::ThinkingConfig {
-                kind: "enabled".to_string(),
-                budget_tokens: Some(max_tokens.saturating_sub(1)),
-            })
-        } else {
-            v.as_object().map(|obj| anthropic::ThinkingConfig {
-                kind: "enabled".to_string(),
-                budget_tokens: obj
-                    .get("budget_tokens")
-                    .and_then(|b| b.as_u64())
-                    .map(|b| (b as u32).min(max_tokens.saturating_sub(1))),
-            })
-        };
-    }
-
     out.stream = request.stream;
     out
 }
@@ -247,6 +247,11 @@ fn auth_headers(api_key: &str) -> Vec<(&'static str, String)> {
 #[derive(serde::Deserialize)]
 struct ModelsResponse {
     data: Vec<ModelEntry>,
+    #[serde(default)]
+    has_more: bool,
+    /// Cursor for the next page, passed back as `after_id`.
+    #[serde(default)]
+    last_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -254,34 +259,53 @@ struct ModelEntry {
     id: String,
 }
 
-/// List the models the key grants. The endpoint pages at 20 by default, so
-/// ask for the documented maximum rather than silently truncating.
+/// The documented per-page maximum; the endpoint itself defaults to 20.
+const PAGE_LIMIT: u32 = 1000;
+
+/// List the models the key grants, following `has_more` to the end. One page
+/// holds every model Anthropic ships today, so the loop usually runs once —
+/// but a truncated catalog is a routing table with models silently missing.
 pub async fn models(
     client: &HttpClient,
     base_url: &str,
     api_key: &str,
 ) -> Result<ModelList, Error> {
-    let url = format!("{}/models?limit=1000", base_url.trim_end_matches('/'));
+    let base = base_url.trim_end_matches('/');
     let auth = auth_headers(api_key);
     let mut headers: Vec<(&str, &str)> =
         vec![("anthropic-version", crabllm_core::anthropic::VERSION)];
     for (k, v) in &auth {
         headers.push((k, v.as_str()));
     }
-    let resp = client.get(&url, &headers).await?.error_for_status()?;
 
-    let list: ModelsResponse =
-        crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+    let mut data = Vec::new();
+    let mut after: Option<String> = None;
+    loop {
+        let url = match &after {
+            Some(id) => format!("{base}/models?limit={PAGE_LIMIT}&after_id={id}"),
+            None => format!("{base}/models?limit={PAGE_LIMIT}"),
+        };
+        let resp = client.get(&url, &headers).await?.error_for_status()?;
+        let page: ModelsResponse =
+            crabllm_core::json::from_slice(&resp.body).map_err(|e| Error::Decode(e.to_string()))?;
+
+        let last_id = page.has_more.then_some(page.last_id).flatten();
+        let empty = page.data.is_empty();
+        data.extend(page.data.into_iter().map(|m| Model {
+            owned_by: "anthropic".to_string(),
+            ..Model::new(m.id)
+        }));
+
+        // No cursor is the end of the list, and an empty page can't advance one.
+        match last_id {
+            Some(id) if !empty => after = Some(id),
+            _ => break,
+        }
+    }
+
     Ok(ModelList {
         object: "list".to_string(),
-        data: list
-            .data
-            .into_iter()
-            .map(|m| Model {
-                owned_by: "anthropic".to_string(),
-                ..Model::new(m.id)
-            })
-            .collect(),
+        data,
     })
 }
 
@@ -353,9 +377,6 @@ pub async fn chat_completion(
     ];
     for (k, v) in &auth {
         headers.push((k, v.as_str()));
-    }
-    if anthropic_req.thinking.is_some() {
-        headers.push(("anthropic-beta", THINKING_BETA));
     }
     let resp = client
         .post(&url, &headers, body.into())

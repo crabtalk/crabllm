@@ -5,8 +5,9 @@ use crabllm_core::{
 };
 use crabllm_http::HttpClient;
 use futures::StreamExt;
+use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// `content-type` sent on every request.
@@ -185,7 +186,7 @@ impl Client {
         // Read under an explicit scope so the guard can't be held across the
         // `.await` below, no matter how this is edited later.
         {
-            let cache = self.dialects.read().unwrap();
+            let cache = self.dialects.read();
             if let Some(map) = cache.as_ref() {
                 return map.get(model).cloned().unwrap_or_default();
             }
@@ -204,7 +205,7 @@ impl Client {
             }
         };
         let hit = map.get(model).cloned().unwrap_or_default();
-        *self.dialects.write().unwrap() = Some(map);
+        *self.dialects.write() = Some(map);
         hit
     }
 
@@ -259,6 +260,7 @@ impl Client {
             max_retries: None,
             timeout: None,
             max_retry_after: None,
+            stream_idle: None,
             bridge: false,
         }
     }
@@ -272,6 +274,7 @@ pub struct ClientBuilder {
     max_retries: Option<u32>,
     timeout: Option<Duration>,
     max_retry_after: Option<Duration>,
+    stream_idle: Option<Duration>,
     bridge: bool,
 }
 
@@ -300,6 +303,13 @@ impl ClientBuilder {
         self
     }
 
+    /// How long an open stream may go without a chunk before it times out.
+    /// Zero disables the bound.
+    pub fn stream_idle(mut self, d: Duration) -> Self {
+        self.stream_idle = Some(d);
+        self
+    }
+
     /// Enable dialect bridging: `anthropic_messages`/`_stream` consult
     /// `/v1/models` and translate through `/v1/chat/completions` for models
     /// that aren't Anthropic-native. Off by default (1:1 forwarding). Native
@@ -321,6 +331,9 @@ impl ClientBuilder {
         }
         if let Some(m) = self.max_retry_after {
             retrying = retrying.max_retry_after(m);
+        }
+        if let Some(i) = self.stream_idle {
+            retrying = retrying.stream_idle(i);
         }
         Client {
             inner: retrying,

@@ -1,4 +1,5 @@
 use crate::types::openai::{FinishReason, OpenAiUsage, Role, ToolType};
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

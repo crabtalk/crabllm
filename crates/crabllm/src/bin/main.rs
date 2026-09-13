@@ -1,6 +1,6 @@
 use arc_swap::ArcSwap;
 use clap::{Parser, Subcommand};
-use crabllm_core::{Extension, GatewayConfig, Storage};
+use crabllm_core::{Extension, GatewayConfig, KeyConfig, Storage};
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use crabllm_proxy::{
     AppState,
@@ -332,10 +332,10 @@ async fn run<S: Storage + 'static>(
     let registry = Arc::new(ArcSwap::from_pointee(registry));
 
     // Build key_map from TOML config keys.
-    let key_map: HashMap<String, String> = config
+    let key_map: HashMap<String, KeyConfig> = config
         .keys
         .iter()
-        .map(|k| (k.key.clone(), k.name.clone()))
+        .map(|k| (k.key.clone(), k.clone()))
         .collect();
     let key_map = Arc::new(RwLock::new(key_map));
 
