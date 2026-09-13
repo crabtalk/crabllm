@@ -12,15 +12,11 @@ concurrency:
 jobs:
   build:
     name: Build
-    runs-on: Linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # - name: Install Toolchain
-      #   run: rustup update stable && rustup default stable
-      # - name: Install protoc
-      #   uses: arduino/setup-protoc@v3
-      # - uses: taiki-e/install-action@sccache
-      # - uses: taiki-e/install-action@nextest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build -p crabllm
 
@@ -29,16 +25,13 @@ jobs:
 
   check:
     name: Check
-    runs-on: Linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # - name: Install Toolchain
-      #   run: |
-      #     rustup update stable && rustup default stable
-      #     rustup component add clippy rustfmt
-      # - name: Install protoc
-      #   uses: arduino/setup-protoc@v3
-      - uses: taiki-e/install-action@sccache
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --check
       - name: Clippy
@@ -46,12 +39,13 @@ jobs:
 
   no-std:
     name: No-std
-    runs-on: Linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@sccache
-      - name: Install Guest Targets
-        run: rustup target add wasm32-unknown-unknown riscv64imac-unknown-none-elf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown, riscv64imac-unknown-none-elf
+      - uses: Swatinem/rust-cache@v2
       - name: Check wasm32
         run: cargo check -p crabllm-core --no-default-features --target wasm32-unknown-unknown
       - name: Check riscv64
@@ -59,8 +53,9 @@ jobs:
 
   typos:
     name: Typos
-    runs-on: Linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@typos
       - name: Check Typos
         run: typos
