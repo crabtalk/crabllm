@@ -13,6 +13,7 @@ categories = ["data-structures", "web-programming"]
 default = ["std"]
 std = [
     "dep:tokio",
+    "dep:wstd",
     "dep:rand",
     "bytes/std",
     "futures-core/std",
@@ -35,7 +36,13 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 rand = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["time"], optional = true }
 sonic-rs = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 utoipa = { workspace = true, optional = true }
+
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+tokio = { workspace = true, features = ["time"], optional = true }
+
+# `Retrying`'s timers under WASI, where there is no tokio runtime to drive them.
+[target.'cfg(target_os = "wasi")'.dependencies]
+wstd = { workspace = true, optional = true }

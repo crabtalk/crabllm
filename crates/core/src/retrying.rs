@@ -6,6 +6,8 @@ use crate::{
 use futures_util::StreamExt;
 use rand::Rng;
 use std::{future::Future, time::Duration};
+#[cfg(not(target_os = "wasi"))]
+use tokio::time::{sleep, timeout};
 
 const DEFAULT_MAX_RETRIES: u32 = 2;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -95,7 +97,7 @@ impl<P: Provider> Retrying<P> {
         if self.timeout.is_zero() {
             return fut.await;
         }
-        let Ok(result) = tokio::time::timeout(self.timeout, fut).await else {
+        let Ok(result) = timeout(self.timeout, fut).await else {
             return Err(Error::Timeout);
         };
         result
@@ -113,9 +115,9 @@ impl<P: Provider> Provider for Retrying<P> {
             match self.timed(self.inner.chat_completion(request)).await {
                 Ok(resp) => return Ok(resp),
                 Err(e) if self.should_retry(&e) => {
-                    let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
+                    let wait = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
-                    tokio::time::sleep(sleep).await;
+                    sleep(wait).await;
                     backoff *= 2;
                 }
                 Err(e) => return Err(e),
@@ -134,9 +136,9 @@ impl<P: Provider> Provider for Retrying<P> {
             match self.timed(self.inner.chat_completion_stream(request)).await {
                 Ok(stream) => return Ok(idle_bounded(stream, self.stream_idle)),
                 Err(e) if self.should_retry(&e) => {
-                    let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
+                    let wait = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
-                    tokio::time::sleep(sleep).await;
+                    sleep(wait).await;
                     backoff *= 2;
                 }
                 Err(e) => return Err(e),
@@ -155,9 +157,9 @@ impl<P: Provider> Provider for Retrying<P> {
             match self.timed(self.inner.anthropic_messages(request)).await {
                 Ok(resp) => return Ok(resp),
                 Err(e) if self.should_retry(&e) => {
-                    let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
+                    let wait = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
-                    tokio::time::sleep(sleep).await;
+                    sleep(wait).await;
                     backoff *= 2;
                 }
                 Err(e) => return Err(e),
@@ -179,9 +181,9 @@ impl<P: Provider> Provider for Retrying<P> {
             {
                 Ok(stream) => return Ok(idle_bounded(stream, self.stream_idle)),
                 Err(e) if self.should_retry(&e) => {
-                    let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
+                    let wait = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
-                    tokio::time::sleep(sleep).await;
+                    sleep(wait).await;
                     backoff *= 2;
                 }
                 Err(e) => return Err(e),
@@ -204,9 +206,9 @@ impl<P: Provider> Provider for Retrying<P> {
             {
                 Ok(stream) => return Ok(idle_bounded(stream, self.stream_idle)),
                 Err(e) if self.should_retry(&e) => {
-                    let sleep = e.retry_after().unwrap_or_else(|| jittered(backoff));
+                    let wait = e.retry_after().unwrap_or_else(|| jittered(backoff));
                     last_err = Some(e);
-                    tokio::time::sleep(sleep).await;
+                    sleep(wait).await;
                     backoff *= 2;
                 }
                 Err(e) => return Err(e),
@@ -264,7 +266,7 @@ fn idle_bounded<T: Send + 'static>(
         Some(stream),
         move |state| async move {
             let mut stream = state?;
-            match tokio::time::timeout(idle, stream.next()).await {
+            match timeout(idle, stream.next()).await {
                 Ok(Some(item)) => Some((item, Some(stream))),
                 Ok(None) => None,
                 Err(_) => Some((Err(Error::Timeout), None)),
@@ -281,4 +283,17 @@ fn jittered(backoff: Duration) -> Duration {
         return backoff;
     }
     Duration::from_millis(rand::rng().random_range(lo..=hi))
+}
+
+/// wasi:clocks counterpart of `tokio::time::sleep`.
+#[cfg(target_os = "wasi")]
+async fn sleep(duration: Duration) {
+    wstd::task::sleep(duration.into()).await;
+}
+
+/// wasi:clocks counterpart of `tokio::time::timeout`: `Err` once `duration`
+/// elapses.
+#[cfg(target_os = "wasi")]
+async fn timeout<F: Future>(duration: Duration, fut: F) -> std::io::Result<F::Output> {
+    wstd::future::FutureExt::timeout(fut, wstd::time::Duration::from(duration)).await
 }

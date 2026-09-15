@@ -44,6 +44,7 @@ native-tls = { version = "0.2", features = ["alpn"] }
 http-body = "1"
 http-body-util = "0.1"
 http = "1"
+wstd = { version = "0.6", default-features = false }
 tokio = { version = "1" }
 dashmap = "6"
 toml = "0.8"

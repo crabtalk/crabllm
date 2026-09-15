@@ -28,8 +28,10 @@ crabllm-core.workspace = true
 # crates-io
 bytes.workspace = true
 futures.workspace = true
-tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+tokio = { workspace = true, features = ["time"] }
 
 # hyper backend
 hyper = { workspace = true, optional = true }
@@ -43,3 +45,8 @@ native-tls = { workspace = true, optional = true }
 
 # reqwest backend
 reqwest = { workspace = true, optional = true }
+
+# wasi:http backend. The host owns the connection, TLS and timeouts, so this
+# ignores the `hyper`/`reqwest` and TLS features.
+[target.'cfg(target_os = "wasi")'.dependencies]
+wstd.workspace = true

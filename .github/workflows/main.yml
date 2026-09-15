@@ -51,6 +51,18 @@ jobs:
       - name: Check riscv64
         run: cargo check -p crabllm-core --no-default-features --target riscv64imac-unknown-none-elf
 
+  wasi:
+    name: WASI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+      - name: Check crabllm-sdk
+        run: cargo check -p crabllm-sdk --target wasm32-wasip2
+
   typos:
     name: Typos
     runs-on: ubuntu-latest
