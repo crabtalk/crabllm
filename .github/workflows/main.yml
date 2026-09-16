@@ -63,6 +63,21 @@ jobs:
       - name: Check crabllm-sdk
         run: cargo check -p crabllm-sdk --target wasm32-wasip2
 
+  browser:
+    name: Browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check crabllm-sdk
+        run: cargo check -p crabllm-sdk --target wasm32-unknown-unknown
+      - name: Clippy
+        run: cargo clippy -p crabllm-sdk --target wasm32-unknown-unknown -- -D warnings
+
   typos:
     name: Typos
     runs-on: ubuntu-latest

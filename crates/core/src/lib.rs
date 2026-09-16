@@ -13,6 +13,8 @@ pub use model_info::ModelInfo;
 pub use provider::{BoxStream, ByteStream, Provider};
 #[cfg(feature = "std")]
 pub use retrying::Retrying;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub use single_threaded::SingleThreaded;
 pub use storage::{BoxFuture, KvPairs, PREFIX_LEN, Prefix, Storage, storage_key};
 pub use types::{anthropic, gemini, ir, *};
 pub use usage::Usage;
@@ -30,6 +32,8 @@ mod openapi;
 mod provider;
 #[cfg(feature = "std")]
 mod retrying;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+mod single_threaded;
 mod storage;
 mod types;
 mod usage;

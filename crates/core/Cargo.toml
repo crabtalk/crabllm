@@ -15,6 +15,8 @@ std = [
     "dep:tokio",
     "dep:wstd",
     "dep:rand",
+    "dep:gloo-timers",
+    "dep:js-sys",
     "bytes/std",
     "futures-core/std",
     "futures-util/std",
@@ -35,14 +37,24 @@ hashbrown.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-rand = { workspace = true, optional = true }
 sonic-rs = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 utoipa = { workspace = true, optional = true }
 
-[target.'cfg(not(target_os = "wasi"))'.dependencies]
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { workspace = true, features = ["time"], optional = true }
 
 # `Retrying`'s timers under WASI, where there is no tokio runtime to drive them.
 [target.'cfg(target_os = "wasi")'.dependencies]
 wstd = { workspace = true, optional = true }
+
+# `Retrying`'s timers and backoff jitter in the browser. `rand` is absent here
+# on purpose: its `getrandom` backend needs a `--cfg` every downstream consumer
+# would have to set, and `Math.random` is enough to spread out a retry.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+gloo-timers = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+
+# Everywhere else, backoff jitter comes from `rand`.
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+rand = { workspace = true, optional = true }

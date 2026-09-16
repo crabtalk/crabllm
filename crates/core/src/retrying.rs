@@ -4,9 +4,8 @@ use crate::{
     MultipartField, Provider, anthropic, gemini,
 };
 use futures_util::StreamExt;
-use rand::Rng;
 use std::{future::Future, time::Duration};
-#[cfg(not(target_os = "wasi"))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::time::{sleep, timeout};
 
 const DEFAULT_MAX_RETRIES: u32 = 2;
@@ -282,7 +281,22 @@ fn jittered(backoff: Duration) -> Duration {
     if lo >= hi {
         return backoff;
     }
-    Duration::from_millis(rand::rng().random_range(lo..=hi))
+    Duration::from_millis(random_millis(lo, hi))
+}
+
+/// Uniform random in `[lo, hi]`.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn random_millis(lo: u64, hi: u64) -> u64 {
+    use rand::Rng;
+    rand::rng().random_range(lo..=hi)
+}
+
+/// `Math.random` counterpart of `rand`'s `random_range`. Jitter only needs to
+/// spread retries across callers, so the browser's non-cryptographic PRNG is
+/// the right tool and saves pulling `getrandom` into the build.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn random_millis(lo: u64, hi: u64) -> u64 {
+    lo + (js_sys::Math::random() * (hi - lo + 1) as f64) as u64
 }
 
 /// wasi:clocks counterpart of `tokio::time::sleep`.
@@ -296,4 +310,22 @@ async fn sleep(duration: Duration) {
 #[cfg(target_os = "wasi")]
 async fn timeout<F: Future>(duration: Duration, fut: F) -> std::io::Result<F::Output> {
     wstd::future::FutureExt::timeout(fut, wstd::time::Duration::from(duration)).await
+}
+
+/// `setTimeout` counterpart of `tokio::time::sleep`.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+async fn sleep(duration: Duration) {
+    let millis = duration.as_millis().try_into().unwrap_or(u32::MAX);
+    crate::SingleThreaded(gloo_timers::future::TimeoutFuture::new(millis)).await;
+}
+
+/// `setTimeout` counterpart of `tokio::time::timeout`: `Err` once `duration`
+/// elapses.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+async fn timeout<F: Future>(duration: Duration, fut: F) -> Result<F::Output, ()> {
+    use futures_util::future::{Either, select};
+    match select(std::pin::pin!(fut), std::pin::pin!(sleep(duration))).await {
+        Either::Left((output, _)) => Ok(output),
+        Either::Right(_) => Err(()),
+    }
 }

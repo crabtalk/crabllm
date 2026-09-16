@@ -1,17 +1,21 @@
-#[cfg(all(not(target_os = "wasi"), feature = "hyper", feature = "reqwest"))]
+#[cfg(all(not(target_family = "wasm"), feature = "hyper", feature = "reqwest"))]
 compile_error!("crabllm-provider: features `hyper` and `reqwest` are mutually exclusive");
 
 #[cfg(all(
-    not(target_os = "wasi"),
+    not(target_family = "wasm"),
     not(any(feature = "hyper", feature = "reqwest"))
 ))]
 compile_error!("crabllm-provider: enable exactly one of `hyper` or `reqwest`");
 
-#[cfg(all(not(target_os = "wasi"), feature = "native-tls", feature = "rustls"))]
+#[cfg(all(
+    not(target_family = "wasm"),
+    feature = "native-tls",
+    feature = "rustls"
+))]
 compile_error!("crabllm-provider: features `native-tls` and `rustls` are mutually exclusive");
 
 #[cfg(all(
-    not(target_os = "wasi"),
+    not(target_family = "wasm"),
     not(any(feature = "native-tls", feature = "rustls"))
 ))]
 compile_error!("crabllm-provider: enable exactly one of `native-tls` or `rustls`");
@@ -51,17 +55,22 @@ pub fn parse_retry_after(value: &str) -> Option<Duration> {
 
 pub use crabllm_core::ByteStream;
 
-#[cfg(all(not(target_os = "wasi"), feature = "hyper"))]
+#[cfg(all(not(target_family = "wasm"), feature = "hyper"))]
 mod hyper;
-#[cfg(all(not(target_os = "wasi"), feature = "hyper"))]
+#[cfg(all(not(target_family = "wasm"), feature = "hyper"))]
 pub use hyper::HttpClient;
 
-#[cfg(all(not(target_os = "wasi"), feature = "reqwest"))]
+#[cfg(all(not(target_family = "wasm"), feature = "reqwest"))]
 mod reqwest;
-#[cfg(all(not(target_os = "wasi"), feature = "reqwest"))]
+#[cfg(all(not(target_family = "wasm"), feature = "reqwest"))]
 pub use reqwest::HttpClient;
 
 #[cfg(target_os = "wasi")]
 mod wasi;
 #[cfg(target_os = "wasi")]
 pub use wasi::HttpClient;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+mod fetch;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub use fetch::HttpClient;

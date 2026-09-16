@@ -30,7 +30,9 @@ bytes.workspace = true
 futures.workspace = true
 tracing.workspace = true
 
-[target.'cfg(not(target_os = "wasi"))'.dependencies]
+# Native transports. The browser is excluded: it has no socket to dial and no
+# tokio to drive one.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { workspace = true, features = ["time"] }
 
 # hyper backend
@@ -43,8 +45,17 @@ hyper-rustls = { workspace = true, optional = true }
 hyper-tls = { workspace = true, optional = true }
 native-tls = { workspace = true, optional = true }
 
+
 # reqwest backend
 reqwest = { workspace = true, optional = true }
+
+# fetch backend. Like the wasi:http one below, the target picks it — a browser
+# has no second transport to choose, so there is no feature to choose it with.
+# `std::time::Instant` panics here, so latency tracing reads `performance.now()`
+# through `web-time` instead.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+reqwest.workspace = true
+web-time.workspace = true
 
 # wasi:http backend. The host owns the connection, TLS and timeouts, so this
 # ignores the `hyper`/`reqwest` and TLS features.
